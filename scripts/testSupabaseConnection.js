@@ -1,14 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error(
-    'Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no ambiente antes de executar este teste.'
-  );
-  process.exit(1);
-}
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
