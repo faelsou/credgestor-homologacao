@@ -251,19 +251,31 @@ const App: React.FC = () => {
   }, [fetchUserProfile, loadUsers]);
 
   const login = useCallback(async (email: string, password?: string, provider?: 'google') => {
-    if (provider === 'google') {
-      console.warn('Login com Google não está configurado para Supabase neste ambiente.');
-      return false;
-    }
-
-    if (!password) return false;
-
     if (!isSupabaseConfigured || !supabase) {
       const fallbackUser = MOCK_USERS.find(u => u.email === email) ?? MOCK_USERS[0];
       setUser(fallbackUser);
       setView('home');
       return true;
     }
+
+    if (provider === 'google') {
+      const { error, data } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+        },
+      });
+
+      if (error) {
+        console.error('Falha ao autenticar com Google', error);
+        return false;
+      }
+
+      // Supabase fará o redirecionamento. Consideramos sucesso se a URL de autenticação foi gerada.
+      return Boolean(data.url);
+    }
+
+    if (!password) return false;
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
