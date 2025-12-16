@@ -29,5 +29,15 @@ View your app in AI Studio: https://ai.studio/apps/temp/1
    npm run test:supabase
    ```
    O script realiza uma chamada de autenticação e informa se a comunicação com o Supabase foi bem-sucedida.
+
+## Modelagem de autenticação multi-cliente
+
+Para autenticar dois clientes distintos (e seus usuários) por e-mail e senha mantendo ambientes separados, importe o script SQL abaixo em seu Postgres/Supabase:
+
+- [`scripts/auth_multiclient.sql`](scripts/auth_multiclient.sql)
+  - Cria as tabelas `tenants`, `tenant_users` e `user_sessions`.
+  - Habilita as extensões necessárias para UUID e hash de senha.
+  - Inclui dois tenants de exemplo (Cliente Alpha e Cliente Beta) e usuários administradores com senha já criptografada via `crypt()`.
+  - O login pode ser validado comparando a senha informada com o hash armazenado no campo `password_hash`.
 # credgestor
 # credgestor
