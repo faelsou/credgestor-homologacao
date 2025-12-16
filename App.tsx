@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { LandingPage } from './components/LandingPage';
 import { DashboardLayout } from './components/dashboard/DashboardLayout';
 import { DashboardHome } from './components/dashboard/Home';
@@ -8,6 +8,7 @@ import { InstallmentsView } from './components/dashboard/Installments';
 import { UsersView } from './components/dashboard/Users';
 import { User, UserRole, Client, Loan, Installment, LoanStatus, InstallmentStatus, LoanModel } from './types';
 import { isLate } from './utils';
+import { supabase } from './supabaseClient';
 
 // --- MOCK DATA INITIALIZATION ---
 const MOCK_CLIENTS: Client[] = [
@@ -111,8 +112,8 @@ export const AppContext = React.createContext<{
   clients: Client[];
   loans: Loan[];
   installments: Installment[];
-  login: (email: string, password?: string, provider?: 'google') => boolean;
-  logout: () => void;
+  login: (email: string, password?: string, provider?: 'google') => Promise<boolean>;
+  logout: () => Promise<void>;
   addClient: (client: Client) => void;
   updateClient: (client: Client) => void;
   deleteClient: (id: string) => void;
@@ -120,8 +121,8 @@ export const AppContext = React.createContext<{
   updateLoan: (loan: Loan, generatedInstallments: Installment[]) => void;
   deleteLoan: (id: string) => void;
   payInstallment: (id: string, amount?: number) => void;
-  addUser: (newUser: User) => void;
-  removeUser: (id: string) => void;
+  addUser: (newUser: User) => Promise<User | null>;
+  removeUser: (id: string) => Promise<void>;
   view: string;
   setView: (v: string) => void;
   theme: ThemeOption;
@@ -136,8 +137,71 @@ const App: React.FC = () => {
   const [clients, setClients] = useState<Client[]>(MOCK_CLIENTS);
   const [loans, setLoans] = useState<Loan[]>(MOCK_LOANS);
   const [installments, setInstallments] = useState<Installment[]>(MOCK_INSTALLMENTS);
-  const [usersList, setUsersList] = useState<User[]>(MOCK_USERS);
+  const [usersList, setUsersList] = useState<User[]>([]);
   const [theme, setTheme] = useState<ThemeOption>('light');
+
+  const mapDbUserToUser = useCallback((record: any): User => ({
+    id: record.id,
+    name: record.name ?? record.email?.split('@')[0] ?? 'Usuário',
+    email: record.email,
+    role: (record.role as UserRole) ?? UserRole.ADMIN,
+    whatsappContacts: record.whatsapp_contacts ?? [],
+    password: ''
+  }), []);
+
+  const fetchUserProfile = useCallback(async (authUserId: string, fallbackEmail?: string): Promise<User | null> => {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, name, email, role, whatsapp_contacts')
+      .eq('id', authUserId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro ao buscar usuário no Supabase', error);
+      return null;
+    }
+
+    if (data) {
+      return mapDbUserToUser(data);
+    }
+
+    if (!fallbackEmail) return null;
+
+    const { data: created, error: insertError } = await supabase
+      .from('users')
+      .insert({
+        id: authUserId,
+        email: fallbackEmail,
+        name: fallbackEmail.split('@')[0] || 'Novo usuário',
+        role: UserRole.ADMIN,
+        whatsapp_contacts: []
+      })
+      .select('id, name, email, role, whatsapp_contacts')
+      .single();
+
+    if (insertError) {
+      console.error('Erro ao inserir perfil do usuário', insertError);
+      return null;
+    }
+
+    return created ? mapDbUserToUser(created) : null;
+  }, [mapDbUserToUser]);
+
+  const loadUsers = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, name, email, role, whatsapp_contacts')
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Erro ao carregar usuários', error);
+      return;
+    }
+
+    if (data) {
+      setUsersList(data.map(mapDbUserToUser));
+    }
+  }, [mapDbUserToUser]);
 
   // Check for late installments on load
   useEffect(() => {
@@ -149,37 +213,59 @@ const App: React.FC = () => {
     }));
   }, []);
 
-  const login = (email: string, password?: string, provider?: 'google') => {
-    let foundUser = usersList.find(u => u.email.toLowerCase() === email.toLowerCase());
+  useEffect(() => {
+    loadUsers();
 
-    if (provider === 'google') {
-      if (!foundUser) {
-        foundUser = {
-          id: `google-${Date.now()}`,
-          name: email.split('@')[0] || 'Usuário Google',
-          email,
-          password: '',
-          role: UserRole.ADMIN
-        };
-        setUsersList(prev => [...prev, foundUser!]);
+    supabase.auth.getSession().then(async ({ data }) => {
+      const sessionUser = data.session?.user;
+      if (!sessionUser) return;
+      const profile = await fetchUserProfile(sessionUser.id, sessionUser.email ?? undefined);
+      if (profile) setUser(profile);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const profile = await fetchUserProfile(session.user.id, session.user.email ?? undefined);
+        if (profile) setUser(profile);
+      } else {
+        setUser(null);
       }
-      setUser(foundUser || null);
-      setView('home');
-      return true;
+    });
+
+    return () => {
+      authListener?.subscription.unsubscribe();
+    };
+  }, [fetchUserProfile, loadUsers]);
+
+  const login = useCallback(async (email: string, password?: string, provider?: 'google') => {
+    if (provider === 'google') {
+      console.warn('Login com Google não está configurado para Supabase neste ambiente.');
+      return false;
     }
 
-    if (foundUser && foundUser.password === password) {
-      setUser(foundUser);
+    if (!password) return false;
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (error || !data.user) {
+      console.error('Falha ao autenticar usuário', error);
+      return false;
+    }
+
+    const profile = await fetchUserProfile(data.user.id, email);
+    if (profile) {
+      setUser(profile);
       setView('home');
       return true;
     }
 
     return false;
-  };
+  }, [fetchUserProfile]);
 
-  const logout = () => {
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
     setUser(null);
-  };
+  }, []);
 
   const addClient = (client: Client) => {
     setClients([...clients, client]);
@@ -262,17 +348,56 @@ const App: React.FC = () => {
     }));
   };
 
-  const addUser = (newUser: User) => {
-    setUsersList([...usersList, newUser]);
-  };
+  const addUser = useCallback(async (newUser: User): Promise<User | null> => {
+    const { data, error } = await supabase.auth.signUp({
+      email: newUser.email,
+      password: newUser.password ?? ''
+    });
 
-  const removeUser = (id: string) => {
+    if (error) {
+      console.error('Erro ao cadastrar usuário no Supabase Auth', error);
+      throw error;
+    }
+
+    const authUser = data.user;
+    if (!authUser) return null;
+
+    const { data: profile, error: profileError } = await supabase
+      .from('users')
+      .upsert({
+        id: authUser.id,
+        email: newUser.email,
+        name: newUser.name,
+        role: newUser.role,
+        whatsapp_contacts: newUser.whatsappContacts ?? []
+      })
+      .select('id, name, email, role, whatsapp_contacts')
+      .single();
+
+    if (profileError) {
+      console.error('Erro ao salvar perfil do usuário', profileError);
+      throw profileError;
+    }
+
+    const formatted = mapDbUserToUser(profile);
+    setUsersList(prev => [...prev, formatted]);
+    return formatted;
+  }, [mapDbUserToUser]);
+
+  const removeUser = useCallback(async (id: string) => {
     if (id === user?.id) {
       alert("Você não pode remover a si mesmo.");
       return;
     }
-    setUsersList(usersList.filter(u => u.id !== id));
-  };
+
+    const { error } = await supabase.from('users').delete().eq('id', id);
+    if (error) {
+      console.error('Erro ao remover usuário', error);
+      throw error;
+    }
+
+    setUsersList(prev => prev.filter(u => u.id !== id));
+  }, [user?.id]);
 
   const value = useMemo(() => ({
     user,
@@ -295,7 +420,7 @@ const App: React.FC = () => {
     setView,
     theme,
     setTheme
-  }), [user, usersList, clients, loans, installments, view, theme]);
+  }), [user, usersList, clients, loans, installments, view, theme, login, logout, addUser, removeUser]);
 
   useEffect(() => {
     const body = document.body;
