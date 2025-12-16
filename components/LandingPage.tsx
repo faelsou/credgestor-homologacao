@@ -1,35 +1,98 @@
 import React, { useContext, useState } from 'react';
-import { Menu, X, CheckCircle, TrendingUp, Shield, Smartphone, ArrowRight, BarChart3, Users, PieChart, MessageCircle, Lock, Mail } from 'lucide-react';
+import { Menu, X, CheckCircle, TrendingUp, Shield, Smartphone, ArrowRight, BarChart3, Users, PieChart, MessageCircle, Lock, Mail, UserPlus, LogIn } from 'lucide-react';
 import { AppContext } from '../App';
+import { User, UserRole } from '../types';
 
 export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
-  const { login } = useContext(AppContext);
+  const { login, addUser, usersList } = useContext(AppContext);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+
   // Login State
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
 
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
 
+  const openAuthModal = (mode: 'login' | 'register' = 'login') => {
+    setAuthMode(mode);
+    setError('');
+    setShowAuthModal(true);
+  };
+
+  const resetAuthForm = () => {
+    setFullName('');
+    setEmail('');
+    setPassword('');
+    setConfirmPassword('');
+  };
+
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const success = login(email);
-    if (!success) {
-      setError('Credenciais inválidas. Tente usar as credenciais de teste.');
+    const success = login(email, password);
+    if (success) {
+      setShowAuthModal(false);
+      resetAuthForm();
+      return;
     }
+    setError('Credenciais inválidas. Tente usar as credenciais de teste.');
+  };
+
+  const handleRegisterSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (password !== confirmPassword) {
+      setError('As senhas não coincidem.');
+      return;
+    }
+
+    const emailExists = usersList.some(u => u.email.toLowerCase() === email.toLowerCase());
+    if (emailExists) {
+      setError('Email já cadastrado. Faça login com essas credenciais.');
+      setAuthMode('login');
+      return;
+    }
+
+    const newUser: User = {
+      id: `u-${Date.now()}`,
+      name: fullName || 'Novo usuário',
+      email,
+      password,
+      role: UserRole.ADMIN
+    };
+
+    addUser(newUser);
+    const success = login(email, password);
+    if (success) {
+      setShowAuthModal(false);
+      resetAuthForm();
+    }
+  };
+
+  const handleGoogleLogin = () => {
+    const googleEmail = email || 'usuario.google@credgestor.com';
+    const success = login(googleEmail, undefined, 'google');
+    if (!success) {
+      setError('Não foi possível entrar com o Google.');
+      return;
+    }
+    setShowAuthModal(false);
+    resetAuthForm();
   };
 
   const fillCredentials = (type: 'ADMIN' | 'COLLECTION') => {
     if (type === 'ADMIN') {
       setEmail('admin@credgestor.com');
-      setPassword('123456');
+      setPassword('admin123');
     } else {
       setEmail('cobrador@credgestor.com');
-      setPassword('123456');
+      setPassword('cobrador123');
     }
     setError('');
   };
@@ -54,14 +117,14 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
             </div>
 
             <div className="hidden md:flex items-center space-x-4">
-              <button 
-                onClick={() => setShowAuthModal(true)}
+              <button
+                onClick={() => openAuthModal('login')}
                 className="text-emerald-600 font-semibold hover:text-emerald-700"
               >
                 Entrar
               </button>
-              <button 
-                onClick={() => setShowAuthModal(true)}
+              <button
+                onClick={() => openAuthModal('register')}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg font-semibold transition shadow-lg shadow-emerald-200"
               >
                 Começar agora
@@ -83,8 +146,8 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
             <a href="#como-funciona" className="text-slate-700 font-medium py-2" onClick={toggleMenu}>Como Funciona</a>
             <a href="#planos" className="text-slate-700 font-medium py-2" onClick={toggleMenu}>Planos</a>
             <hr className="border-slate-100"/>
-            <button onClick={() => setShowAuthModal(true)} className="w-full text-center text-emerald-600 font-bold py-3">Entrar</button>
-            <button onClick={() => setShowAuthModal(true)} className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold">Começar agora</button>
+            <button onClick={() => openAuthModal('login')} className="w-full text-center text-emerald-600 font-bold py-3">Entrar</button>
+            <button onClick={() => openAuthModal('register')} className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold">Começar agora</button>
           </div>
         )}
       </nav>
@@ -100,7 +163,7 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
               Sistema online para organizar clientes, parcelas, atrasos e recebimentos — tudo em um único lugar, acessível do celular.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-              <button onClick={() => setShowAuthModal(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3.5 rounded-xl font-bold text-lg shadow-xl shadow-emerald-200 transition flex items-center justify-center gap-2">
+              <button onClick={() => openAuthModal('register')} className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3.5 rounded-xl font-bold text-lg shadow-xl shadow-emerald-200 transition flex items-center justify-center gap-2">
                 Começar Agora <ArrowRight size={20} />
               </button>
               <a href="#funcionalidades" className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-8 py-3.5 rounded-xl font-bold text-lg transition flex items-center justify-center">
@@ -238,7 +301,7 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
                   </li>
                 ))}
               </ul>
-              <button onClick={() => setShowAuthModal(true)} className="mt-8 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl shadow-lg transition">
+              <button onClick={() => openAuthModal('register')} className="mt-8 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl shadow-lg transition">
                 Assinar Agora
               </button>
               <p className="mt-4 text-xs text-slate-400">Assine agora e aproveite o plano Pro.</p>
@@ -269,34 +332,74 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
       {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-sm p-8 shadow-2xl animate-fade-in relative">
-            <button 
-                onClick={() => setShowAuthModal(false)} 
+            <button
+                onClick={() => {
+                  setShowAuthModal(false);
+                  resetAuthForm();
+                  setAuthMode('login');
+                }}
                 className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition"
             >
                 <X size={20} />
             </button>
-            
+
             <div className="mb-6 text-center">
                 <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center mx-auto mb-4">
-                    <Lock size={24} />
+                    {authMode === 'login' ? <Lock size={24} /> : <UserPlus size={24} />}
                 </div>
-                <h3 className="text-2xl font-bold text-slate-900">Bem-vindo de volta</h3>
-                <p className="text-slate-500 text-sm mt-1">Acesse sua conta para continuar</p>
+                <h3 className="text-2xl font-bold text-slate-900">
+                  {authMode === 'login' ? 'Bem-vindo de volta' : 'Crie sua conta'}
+                </h3>
+                <p className="text-slate-500 text-sm mt-1">
+                  {authMode === 'login' ? 'Acesse sua conta para continuar' : 'Cadastre-se para começar'}
+                </p>
             </div>
-            
-            <form onSubmit={handleLoginSubmit} className="space-y-4">
+
+            <div className="flex rounded-xl bg-slate-100 p-1 mb-6">
+              <button
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg font-semibold transition ${authMode === 'login' ? 'bg-white shadow text-emerald-600' : 'text-slate-500'}`}
+                onClick={() => { setAuthMode('login'); setError(''); }}
+              >
+                <LogIn size={16} /> Entrar
+              </button>
+              <button
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg font-semibold transition ${authMode === 'register' ? 'bg-white shadow text-emerald-600' : 'text-slate-500'}`}
+                onClick={() => { setAuthMode('register'); setError(''); }}
+              >
+                <UserPlus size={16} /> Cadastrar
+              </button>
+            </div>
+
+            <form onSubmit={authMode === 'login' ? handleLoginSubmit : handleRegisterSubmit} className="space-y-4">
                 {error && (
                     <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2">
                         <span className="font-bold">Erro:</span> {error}
                     </div>
                 )}
-                
+
+                {authMode === 'register' && (
+                  <div className="space-y-1">
+                    <label className="text-sm font-semibold text-slate-700">Nome completo</label>
+                    <div className="relative">
+                        <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <input
+                            type="text"
+                            required
+                            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all outline-none"
+                            placeholder="Seu nome"
+                            value={fullName}
+                            onChange={(e) => setFullName(e.target.value)}
+                        />
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-1">
                     <label className="text-sm font-semibold text-slate-700">Email</label>
                     <div className="relative">
                         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                        <input 
-                            type="email" 
+                        <input
+                            type="email"
                             required
                             className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all outline-none"
                             placeholder="seu@email.com"
@@ -310,8 +413,8 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
                     <label className="text-sm font-semibold text-slate-700">Senha</label>
                     <div className="relative">
                         <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                        <input 
-                            type="password" 
+                        <input
+                            type="password"
                             required
                             className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all outline-none"
                             placeholder="••••••••"
@@ -321,25 +424,51 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
                     </div>
                 </div>
 
-                <button 
+                {authMode === 'register' && (
+                  <div className="space-y-1">
+                    <label className="text-sm font-semibold text-slate-700">Confirmar senha</label>
+                    <div className="relative">
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <input
+                            type="password"
+                            required
+                            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all outline-none"
+                            placeholder="Repita a senha"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                        />
+                    </div>
+                  </div>
+                )}
+
+                <button
                     type="submit"
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-200 transition-transform active:scale-95"
                 >
-                    Entrar no Sistema
+                    {authMode === 'login' ? 'Entrar no Sistema' : 'Criar conta agora'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  className="w-full flex items-center justify-center gap-2 border border-slate-200 text-slate-700 font-semibold py-3 rounded-xl hover:bg-slate-50 transition"
+                >
+                  <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-5 h-5" />
+                  Entrar com Google
                 </button>
             </form>
 
             <div className="mt-8 pt-6 border-t border-slate-100">
                 <p className="text-xs font-bold text-slate-400 text-center mb-3 uppercase tracking-wider">Acesso Rápido (Ambiente de Teste)</p>
                 <div className="grid grid-cols-2 gap-3">
-                    <button 
+                    <button
                         type="button"
                         onClick={() => fillCredentials('ADMIN')}
                         className="py-2 px-3 bg-purple-50 text-purple-700 rounded-lg text-xs font-semibold hover:bg-purple-100 transition border border-purple-100"
                     >
                         Preencher Admin
                     </button>
-                    <button 
+                    <button
                         type="button"
                         onClick={() => fillCredentials('COLLECTION')}
                         className="py-2 px-3 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-100 transition border border-blue-100"

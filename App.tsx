@@ -60,10 +60,17 @@ const MOCK_USERS: User[] = [
     id: 'u1',
     name: 'Administrador Principal',
     email: 'admin@credgestor.com',
+    password: 'admin123',
     role: UserRole.ADMIN,
     whatsappContacts: ['+5511999991111', '+5511988882222']
   },
-  { id: 'u2', name: 'Cobrador Externo', email: 'cobrador@credgestor.com', role: UserRole.COLLECTION },
+  {
+    id: 'u2',
+    name: 'Cobrador Externo',
+    email: 'cobrador@credgestor.com',
+    password: 'cobrador123',
+    role: UserRole.COLLECTION
+  },
 ];
 
 const TODAY = new Date().toISOString().split('T')[0];
@@ -104,7 +111,7 @@ export const AppContext = React.createContext<{
   clients: Client[];
   loans: Loan[];
   installments: Installment[];
-  login: (email: string) => boolean;
+  login: (email: string, password?: string, provider?: 'google') => boolean;
   logout: () => void;
   addClient: (client: Client) => void;
   updateClient: (client: Client) => void;
@@ -142,13 +149,31 @@ const App: React.FC = () => {
     }));
   }, []);
 
-  const login = (email: string) => {
-    const foundUser = usersList.find(u => u.email === email);
-    if (foundUser) {
+  const login = (email: string, password?: string, provider?: 'google') => {
+    let foundUser = usersList.find(u => u.email.toLowerCase() === email.toLowerCase());
+
+    if (provider === 'google') {
+      if (!foundUser) {
+        foundUser = {
+          id: `google-${Date.now()}`,
+          name: email.split('@')[0] || 'Usuário Google',
+          email,
+          password: '',
+          role: UserRole.ADMIN
+        };
+        setUsersList(prev => [...prev, foundUser!]);
+      }
+      setUser(foundUser || null);
+      setView('home');
+      return true;
+    }
+
+    if (foundUser && foundUser.password === password) {
       setUser(foundUser);
       setView('home');
       return true;
     }
+
     return false;
   };
 

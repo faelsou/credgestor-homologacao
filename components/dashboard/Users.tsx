@@ -10,6 +10,7 @@ export const UsersView: React.FC = () => {
   // New User State
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>(UserRole.COLLECTION);
   const [whatsappContacts, setWhatsappContacts] = useState('');
 
@@ -29,6 +30,7 @@ export const UsersView: React.FC = () => {
       id: Math.random().toString(36).substr(2, 9),
       name,
       email,
+      password,
       role,
       whatsappContacts: whatsappContacts
         .split(/[,;\n]/)
@@ -39,6 +41,7 @@ export const UsersView: React.FC = () => {
     setIsModalOpen(false);
     setName('');
     setEmail('');
+    setPassword('');
     setRole(UserRole.COLLECTION);
     setWhatsappContacts('');
   };
@@ -127,9 +130,19 @@ export const UsersView: React.FC = () => {
                 <input
                     required
                     type="email"
-                    className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white" 
+                    className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Senha</label>
+                <input
+                    required
+                    type="password"
+                    className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
                 />
               </div>
               <div>
