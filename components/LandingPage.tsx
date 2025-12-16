@@ -15,6 +15,7 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
 
@@ -31,24 +32,28 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
     setConfirmPassword('');
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const success = login(email, password);
+    setIsSubmitting(true);
+    const success = await login(email, password);
+    setIsSubmitting(false);
     if (success) {
       setShowAuthModal(false);
       resetAuthForm();
       return;
     }
-    setError('Credenciais inválidas. Tente usar as credenciais de teste.');
+    setError('Credenciais inválidas ou problema ao conectar ao Supabase.');
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsSubmitting(true);
 
     if (password !== confirmPassword) {
       setError('As senhas não coincidem.');
+      setIsSubmitting(false);
       return;
     }
 
@@ -56,6 +61,7 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
     if (emailExists) {
       setError('Email já cadastrado. Faça login com essas credenciais.');
       setAuthMode('login');
+      setIsSubmitting(false);
       return;
     }
 
@@ -67,17 +73,24 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
       role: UserRole.ADMIN
     };
 
-    addUser(newUser);
-    const success = login(email, password);
-    if (success) {
-      setShowAuthModal(false);
-      resetAuthForm();
+    try {
+      const created = await addUser(newUser);
+      if (created) {
+        await login(email, password);
+        setShowAuthModal(false);
+        resetAuthForm();
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Erro ao criar usuário no Supabase. Tente novamente.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleGoogleLogin = () => {
+  const handleGoogleLogin = async () => {
     const googleEmail = email || 'usuario.google@credgestor.com';
-    const success = login(googleEmail, undefined, 'google');
+    const success = await login(googleEmail, undefined, 'google');
     if (!success) {
       setError('Não foi possível entrar com o Google.');
       return;

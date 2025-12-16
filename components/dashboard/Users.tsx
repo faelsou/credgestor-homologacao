@@ -24,7 +24,7 @@ export const UsersView: React.FC = () => {
     );
   }
 
-  const handleAddUser = (e: React.FormEvent) => {
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     const newUser: User = {
       id: Math.random().toString(36).substr(2, 9),
@@ -37,13 +37,19 @@ export const UsersView: React.FC = () => {
         .map(item => item.trim())
         .filter(Boolean)
     };
-    addUser(newUser);
-    setIsModalOpen(false);
-    setName('');
-    setEmail('');
-    setPassword('');
-    setRole(UserRole.COLLECTION);
-    setWhatsappContacts('');
+
+    try {
+      await addUser(newUser);
+      setIsModalOpen(false);
+      setName('');
+      setEmail('');
+      setPassword('');
+      setRole(UserRole.COLLECTION);
+      setWhatsappContacts('');
+    } catch (err) {
+      console.error('Erro ao adicionar usuário', err);
+      alert('Não foi possível cadastrar o usuário no Supabase. Verifique os dados e tente novamente.');
+    }
   };
 
   return (
@@ -70,9 +76,16 @@ export const UsersView: React.FC = () => {
                     {u.role === UserRole.ADMIN ? <Shield size={24} /> : <Briefcase size={24} />}
                 </div>
                 {u.id !== user?.id && (
-                    <button 
-                        onClick={() => {
-                            if(window.confirm('Tem certeza que deseja remover este usuário?')) removeUser(u.id);
+                    <button
+                        onClick={async () => {
+                            if(window.confirm('Tem certeza que deseja remover este usuário?')) {
+                              try {
+                                await removeUser(u.id);
+                              } catch (err) {
+                                console.error('Erro ao remover usuário', err);
+                                alert('Falha ao remover usuário no Supabase.');
+                              }
+                            }
                         }}
                         className="text-slate-400 hover:text-red-500 transition"
                     >
