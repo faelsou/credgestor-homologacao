@@ -21,20 +21,6 @@ View your app in AI Studio: https://ai.studio/apps/temp/1
 
 ## Testar conexão com o Supabase
 
-As credenciais padrão do projeto Supabase já estão incluídas no código para facilitar o teste local:
-
-- URL: `https://avszitcisjexrjkbkxat.supabase.co`
-- Anon key: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c3ppdGNpc2pleHJqa2JreGF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4NzE2MjMsImV4cCI6MjA4MTQ0NzYyM30.AyOFyM8uScHLWdhc9diTsn9WM_2dlMc5m4-jfN_LOtU`
-- Service role: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c3ppdGNpc2pleHJqa2JreGF0Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTg3MTYyMywiZXhwIjoyMDgxNDQ3NjIzfQ.p-3mHE0HZ719ZLfOTjTeXSLC9hmlmmFfdtBZxt4qLtY`
-
-Caso queira sobrepor os valores (por exemplo, em produção), defina as variáveis de ambiente no shell atual:
-```bash
-export VITE_SUPABASE_URL="https://<projeto>.supabase.co"
-export VITE_SUPABASE_ANON_KEY="<sua anon key>"
-export VITE_SUPABASE_SERVICE_ROLE_KEY="<sua service role>"
-```
-
-Em seguida, execute o teste de conectividade:
    ```bash
    npm run test:supabase
    ```
