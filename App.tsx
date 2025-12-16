@@ -8,7 +8,7 @@ import { InstallmentsView } from './components/dashboard/Installments';
 import { UsersView } from './components/dashboard/Users';
 import { User, UserRole, Client, Loan, Installment, LoanStatus, InstallmentStatus, LoanModel } from './types';
 import { isLate } from './utils';
-import { supabase } from './supabaseClient';
+import { isSupabaseConfigured, supabase } from './supabaseClient';
 
 // --- MOCK DATA INITIALIZATION ---
 const MOCK_CLIENTS: Client[] = [
@@ -150,6 +150,8 @@ const App: React.FC = () => {
   }), []);
 
   const fetchUserProfile = useCallback(async (authUserId: string, fallbackEmail?: string): Promise<User | null> => {
+    if (!supabase) return null;
+
     const { data, error } = await supabase
       .from('users')
       .select('id, name, email, role, whatsapp_contacts')
@@ -188,6 +190,11 @@ const App: React.FC = () => {
   }, [mapDbUserToUser]);
 
   const loadUsers = useCallback(async () => {
+    if (!supabase) {
+      setUsersList(MOCK_USERS);
+      return;
+    }
+
     const { data, error } = await supabase
       .from('users')
       .select('id, name, email, role, whatsapp_contacts')
@@ -214,6 +221,12 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) {
+      setUsersList(MOCK_USERS);
+      setUser(MOCK_USERS[0]);
+      return;
+    }
+
     loadUsers();
 
     supabase.auth.getSession().then(async ({ data }) => {
@@ -245,6 +258,13 @@ const App: React.FC = () => {
 
     if (!password) return false;
 
+    if (!isSupabaseConfigured || !supabase) {
+      const fallbackUser = MOCK_USERS.find(u => u.email === email) ?? MOCK_USERS[0];
+      setUser(fallbackUser);
+      setView('home');
+      return true;
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error || !data.user) {
@@ -263,6 +283,11 @@ const App: React.FC = () => {
   }, [fetchUserProfile]);
 
   const logout = useCallback(async () => {
+    if (!supabase) {
+      setUser(null);
+      return;
+    }
+
     await supabase.auth.signOut();
     setUser(null);
   }, []);
@@ -349,6 +374,12 @@ const App: React.FC = () => {
   };
 
   const addUser = useCallback(async (newUser: User): Promise<User | null> => {
+    if (!supabase) {
+      const fallbackUser = { ...newUser, id: newUser.id ?? `local-${Date.now()}` };
+      setUsersList(prev => [...prev, fallbackUser]);
+      return fallbackUser;
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email: newUser.email,
       password: newUser.password ?? ''
@@ -387,6 +418,11 @@ const App: React.FC = () => {
   const removeUser = useCallback(async (id: string) => {
     if (id === user?.id) {
       alert("Você não pode remover a si mesmo.");
+      return;
+    }
+
+    if (!supabase) {
+      setUsersList(prev => prev.filter(u => u.id !== id));
       return;
     }
 
