@@ -15,7 +15,11 @@ View your app in AI Studio: https://ai.studio/apps/temp/1
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Copy [.env.example](.env.example) to `.env.local` and set:
+   - `GEMINI_API_KEY` (required for the AI features)
+   - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (frontend-safe, limited by RLS)
+   - `SUPABASE_URL` and `SUPABASE_ANON_KEY` for CLI/Node utilities such as `npm run test:supabase`
+   - Never place the `service_role` key in frontend-facing variables; keep it only in backend services or secret managers if you need privileged tasks.
 3. Run the app:
    `npm run dev`
 
@@ -25,4 +29,5 @@ View your app in AI Studio: https://ai.studio/apps/temp/1
    npm run test:supabase
    ```
    O script realiza uma chamada de autenticação e informa se a comunicação com o Supabase foi bem-sucedida.
+# credgestor
 # credgestor
