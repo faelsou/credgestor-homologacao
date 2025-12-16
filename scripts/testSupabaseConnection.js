@@ -1,5 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Defina SUPABASE_URL e SUPABASE_ANON_KEY antes de testar a conexão.');
+  process.exit(1);
+}
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
