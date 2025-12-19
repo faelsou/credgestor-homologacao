@@ -121,6 +121,7 @@ export const AppContext = React.createContext<{
   updateLoan: (loan: Loan, generatedInstallments: Installment[]) => void;
   deleteLoan: (id: string) => void;
   payInstallment: (id: string, amount?: number) => void;
+  scheduleFuturePayment: (id: string, reason: string, amount: number) => void;
   addUser: (newUser: User) => Promise<User | null>;
   removeUser: (id: string) => Promise<void>;
   view: string;
@@ -333,56 +334,75 @@ const App: React.FC = () => {
     setInstallments(prev => prev.filter(inst => inst.loanId !== id));
   };
 
+  const scheduleFuturePayment = (id: string, reason: string, amount: number) => {
+    setInstallments(prev => prev.map(inst => inst.id === id ? {
+      ...inst,
+      promisedPaymentReason: reason,
+      promisedPaymentAmount: amount
+    } : inst));
+  };
+
   const payInstallment = (id: string, amount?: number) => {
     if (user?.role === UserRole.COLLECTION) {
       alert("Acesso restrito: Cobradores não podem baixar pagamentos, apenas visualizar.");
       return;
     }
-    setInstallments(prev => prev.map(inst => {
-      if (inst.id !== id) return inst;
 
-      const paymentValue = inst.status === InstallmentStatus.PAID ? 0 : (amount ?? inst.amount);
-      const loan = loans.find(l => l.id === inst.loanId);
+    setInstallments(prev => {
+      const updatedInstallments = prev.map(inst => {
+        if (inst.id !== id) return inst;
 
-      if (loan?.model === LoanModel.INTEREST_ONLY) {
-        const interestDue = Math.max(0, inst.interestAmount ?? Math.max(0, inst.amount - (inst.principalAmount ?? 0)));
-        const principalDue = Math.max(0, inst.principalAmount ?? Math.max(0, inst.amount - interestDue));
-        const totalDue = Math.max(0, interestDue + principalDue);
+        const paymentValue = inst.status === InstallmentStatus.PAID ? 0 : (amount ?? inst.amount);
+        const loan = loans.find(l => l.id === inst.loanId);
 
-        const appliedPayment = Math.min(paymentValue, totalDue);
-        let remainingPayment = appliedPayment;
+        if (loan?.model === LoanModel.INTEREST_ONLY) {
+          const interestDue = Math.max(0, inst.interestAmount ?? Math.max(0, inst.amount - (inst.principalAmount ?? 0)));
+          const principalDue = Math.max(0, inst.principalAmount ?? Math.max(0, inst.amount - interestDue));
+          const totalDue = Math.max(0, interestDue + principalDue);
 
-        const interestPayment = Math.min(remainingPayment, interestDue);
-        remainingPayment -= interestPayment;
-        const updatedInterest = Number((interestDue - interestPayment).toFixed(2));
+          const appliedPayment = Math.min(paymentValue, totalDue);
+          let remainingPayment = appliedPayment;
 
-        const principalPayment = Math.min(remainingPayment, principalDue);
-        const updatedPrincipal = Number((principalDue - principalPayment).toFixed(2));
+          const interestPayment = Math.min(remainingPayment, interestDue);
+          remainingPayment -= interestPayment;
+          const updatedInterest = Number((interestDue - interestPayment).toFixed(2));
 
-        const remainingBalance = Number((updatedInterest + updatedPrincipal).toFixed(2));
-        const isPaid = remainingBalance <= 0;
+          const principalPayment = Math.min(remainingPayment, principalDue);
+          const updatedPrincipal = Number((principalDue - principalPayment).toFixed(2));
+
+          const remainingBalance = Number((updatedInterest + updatedPrincipal).toFixed(2));
+          const newStatus = remainingBalance <= 0 ? InstallmentStatus.PAID : InstallmentStatus.PARTIAL;
+
+          return {
+            ...inst,
+            amount: remainingBalance,
+            interestAmount: updatedInterest,
+            principalAmount: updatedPrincipal,
+            amountPaid: Number(((inst.amountPaid || 0) + appliedPayment).toFixed(2)),
+            status: newStatus,
+            paidDate: newStatus === InstallmentStatus.PAID ? new Date().toISOString() : inst.paidDate
+          };
+        }
+
+        const paidAmount = Math.min(inst.amount, (inst.amountPaid || 0) + paymentValue);
+        const isPaid = paidAmount >= inst.amount;
 
         return {
           ...inst,
-          amount: remainingBalance,
-          interestAmount: updatedInterest,
-          principalAmount: updatedPrincipal,
-          amountPaid: Number(((inst.amountPaid || 0) + appliedPayment).toFixed(2)),
           status: isPaid ? InstallmentStatus.PAID : InstallmentStatus.PARTIAL,
-          paidDate: isPaid ? new Date().toISOString() : inst.paidDate
+          amountPaid: Number(paidAmount.toFixed(2)),
+          paidDate: new Date().toISOString()
         };
-      }
+      });
 
-      const paidAmount = Math.min(inst.amount, (inst.amountPaid || 0) + paymentValue);
-      const isPaid = paidAmount >= inst.amount;
+      setLoans(prevLoans => prevLoans.map(loan => {
+        const related = updatedInstallments.filter(inst => inst.loanId === loan.id);
+        const isLoanPaid = related.length > 0 && related.every(inst => inst.status === InstallmentStatus.PAID || inst.amount <= 0);
+        return { ...loan, status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE };
+      }));
 
-      return {
-        ...inst,
-        status: isPaid ? InstallmentStatus.PAID : InstallmentStatus.PARTIAL,
-        amountPaid: Number(paidAmount.toFixed(2)),
-        paidDate: new Date().toISOString()
-      };
-    }));
+      return updatedInstallments;
+    });
   };
 
   const addUser = useCallback(async (newUser: User): Promise<User | null> => {
@@ -462,6 +482,7 @@ const App: React.FC = () => {
     updateLoan,
     deleteLoan,
     payInstallment,
+    scheduleFuturePayment,
     addUser,
     removeUser,
     view,
