@@ -8,7 +8,7 @@ import { InstallmentsView } from './components/dashboard/Installments';
 import { UsersView } from './components/dashboard/Users';
 import { LoanHistoryView } from './components/dashboard/LoanHistory';
 import { User, UserRole, Client, Loan, Installment, LoanStatus, InstallmentStatus, LoanModel } from './types';
-import { isLate } from './utils';
+import { getTodayDateString, isLate } from './utils';
 import { isSupabaseConfigured, supabase } from './supabaseClient';
 
 // --- MOCK DATA INITIALIZATION ---
@@ -75,7 +75,7 @@ const MOCK_USERS: User[] = [
   },
 ];
 
-const TODAY = new Date().toISOString().split('T')[0];
+const TODAY = getTodayDateString();
 
 const MOCK_LOANS: Loan[] = [
   {
@@ -122,7 +122,7 @@ export const AppContext = React.createContext<{
   updateLoan: (loan: Loan, generatedInstallments: Installment[]) => void;
   deleteLoan: (id: string) => void;
   payInstallment: (id: string, amount?: number) => void;
-  scheduleFuturePayment: (id: string, reason: string, amount: number) => void;
+  scheduleFuturePayment: (id: string, reason: string, amount: number, date?: string) => void;
   startEditingLoan: (loanId: string) => void;
   addUser: (newUser: User) => Promise<User | null>;
   removeUser: (id: string) => Promise<void>;
@@ -337,11 +337,12 @@ const App: React.FC = () => {
     setInstallments(prev => prev.filter(inst => inst.loanId !== id));
   };
 
-  const scheduleFuturePayment = (id: string, reason: string, amount: number) => {
+  const scheduleFuturePayment = (id: string, reason: string, amount: number, date?: string) => {
     setInstallments(prev => prev.map(inst => inst.id === id ? {
       ...inst,
       promisedPaymentReason: reason,
-      promisedPaymentAmount: amount
+      promisedPaymentAmount: amount,
+      promisedPaymentDate: date
     } : inst));
   };
 
