@@ -1,6 +1,6 @@
 import React, { useContext, useMemo, useState } from 'react';
 import { AppContext, ThemeOption } from '../../App';
-import { Home, Users, DollarSign, Calendar, LogOut, Menu, X, Shield, Briefcase, MoonStar, SunMedium, Palette } from 'lucide-react';
+import { Home, Users, DollarSign, Calendar, LogOut, Menu, X, Shield, Briefcase, MoonStar, SunMedium, Palette, History } from 'lucide-react';
 import { cn } from '../../utils';
 import { UserRole } from '../../types';
 
@@ -61,6 +61,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
             <NavItem id="clients" icon={Users} label="Clientes" />
             <NavItem id="loans" icon={DollarSign} label="Empréstimos" />
             <NavItem id="installments" icon={Calendar} label="Parcelas" />
+            <NavItem id="loanHistory" icon={History} label="Histórico de empréstimo" />
           </div>
 
           {user?.role === UserRole.ADMIN && (

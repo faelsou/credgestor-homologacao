@@ -1,13 +1,21 @@
-import React, { useContext, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { AppContext } from '../../App';
 import { formatCurrency, formatDate, generateNoteHash } from '../../utils';
 import { LoanStatus, Installment, InstallmentStatus, UserRole, Loan, PromissoryNote, IndicationType, Client, LoanModel } from '../../types';
-import { Plus, Calculator, Pencil, Trash2, FileText } from 'lucide-react';
+import { Plus, Calculator, Pencil, Trash2, FileText, Clock8 } from 'lucide-react';
 
-export const LoansView: React.FC = () => {
-  const { loans, clients, installments, addLoan, updateLoan, deleteLoan, user } = useContext(AppContext);
+interface LoansViewProps {
+  editingLoanId?: string | null;
+  onCloseEdit?: () => void;
+}
+
+export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit }) => {
+  const { loans, clients, installments, addLoan, updateLoan, deleteLoan, user, scheduleFuturePayment } = useContext(AppContext);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
+  const [promiseModal, setPromiseModal] = useState<{ loan: Loan; installment: Installment } | null>(null);
+  const [promiseReason, setPromiseReason] = useState('');
+  const [promiseAmount, setPromiseAmount] = useState(0);
   
   // Form State
   const [selectedClientId, setSelectedClientId] = useState('');
@@ -162,6 +170,12 @@ export const LoansView: React.FC = () => {
     setEditingLoan(null);
   };
 
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    resetForm();
+    onCloseEdit?.();
+  };
+
   const handleCreateLoan = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedClientId) return;
@@ -215,8 +229,7 @@ export const LoansView: React.FC = () => {
       generatePromissoryNotePDF(client.name, client, loanToPersist, generatedInstallments, user?.name || 'Empresa credora');
     }
 
-    setIsModalOpen(false);
-    resetForm();
+    handleCloseModal();
   };
 
   const getClientName = (id: string) => clients.find(c => c.id === id)?.name || 'Desconhecido';
@@ -239,6 +252,54 @@ export const LoansView: React.FC = () => {
     if (confirm('Deseja remover este empréstimo e suas parcelas?')) {
       deleteLoan(loan.id);
     }
+  };
+
+  useEffect(() => {
+    if (!editingLoanId) return;
+    const loan = loans.find(l => l.id === editingLoanId);
+    if (loan) {
+      handleEditLoan(loan);
+    }
+  }, [editingLoanId, loans]);
+
+  const getInterestAmount = (inst: Installment) => {
+    const interest = inst.interestAmount ?? Math.max(0, inst.amount - (inst.principalAmount ?? inst.amount));
+    return interest > 0 ? interest : inst.amount;
+  };
+
+  const getPrincipalAmount = (inst: Installment) => {
+    const interest = inst.interestAmount ?? 0;
+    return inst.principalAmount ?? Math.max(0, inst.amount - interest);
+  };
+
+  const openPromiseModal = (loan: Loan) => {
+    const nextInst = installments
+      .filter(inst => inst.loanId === loan.id && inst.status !== InstallmentStatus.PAID)
+      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
+
+    if (!nextInst) {
+      alert('Nenhuma parcela pendente para agendar recebimento.');
+      return;
+    }
+
+    setPromiseModal({ loan, installment: nextInst });
+    setPromiseReason(nextInst.promisedPaymentReason || '');
+    setPromiseAmount(nextInst.promisedPaymentAmount || getInterestAmount(nextInst));
+  };
+
+  const handleSavePromise = () => {
+    if (!promiseModal) return;
+    if (!promiseReason.trim()) {
+      alert('Informe o motivo do agendamento.');
+      return;
+    }
+    if (!promiseAmount || promiseAmount <= 0) {
+      alert('Informe um valor válido.');
+      return;
+    }
+
+    scheduleFuturePayment(promiseModal.installment.id, promiseReason.trim(), promiseAmount);
+    setPromiseModal(null);
   };
 
   const generatePromissoryNotePDF = (
@@ -368,6 +429,16 @@ export const LoansView: React.FC = () => {
               const clientInstallments = installments.filter(inst => inst.loanId === loan.id);
               const loanClient = clients.find(c => c.id === loan.clientId);
               const clientName = loanClient?.name || getClientName(loan.clientId);
+              const statusStyle = loan.status === LoanStatus.ACTIVE
+                ? 'bg-blue-100 text-blue-700'
+                : loan.status === LoanStatus.PAID
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-red-100 text-red-700';
+              const statusLabel = loan.status === LoanStatus.ACTIVE
+                ? 'Em Aberto'
+                : loan.status === LoanStatus.PAID
+                  ? 'Finalizado'
+                  : 'Em Atraso';
 
               return (
               <tr key={loan.id} className="hover:bg-slate-50 transition">
@@ -378,11 +449,8 @@ export const LoansView: React.FC = () => {
                 <td className="p-4">{loan.installmentsCount}x</td>
                 <td className="p-4 text-slate-500">{formatDate(loan.startDate)}</td>
                 <td className="p-4">
-                  <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                    loan.status === LoanStatus.ACTIVE ? 'bg-blue-100 text-blue-700' :
-                    loan.status === LoanStatus.PAID ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
-                  }`}>
-                    {loan.status === LoanStatus.ACTIVE ? 'Em Aberto' : 'Finalizado'}
+                  <span className={`px-2 py-1 rounded-full text-xs font-bold ${statusStyle}`}>
+                    {statusLabel}
                   </span>
                 </td>
                 {canAdd && (
@@ -404,6 +472,15 @@ export const LoansView: React.FC = () => {
                       >
                         <FileText size={18} />
                       </button>
+                      {loan.status !== LoanStatus.PAID && (
+                        <button
+                          onClick={() => openPromiseModal(loan)}
+                          className="p-2 rounded-lg hover:bg-purple-50 text-purple-600"
+                          aria-label="Agendar recebimento"
+                        >
+                          <Clock8 size={18} />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleEditLoan(loan)}
                         className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
@@ -677,10 +754,55 @@ export const LoansView: React.FC = () => {
               </div>
 
               <div className="flex gap-3 mt-6">
-                <button type="button" onClick={() => { setIsModalOpen(false); resetForm(); }} className="flex-1 py-3 border rounded-xl font-medium hover:bg-slate-50">Cancelar</button>
+                <button type="button" onClick={handleCloseModal} className="flex-1 py-3 border rounded-xl font-medium hover:bg-slate-50">Cancelar</button>
                 <button type="submit" className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700">{editingLoan ? 'Salvar alterações' : 'Confirmar Empréstimo'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {promiseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="mb-4">
+              <h3 className="text-xl font-bold text-slate-900">Agendar recebimento</h3>
+              <p className="text-sm text-slate-600">
+                {promiseModal.loan.model ? loanModelLabel(promiseModal.loan.model) : 'Empréstimo'} • Parcela {promiseModal.installment.number} do cliente {clients.find(c => c.id === promiseModal.loan.clientId)?.name}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Motivo do agendamento</label>
+                <textarea
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
+                  value={promiseReason}
+                  onChange={e => setPromiseReason(e.target.value)}
+                  placeholder="Ex: cliente pediu prorrogação para próxima semana"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Valor combinado</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
+                  value={promiseAmount}
+                  onChange={e => setPromiseAmount(parseFloat(e.target.value))}
+                  placeholder="Informe o valor"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Capital: {formatCurrency(getPrincipalAmount(promiseModal.installment))} • Juros: {formatCurrency(getInterestAmount(promiseModal.installment))}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setPromiseModal(null)} className="flex-1 py-2 rounded-lg border hover:bg-slate-50">Cancelar</button>
+              <button onClick={handleSavePromise} className="flex-1 py-2 rounded-lg bg-purple-600 text-white font-bold hover:bg-purple-700">Salvar agendamento</button>
+            </div>
           </div>
         </div>
       )}

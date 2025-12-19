@@ -6,6 +6,7 @@ import { ClientsView } from './components/dashboard/Clients';
 import { LoansView } from './components/dashboard/Loans';
 import { InstallmentsView } from './components/dashboard/Installments';
 import { UsersView } from './components/dashboard/Users';
+import { LoanHistoryView } from './components/dashboard/LoanHistory';
 import { User, UserRole, Client, Loan, Installment, LoanStatus, InstallmentStatus, LoanModel } from './types';
 import { isLate } from './utils';
 import { isSupabaseConfigured, supabase } from './supabaseClient';
@@ -122,6 +123,7 @@ export const AppContext = React.createContext<{
   deleteLoan: (id: string) => void;
   payInstallment: (id: string, amount?: number) => void;
   scheduleFuturePayment: (id: string, reason: string, amount: number) => void;
+  startEditingLoan: (loanId: string) => void;
   addUser: (newUser: User) => Promise<User | null>;
   removeUser: (id: string) => Promise<void>;
   view: string;
@@ -140,6 +142,7 @@ const App: React.FC = () => {
   const [installments, setInstallments] = useState<Installment[]>(MOCK_INSTALLMENTS);
   const [usersList, setUsersList] = useState<User[]>([]);
   const [theme, setTheme] = useState<ThemeOption>('light');
+  const [loanToEditId, setLoanToEditId] = useState<string | null>(null);
 
   const mapDbUserToUser = useCallback((record: any): User => ({
     id: record.id,
@@ -342,6 +345,12 @@ const App: React.FC = () => {
     } : inst));
   };
 
+  const startEditingLoan = (loanId: string) => {
+    if (user?.role !== UserRole.ADMIN) return;
+    setLoanToEditId(loanId);
+    setView('loans');
+  };
+
   const payInstallment = (id: string, amount?: number) => {
     if (user?.role === UserRole.COLLECTION) {
       alert("Acesso restrito: Cobradores não podem baixar pagamentos, apenas visualizar.");
@@ -483,13 +492,14 @@ const App: React.FC = () => {
     deleteLoan,
     payInstallment,
     scheduleFuturePayment,
+    startEditingLoan,
     addUser,
     removeUser,
     view,
     setView,
     theme,
     setTheme
-  }), [user, usersList, clients, loans, installments, view, theme, login, logout, addUser, removeUser]);
+  }), [user, usersList, clients, loans, installments, view, theme, login, logout, addUser, removeUser, deleteClient, deleteLoan, payInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setView]);
 
   useEffect(() => {
     const body = document.body;
@@ -511,9 +521,15 @@ const App: React.FC = () => {
       <DashboardLayout>
         {view === 'home' && <DashboardHome />}
         {view === 'clients' && <ClientsView />}
-        {view === 'loans' && <LoansView />}
+        {view === 'loans' && (
+          <LoansView
+            editingLoanId={loanToEditId}
+            onCloseEdit={() => setLoanToEditId(null)}
+          />
+        )}
         {view === 'installments' && <InstallmentsView />}
         {view === 'users' && <UsersView />}
+        {view === 'loanHistory' && <LoanHistoryView />}
       </DashboardLayout>
     </AppContext.Provider>
   );
