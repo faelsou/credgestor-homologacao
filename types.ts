@@ -74,6 +74,8 @@ export interface Installment {
   amountPaid: number;
   interestAmount?: number;
   principalAmount?: number;
+  promisedPaymentReason?: string;
+  promisedPaymentAmount?: number;
   status: InstallmentStatus;
   paidDate?: string;
 }

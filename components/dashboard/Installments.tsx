@@ -5,11 +5,14 @@ import { InstallmentStatus, Installment, UserRole } from '../../types';
 import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Bot } from 'lucide-react';
 
 export const InstallmentsView: React.FC = () => {
-  const { installments, clients, payInstallment, user } = useContext(AppContext);
+  const { installments, clients, payInstallment, scheduleFuturePayment, user } = useContext(AppContext);
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'LATE' | 'PAID'>('ALL');
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
   const [paymentMode, setPaymentMode] = useState<'INTEREST' | 'CUSTOM'>('INTEREST');
   const [customAmount, setCustomAmount] = useState(0);
+  const [promiseModal, setPromiseModal] = useState<Installment | null>(null);
+  const [promiseReason, setPromiseReason] = useState('');
+  const [promiseAmount, setPromiseAmount] = useState(0);
 
   const filtered = installments.filter(inst => {
     if (filter === 'ALL') return true;
@@ -80,6 +83,28 @@ export const InstallmentsView: React.FC = () => {
     setSelectedInstallment(null);
   };
 
+  const openPromiseModal = (inst: Installment) => {
+    setPromiseModal(inst);
+    setPromiseReason(inst.promisedPaymentReason || '');
+    setPromiseAmount(inst.promisedPaymentAmount || getInterestAmount(inst));
+  };
+
+  const handleSavePromise = () => {
+    if (!promiseModal) return;
+    if (!promiseReason.trim()) {
+      alert('Informe o motivo do atraso.');
+      return;
+    }
+
+    if (!promiseAmount || promiseAmount <= 0) {
+      alert('Informe um valor válido para cobrança futura.');
+      return;
+    }
+
+    scheduleFuturePayment(promiseModal.id, promiseReason.trim(), promiseAmount);
+    setPromiseModal(null);
+  };
+
   const renderStatus = (inst: Installment, late: boolean) => {
     if (inst.status === InstallmentStatus.PAID) {
       return <span className="flex items-center gap-1 text-emerald-600 font-bold"><CheckCircle size={14}/> Pago</span>;
@@ -140,6 +165,11 @@ export const InstallmentsView: React.FC = () => {
                     <td className="p-4 font-medium">
                       {formatCurrency(inst.amount)}
                       <span className="block text-xs text-slate-500">Capital: {formatCurrency(getPrincipalAmount(inst))} • Juros: {formatCurrency(getInterestAmount(inst))}</span>
+                      {(inst.promisedPaymentAmount || inst.promisedPaymentReason) && (
+                        <span className="block text-xs text-purple-700 font-semibold mt-1">
+                          Promessa: {formatCurrency(inst.promisedPaymentAmount || 0)} — {inst.promisedPaymentReason || 'Sem motivo informado'}
+                        </span>
+                      )}
                       {inst.amountPaid > 0 && inst.amountPaid < inst.amount && (
                         <span className="block text-xs text-amber-600 font-semibold">Recebido: {formatCurrency(inst.amountPaid)}</span>
                       )}
@@ -159,6 +189,14 @@ export const InstallmentsView: React.FC = () => {
                              <button onClick={() => handlePay(inst.id)} className="px-3 py-1 bg-emerald-600 text-white text-xs font-bold rounded hover:bg-emerald-700 ml-2">
                                 Receber
                              </button>
+                        )}
+                        {late && inst.status !== InstallmentStatus.PAID && user?.role === UserRole.ADMIN && (
+                          <button
+                            onClick={() => openPromiseModal(inst)}
+                            className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-bold rounded hover:bg-purple-200"
+                          >
+                            Agendar recebimento
+                          </button>
                         )}
                     </td>
                 </tr>
@@ -187,6 +225,11 @@ export const InstallmentsView: React.FC = () => {
                             {inst.amountPaid > 0 && inst.amountPaid < inst.amount && (
                               <div className="text-xs text-amber-600 font-semibold">Recebido: {formatCurrency(inst.amountPaid)}</div>
                             )}
+                            {(inst.promisedPaymentAmount || inst.promisedPaymentReason) && (
+                              <div className="text-xs text-purple-700 font-semibold mt-1">
+                                Promessa: {formatCurrency(inst.promisedPaymentAmount || 0)} — {inst.promisedPaymentReason || 'Sem motivo informado'}
+                              </div>
+                            )}
                              {renderStatus(inst, late)}
                         </div>
                     </div>
@@ -202,6 +245,11 @@ export const InstallmentsView: React.FC = () => {
                          <button onClick={() => handlePay(inst.id)} className="w-full mt-2 py-2 bg-emerald-600 text-white font-semibold rounded-lg text-sm">
                             Baixar Pagamento
                          </button>
+                     )}
+                     {late && inst.status !== InstallmentStatus.PAID && user?.role === UserRole.ADMIN && (
+                        <button onClick={() => openPromiseModal(inst)} className="w-full mt-2 py-2 bg-purple-100 text-purple-700 font-semibold rounded-lg text-sm">
+                          Agendar recebimento
+                        </button>
                      )}
                 </div>
             );
@@ -254,6 +302,46 @@ export const InstallmentsView: React.FC = () => {
             <div className="flex gap-3 mt-6">
               <button onClick={() => setSelectedInstallment(null)} className="flex-1 py-2 rounded-lg border hover:bg-slate-50">Cancelar</button>
               <button onClick={handleConfirmPayment} className="flex-1 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700">Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {promiseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="mb-4">
+              <h3 className="text-xl font-bold text-slate-900">Agendar recebimento futuro</h3>
+              <p className="text-sm text-slate-600">Registre o motivo do atraso e o valor combinado para cobrar posteriormente.</p>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Motivo do atraso</label>
+                <textarea
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
+                  value={promiseReason}
+                  onChange={e => setPromiseReason(e.target.value)}
+                  placeholder="Ex: cliente solicitou prorrogação até receber salário"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Valor a cobrar</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
+                  value={promiseAmount}
+                  onChange={e => setPromiseAmount(parseFloat(e.target.value))}
+                  placeholder="Informe o valor combinado"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setPromiseModal(null)} className="flex-1 py-2 rounded-lg border hover:bg-slate-50">Cancelar</button>
+              <button onClick={handleSavePromise} className="flex-1 py-2 rounded-lg bg-purple-600 text-white font-bold hover:bg-purple-700">Salvar promessa</button>
             </div>
           </div>
         </div>
