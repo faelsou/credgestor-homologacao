@@ -23,6 +23,12 @@ export const isLate = (dueDate: string) => {
   return due < today;
 };
 
+export const getTodayDateString = () => {
+  const now = new Date();
+  const timezoneOffset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - timezoneOffset).toISOString().split('T')[0];
+};
+
 export const generateNoteHash = () => {
   if (typeof crypto !== 'undefined' && 'getRandomValues' in crypto) {
     const randomBytes = crypto.getRandomValues(new Uint8Array(8));

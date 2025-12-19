@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { AppContext } from '../../App';
-import { formatCurrency, formatDate, generateNoteHash } from '../../utils';
+import { formatCurrency, formatDate, generateNoteHash, getTodayDateString } from '../../utils';
 import { LoanStatus, Installment, InstallmentStatus, UserRole, Loan, PromissoryNote, IndicationType, Client, LoanModel } from '../../types';
 import { Plus, Calculator, Pencil, Trash2, FileText, Clock8 } from 'lucide-react';
 
@@ -16,13 +16,14 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const [promiseModal, setPromiseModal] = useState<{ loan: Loan; installment: Installment } | null>(null);
   const [promiseReason, setPromiseReason] = useState('');
   const [promiseAmount, setPromiseAmount] = useState(0);
+  const [promiseDate, setPromiseDate] = useState(getTodayDateString());
   
   // Form State
   const [selectedClientId, setSelectedClientId] = useState('');
   const [amount, setAmount] = useState(1000);
   const [interestRate, setInterestRate] = useState(20); // 20%
   const [installmentsCount, setInstallmentsCount] = useState(4);
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(getTodayDateString());
   const [loanModel, setLoanModel] = useState<LoanModel>(LoanModel.PRICE);
   const createDefaultPromissoryNote = (baseDate: string): PromissoryNote => ({
     capital: amount,
@@ -164,7 +165,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setInterestRate(20);
     setInstallmentsCount(4);
     setLoanModel(LoanModel.PRICE);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayDateString();
     setStartDate(today);
     setPromissoryNote(createDefaultPromissoryNote(today));
     setEditingLoan(null);
@@ -285,6 +286,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setPromiseModal({ loan, installment: nextInst });
     setPromiseReason(nextInst.promisedPaymentReason || '');
     setPromiseAmount(nextInst.promisedPaymentAmount || getInterestAmount(nextInst));
+    setPromiseDate(nextInst.promisedPaymentDate || getTodayDateString());
   };
 
   const handleSavePromise = () => {
@@ -298,7 +300,19 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       return;
     }
 
-    scheduleFuturePayment(promiseModal.installment.id, promiseReason.trim(), promiseAmount);
+    if (!promiseDate) {
+      alert('Informe a data de agendamento.');
+      return;
+    }
+
+    const today = new Date(getTodayDateString());
+    const scheduled = new Date(promiseDate);
+    if (scheduled < today) {
+      alert('Selecione uma data futura ou igual a hoje.');
+      return;
+    }
+
+    scheduleFuturePayment(promiseModal.installment.id, promiseReason.trim(), promiseAmount, promiseDate);
     setPromiseModal(null);
   };
 
@@ -796,6 +810,16 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 <p className="text-xs text-slate-500 mt-1">
                   Capital: {formatCurrency(getPrincipalAmount(promiseModal.installment))} • Juros: {formatCurrency(getInterestAmount(promiseModal.installment))}
                 </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Data do recebimento</label>
+                <input
+                  type="date"
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
+                  value={promiseDate}
+                  onChange={e => setPromiseDate(e.target.value)}
+                  min={getTodayDateString()}
+                />
               </div>
             </div>
 

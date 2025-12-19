@@ -1,6 +1,6 @@
 import React, { useContext, useState } from 'react';
 import { AppContext } from '../../App';
-import { formatCurrency, formatDate, isLate, sendToN8N } from '../../utils';
+import { formatCurrency, formatDate, getTodayDateString, isLate, sendToN8N } from '../../utils';
 import { InstallmentStatus, Installment, UserRole } from '../../types';
 import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Bot } from 'lucide-react';
 
@@ -13,6 +13,7 @@ export const InstallmentsView: React.FC = () => {
   const [promiseModal, setPromiseModal] = useState<Installment | null>(null);
   const [promiseReason, setPromiseReason] = useState('');
   const [promiseAmount, setPromiseAmount] = useState(0);
+  const [promiseDate, setPromiseDate] = useState(getTodayDateString());
 
   const filtered = installments.filter(inst => {
     if (filter === 'ALL') return true;
@@ -87,6 +88,7 @@ export const InstallmentsView: React.FC = () => {
     setPromiseModal(inst);
     setPromiseReason(inst.promisedPaymentReason || '');
     setPromiseAmount(inst.promisedPaymentAmount || getInterestAmount(inst));
+    setPromiseDate(inst.promisedPaymentDate || getTodayDateString());
   };
 
   const handleSavePromise = () => {
@@ -101,7 +103,19 @@ export const InstallmentsView: React.FC = () => {
       return;
     }
 
-    scheduleFuturePayment(promiseModal.id, promiseReason.trim(), promiseAmount);
+    if (!promiseDate) {
+      alert('Informe a data de agendamento.');
+      return;
+    }
+
+    const today = new Date(getTodayDateString());
+    const scheduled = new Date(promiseDate);
+    if (scheduled < today) {
+      alert('Selecione uma data futura ou igual a hoje.');
+      return;
+    }
+
+    scheduleFuturePayment(promiseModal.id, promiseReason.trim(), promiseAmount, promiseDate);
     setPromiseModal(null);
   };
 
@@ -168,6 +182,9 @@ export const InstallmentsView: React.FC = () => {
                       {(inst.promisedPaymentAmount || inst.promisedPaymentReason) && (
                         <span className="block text-xs text-purple-700 font-semibold mt-1">
                           Promessa: {formatCurrency(inst.promisedPaymentAmount || 0)} — {inst.promisedPaymentReason || 'Sem motivo informado'}
+                          {inst.promisedPaymentDate && (
+                            <span className="block text-[11px] text-purple-600">Agendado para {formatDate(inst.promisedPaymentDate)}</span>
+                          )}
                         </span>
                       )}
                       {inst.amountPaid > 0 && inst.amountPaid < inst.amount && (
@@ -228,6 +245,9 @@ export const InstallmentsView: React.FC = () => {
                             {(inst.promisedPaymentAmount || inst.promisedPaymentReason) && (
                               <div className="text-xs text-purple-700 font-semibold mt-1">
                                 Promessa: {formatCurrency(inst.promisedPaymentAmount || 0)} — {inst.promisedPaymentReason || 'Sem motivo informado'}
+                                {inst.promisedPaymentDate && (
+                                  <div className="text-[11px] text-purple-600">Agendado para {formatDate(inst.promisedPaymentDate)}</div>
+                                )}
                               </div>
                             )}
                              {renderStatus(inst, late)}
@@ -335,6 +355,16 @@ export const InstallmentsView: React.FC = () => {
                   value={promiseAmount}
                   onChange={e => setPromiseAmount(parseFloat(e.target.value))}
                   placeholder="Informe o valor combinado"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Data do recebimento</label>
+                <input
+                  type="date"
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
+                  value={promiseDate}
+                  onChange={e => setPromiseDate(e.target.value)}
+                  min={getTodayDateString()}
                 />
               </div>
             </div>
