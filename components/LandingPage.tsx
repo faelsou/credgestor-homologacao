@@ -43,7 +43,7 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
       resetAuthForm();
       return;
     }
-    setError('Credenciais inválidas ou problema ao conectar ao Supabase.');
+    setError('Credenciais inválidas ou problema ao conectar ao backend.');
   };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {

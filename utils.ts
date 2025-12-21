@@ -29,6 +29,28 @@ export const getTodayDateString = () => {
   return new Date(now.getTime() - timezoneOffset).toISOString().split('T')[0];
 };
 
+export const stripNonDigits = (value?: string | null) => (value || '').replace(/\D/g, '');
+
+export const formatCpf = (value: string) => {
+  const digits = stripNonDigits(value).slice(0, 11);
+  return digits
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+};
+
+export const formatPhone = (value: string) => {
+  const digits = stripNonDigits(value).slice(0, 11);
+  return digits
+    .replace(/(\d{2})(\d)/, '($1)$2')
+    .replace(/(\d{5})(\d)/, '$1-$2');
+};
+
+export const formatCep = (value: string) => {
+  const digits = stripNonDigits(value).slice(0, 8);
+  return digits.replace(/(\d{5})(\d)/, '$1-$2');
+};
+
 export const generateNoteHash = () => {
   if (typeof crypto !== 'undefined' && 'getRandomValues' in crypto) {
     const randomBytes = crypto.getRandomValues(new Uint8Array(8));
@@ -42,19 +64,25 @@ export const generateNoteHash = () => {
 
 // --- N8N INTEGRATION ---
 // Substitua pela URL do seu Webhook de produção
-const N8N_WEBHOOK_URL = 'https://seu-n8n.com/webhook/cobranca-ia';
+const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://seu-n8n.com/webhook/cobranca-ia';
 
 export async function sendToN8N(payload: any) {
   try {
-    // Em um cenário real, descomente a linha abaixo:
-    // const response = await fetch(N8N_WEBHOOK_URL, {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify(payload)
-    // });
-    
-    // Simulação para demo
-    console.log('[N8N Webhook Disparado]', payload);
+    if (!N8N_WEBHOOK_URL || N8N_WEBHOOK_URL.includes('seu-n8n')) {
+      console.log('[N8N Webhook Disparado - modo simulado]', payload);
+      return true;
+    }
+
+    const response = await fetch(N8N_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Webhook retornou ${response.status}`);
+    }
+
     return true;
   } catch (error) {
     console.error('Erro ao conectar com n8n', error);

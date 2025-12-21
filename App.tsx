@@ -10,6 +10,7 @@ import { LoanHistoryView } from './components/dashboard/LoanHistory';
 import { User, UserRole, Client, Loan, Installment, LoanStatus, InstallmentStatus, LoanModel } from './types';
 import { getTodayDateString, isLate } from './utils';
 import { isSupabaseConfigured, supabase } from './supabaseClient';
+import { createN8NClient, fetchN8NClients, isN8NBackendConfigured, loginWithN8N } from './n8nApi';
 
 // --- MOCK DATA INITIALIZATION ---
 const MOCK_CLIENTS: Client[] = [
@@ -105,6 +106,17 @@ const MOCK_INSTALLMENTS: Installment[] = [
   { id: 'i2', loanId: 'l1', clientId: '1', number: 2, dueDate: TODAY, amount: 550, amountPaid: 0, status: InstallmentStatus.PENDING },
 ];
 
+type N8NSession = {
+  accessToken: string;
+  refreshToken: string;
+  accessExpiresAt?: string;
+  refreshExpiresAt?: string;
+  tenantId?: string;
+  tenantName?: string;
+};
+
+const N8N_SESSION_STORAGE_KEY = 'credgestor:n8n-session';
+
 export type ThemeOption = 'light' | 'dark-emerald' | 'dark-graphite';
 
 export const AppContext = React.createContext<{
@@ -113,9 +125,11 @@ export const AppContext = React.createContext<{
   clients: Client[];
   loans: Loan[];
   installments: Installment[];
+  n8nSession: N8NSession | null;
+  usingN8NBackend: boolean;
   login: (email: string, password?: string, provider?: 'google') => Promise<boolean>;
   logout: () => Promise<void>;
-  addClient: (client: Client) => void;
+  addClient: (client: Client) => Promise<Client | null>;
   updateClient: (client: Client) => void;
   deleteClient: (id: string) => void;
   addLoan: (loan: Loan, generatedInstallments: Installment[]) => void;
@@ -143,6 +157,9 @@ const App: React.FC = () => {
   const [usersList, setUsersList] = useState<User[]>([]);
   const [theme, setTheme] = useState<ThemeOption>('light');
   const [loanToEditId, setLoanToEditId] = useState<string | null>(null);
+  const [n8nSession, setN8nSession] = useState<N8NSession | null>(null);
+
+  const usingN8NBackend = isN8NBackendConfigured;
 
   const mapDbUserToUser = useCallback((record: any): User => ({
     id: record.id,
@@ -152,6 +169,47 @@ const App: React.FC = () => {
     whatsappContacts: record.whatsapp_contacts ?? [],
     password: ''
   }), []);
+
+  useEffect(() => {
+    if (!usingN8NBackend) return;
+    const stored = localStorage.getItem(N8N_SESSION_STORAGE_KEY);
+    if (!stored) return;
+
+    try {
+      const parsed = JSON.parse(stored) as { session: N8NSession; user: User };
+      setN8nSession(parsed.session);
+      setUser(parsed.user);
+      setUsersList([parsed.user]);
+    } catch (error) {
+      console.error('Não foi possível restaurar a sessão do n8n', error);
+      localStorage.removeItem(N8N_SESSION_STORAGE_KEY);
+    }
+  }, [usingN8NBackend]);
+
+  useEffect(() => {
+    if (!usingN8NBackend) return;
+
+    if (n8nSession && user) {
+      localStorage.setItem(N8N_SESSION_STORAGE_KEY, JSON.stringify({ session: n8nSession, user }));
+    } else {
+      localStorage.removeItem(N8N_SESSION_STORAGE_KEY);
+    }
+  }, [n8nSession, user, usingN8NBackend]);
+
+  useEffect(() => {
+    if (!usingN8NBackend || !n8nSession?.accessToken) return;
+
+    const loadClients = async () => {
+      try {
+        const remoteClients = await fetchN8NClients(n8nSession.accessToken, n8nSession.tenantId);
+        setClients(remoteClients);
+      } catch (error) {
+        console.error('Erro ao buscar clientes no backend n8n', error);
+      }
+    };
+
+    loadClients();
+  }, [n8nSession, usingN8NBackend]);
 
   const fetchUserProfile = useCallback(async (authUserId: string, fallbackEmail?: string): Promise<User | null> => {
     if (!supabase) return null;
@@ -225,6 +283,8 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (usingN8NBackend) return;
+
     if (!isSupabaseConfigured || !supabase) {
       setUsersList(MOCK_USERS);
       setUser(MOCK_USERS[0]);
@@ -255,6 +315,30 @@ const App: React.FC = () => {
   }, [fetchUserProfile, loadUsers]);
 
   const login = useCallback(async (email: string, password?: string, provider?: 'google') => {
+    if (usingN8NBackend) {
+      if (!password) return false;
+      try {
+        const result = await loginWithN8N(email, password);
+        const sessionInfo: N8NSession = {
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+          accessExpiresAt: result.accessExpiresAt,
+          refreshExpiresAt: result.refreshExpiresAt,
+          tenantId: result.user.tenantId,
+          tenantName: result.user.tenantName,
+        };
+
+        setUser(result.user);
+        setUsersList([result.user]);
+        setN8nSession(sessionInfo);
+        setView('home');
+        return true;
+      } catch (error) {
+        console.error('Falha ao autenticar via backend n8n', error);
+        return false;
+      }
+    }
+
     if (!isSupabaseConfigured || !supabase) {
       const fallbackUser = MOCK_USERS.find(u => u.email === email) ?? MOCK_USERS[0];
       setUser(fallbackUser);
@@ -296,9 +380,18 @@ const App: React.FC = () => {
     }
 
     return false;
-  }, [fetchUserProfile]);
+  }, [fetchUserProfile, usingN8NBackend]);
 
   const logout = useCallback(async () => {
+    if (usingN8NBackend) {
+      setN8nSession(null);
+      setUser(null);
+      setClients(MOCK_CLIENTS);
+      setLoans(MOCK_LOANS);
+      setInstallments(MOCK_INSTALLMENTS);
+      return;
+    }
+
     if (!supabase) {
       setUser(null);
       return;
@@ -306,11 +399,18 @@ const App: React.FC = () => {
 
     await supabase.auth.signOut();
     setUser(null);
-  }, []);
+  }, [usingN8NBackend]);
 
-  const addClient = (client: Client) => {
-    setClients([...clients, client]);
-  };
+  const addClient = useCallback(async (client: Client): Promise<Client | null> => {
+    if (usingN8NBackend && n8nSession?.accessToken) {
+      const created = await createN8NClient(n8nSession.accessToken, n8nSession.tenantId, client);
+      setClients(prev => [...prev, created]);
+      return created;
+    }
+
+    setClients(prev => [...prev, client]);
+    return client;
+  }, [n8nSession, usingN8NBackend]);
 
   const updateClient = (client: Client) => {
     setClients(prev => prev.map(item => item.id === client.id ? client : item));
@@ -416,7 +516,7 @@ const App: React.FC = () => {
   };
 
   const addUser = useCallback(async (newUser: User): Promise<User | null> => {
-    if (!supabase) {
+    if (usingN8NBackend || !supabase) {
       const fallbackUser = { ...newUser, id: newUser.id ?? `local-${Date.now()}` };
       setUsersList(prev => [...prev, fallbackUser]);
       return fallbackUser;
@@ -455,7 +555,7 @@ const App: React.FC = () => {
     const formatted = mapDbUserToUser(profile);
     setUsersList(prev => [...prev, formatted]);
     return formatted;
-  }, [mapDbUserToUser]);
+  }, [mapDbUserToUser, usingN8NBackend]);
 
   const removeUser = useCallback(async (id: string) => {
     if (id === user?.id) {
@@ -463,7 +563,7 @@ const App: React.FC = () => {
       return;
     }
 
-    if (!supabase) {
+    if (usingN8NBackend || !supabase) {
       setUsersList(prev => prev.filter(u => u.id !== id));
       return;
     }
@@ -475,7 +575,7 @@ const App: React.FC = () => {
     }
 
     setUsersList(prev => prev.filter(u => u.id !== id));
-  }, [user?.id]);
+  }, [user?.id, usingN8NBackend]);
 
   const value = useMemo(() => ({
     user,
@@ -483,6 +583,8 @@ const App: React.FC = () => {
     clients,
     loans,
     installments,
+    n8nSession,
+    usingN8NBackend,
     login,
     logout,
     addClient,
@@ -500,7 +602,7 @@ const App: React.FC = () => {
     setView,
     theme,
     setTheme
-  }), [user, usersList, clients, loans, installments, view, theme, login, logout, addUser, removeUser, deleteClient, deleteLoan, payInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setView]);
+  }), [user, usersList, clients, loans, installments, n8nSession, usingN8NBackend, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setView]);
 
   useEffect(() => {
     const body = document.body;

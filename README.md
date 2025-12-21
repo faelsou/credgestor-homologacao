@@ -19,6 +19,9 @@ View your app in AI Studio: https://ai.studio/apps/temp/1
    - `GEMINI_API_KEY` (required for the AI features)
    - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (frontend-safe, limited by RLS)
    - `SUPABASE_URL` and `SUPABASE_ANON_KEY` for CLI/Node utilities such as `npm run test:supabase`
+   - `VITE_N8N_BASE_URL` (optional) apontando para seus webhooks do n8n. Ex.: `https://n8n.suaempresa.com/webhook`
+   - `VITE_N8N_TENANT_ID` (opcional) para pré-definir o tenant em chamadas públicas como `GET /clientes/:tenant_id`
+   - `VITE_N8N_WEBHOOK_URL` (opcional) para disparos de relatórios WhatsApp automatizados
    - Never place the `service_role` key in frontend-facing variables; keep it only in backend services or secret managers if you need privileged tasks.
 3. Run the app:
    `npm run dev`

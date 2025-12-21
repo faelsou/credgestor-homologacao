@@ -2,6 +2,7 @@ import React, { useContext, useState } from 'react';
 import { AppContext } from '../../App';
 import { Search, Plus, Phone, Mail, User, Pencil, Trash2, MapPin, Loader2 } from 'lucide-react';
 import { Client, UserRole } from '../../types';
+import { formatCep, formatCpf, formatPhone } from '../../utils';
 
 export const ClientsView: React.FC = () => {
   const { clients, addClient, updateClient, deleteClient, user, loans } = useContext(AppContext);
@@ -10,6 +11,8 @@ export const ClientsView: React.FC = () => {
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
   const [cepError, setCepError] = useState('');
   const [isFetchingCep, setIsFetchingCep] = useState(false);
+  const [isSavingClient, setIsSavingClient] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const [newClient, setNewClient] = useState<Partial<Client>>({
     name: '',
@@ -24,28 +27,6 @@ export const ClientsView: React.FC = () => {
     state: '',
     status: 'active'
   });
-
-  const formatOnlyDigits = (value: string, maxLength: number) => value.replace(/\D/g, '').slice(0, maxLength);
-
-  const formatCPF = (value: string) => {
-    const digits = formatOnlyDigits(value, 11);
-    return digits
-      .replace(/(\d{3})(\d)/, '$1.$2')
-      .replace(/(\d{3})(\d)/, '$1.$2')
-      .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
-  };
-
-  const formatPhone = (value: string) => {
-    const digits = formatOnlyDigits(value, 11);
-    return digits
-      .replace(/(\d{2})(\d)/, '($1)$2')
-      .replace(/(\d{5})(\d)/, '$1-$2');
-  };
-
-  const formatCep = (value: string) => {
-    const digits = formatOnlyDigits(value, 8);
-    return digits.replace(/(\d{5})(\d)/, '$1-$2');
-  };
 
   const fetchAddressByCep = async (cepValue: string) => {
     const digits = cepValue.replace(/\D/g, '');
@@ -78,6 +59,8 @@ export const ClientsView: React.FC = () => {
   };
 
   const resetForm = () => {
+    setSaveError('');
+    setIsSavingClient(false);
     setNewClient({
       name: '',
       cpf: '',
@@ -100,32 +83,45 @@ export const ClientsView: React.FC = () => {
     c.cpf.includes(searchTerm)
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newClient.name && newClient.cpf) {
-      const clientToSave: Client = {
-        id: editingClientId || Math.random().toString(36).substr(2, 9),
-        name: newClient.name,
-        cpf: newClient.cpf,
-        phone: newClient.phone || '',
-        email: newClient.email || '',
-        cep: newClient.cep || '',
-        street: newClient.street || '',
-        complement: newClient.complement || '',
-        neighborhood: newClient.neighborhood || '',
-        city: newClient.city || '',
-        state: newClient.state || '',
-        status: newClient.status || 'active'
-      };
+    setSaveError('');
 
+    if (!newClient.name || !newClient.cpf) {
+      setSaveError('Nome e CPF são obrigatórios.');
+      return;
+    }
+
+    const clientToSave: Client = {
+      id: editingClientId || Math.random().toString(36).substr(2, 9),
+      name: newClient.name,
+      cpf: newClient.cpf,
+      phone: newClient.phone || '',
+      email: newClient.email || '',
+      cep: newClient.cep || '',
+      street: newClient.street || '',
+      complement: newClient.complement || '',
+      neighborhood: newClient.neighborhood || '',
+      city: newClient.city || '',
+      state: newClient.state || '',
+      status: newClient.status || 'active'
+    };
+
+    setIsSavingClient(true);
+    try {
       if (editingClientId) {
         updateClient(clientToSave);
       } else {
-        addClient(clientToSave);
+        await addClient(clientToSave);
       }
 
       setIsModalOpen(false);
       resetForm();
+    } catch (error) {
+      console.error('Erro ao salvar cliente', error);
+      setSaveError('Não foi possível salvar o cliente. Verifique a conexão com o backend e tente novamente.');
+    } finally {
+      setIsSavingClient(false);
     }
   };
 
@@ -237,6 +233,11 @@ export const ClientsView: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-3xl p-6 max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold mb-4">{editingClientId ? 'Editar Cliente' : 'Cadastrar Cliente'}</h3>
+            {saveError && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-700">
+                {saveError}
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Nome Completo</label>
@@ -258,7 +259,7 @@ export const ClientsView: React.FC = () => {
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
                       placeholder="000.000.000-00"
                       value={newClient.cpf}
-                      onChange={e => setNewClient({...newClient, cpf: formatCPF(e.target.value)})}
+                      onChange={e => setNewClient({...newClient, cpf: formatCpf(e.target.value)})}
                   />
                 </div>
                 <div>
@@ -364,7 +365,19 @@ export const ClientsView: React.FC = () => {
               </div>
               <div className="flex flex-col sm:flex-row gap-3 mt-6">
                 <button type="button" onClick={() => { setIsModalOpen(false); resetForm(); }} className="flex-1 py-2 border rounded-lg hover:bg-slate-50">Cancelar</button>
-                <button type="submit" className="flex-1 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">Salvar</button>
+                <button
+                  type="submit"
+                  disabled={isSavingClient}
+                  className="flex-1 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isSavingClient ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} /> Salvando...
+                    </>
+                  ) : (
+                    'Salvar'
+                  )}
+                </button>
               </div>
             </form>
           </div>
