@@ -63,8 +63,8 @@ export const generateNoteHash = () => {
 };
 
 // --- N8N INTEGRATION ---
-// Substitua pela URL do seu Webhook de produção
-const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://seu-n8n.com/webhook/cobranca-ia';
+// Webhook padrão apontando para o agente de clientes no n8n
+const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://n8n.aiagentautomate.com.br/webhook/clientes';
 
 export async function sendToN8N(payload: any) {
   try {
