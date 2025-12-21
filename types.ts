@@ -10,6 +10,8 @@ export interface User {
   password?: string;
   role: UserRole;
   whatsappContacts?: string[];
+  tenantId?: string;
+  tenantName?: string;
 }
 
 export interface Client {
