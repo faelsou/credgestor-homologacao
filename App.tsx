@@ -438,12 +438,27 @@ const App: React.FC = () => {
   };
 
   const scheduleFuturePayment = (id: string, reason: string, amount: number, date?: string) => {
-    setInstallments(prev => prev.map(inst => inst.id === id ? {
-      ...inst,
-      promisedPaymentReason: reason,
-      promisedPaymentAmount: amount,
-      promisedPaymentDate: date
-    } : inst));
+    const createdAt = new Date().toISOString();
+    setInstallments(prev => prev.map(inst => {
+      if (inst.id !== id) return inst;
+
+      const entry = {
+        reason,
+        amount,
+        date: date || getTodayDateString(),
+        createdAt
+      };
+
+      const promisedPaymentHistory = [...(inst.promisedPaymentHistory ?? []), entry];
+
+      return {
+        ...inst,
+        promisedPaymentReason: entry.reason,
+        promisedPaymentAmount: entry.amount,
+        promisedPaymentDate: entry.date,
+        promisedPaymentHistory
+      };
+    }));
   };
 
   const startEditingLoan = (loanId: string) => {
