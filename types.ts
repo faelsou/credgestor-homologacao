@@ -66,6 +66,13 @@ export enum InstallmentStatus {
   PARTIAL = 'PARTIAL'
 }
 
+export interface PromisedPaymentHistoryEntry {
+  reason: string;
+  amount: number;
+  date: string;
+  createdAt: string;
+}
+
 export interface Installment {
   id: string;
   loanId: string;
@@ -79,6 +86,7 @@ export interface Installment {
   promisedPaymentReason?: string;
   promisedPaymentAmount?: number;
   promisedPaymentDate?: string;
+  promisedPaymentHistory?: PromisedPaymentHistoryEntry[];
   status: InstallmentStatus;
   paidDate?: string;
 }

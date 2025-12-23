@@ -63,6 +63,52 @@ export const InstallmentsView: React.FC = () => {
     return interest > 0 ? interest : inst.amount;
   };
 
+  const getLatestPromise = (inst: Installment) => inst.promisedPaymentHistory?.[inst.promisedPaymentHistory.length - 1];
+
+  const getPromiseDefaults = (inst: Installment) => {
+    const latest = getLatestPromise(inst);
+    return {
+      reason: latest?.reason ?? inst.promisedPaymentReason ?? '',
+      amount: latest?.amount ?? inst.promisedPaymentAmount ?? getInterestAmount(inst),
+      date: latest?.date ?? inst.promisedPaymentDate ?? getTodayDateString()
+    };
+  };
+
+  const renderPromiseInfo = (inst: Installment) => {
+    const latest = getLatestPromise(inst);
+    const shouldShowPromise = latest || inst.promisedPaymentAmount || inst.promisedPaymentReason;
+    if (!shouldShowPromise) return null;
+
+    const history = inst.promisedPaymentHistory ?? (latest ? [latest] : []);
+    const recentHistory = history.slice(-3).reverse();
+
+    return (
+      <div className="mt-1 text-xs">
+        <span className="block text-xs text-purple-700 font-semibold">
+          Promessa: {formatCurrency(latest?.amount ?? inst.promisedPaymentAmount ?? 0)} — {latest?.reason ?? inst.promisedPaymentReason || 'Sem motivo informado'}
+        </span>
+        {(() => {
+          const targetDate = latest?.date || inst.promisedPaymentDate;
+          return targetDate ? (
+            <span className="block text-[11px] text-purple-600">Agendado para {formatDate(targetDate)}</span>
+          ) : null;
+        })()}
+        {recentHistory.length > 0 && (
+          <div className="mt-1 space-y-1">
+            <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-wide">Histórico de agendamentos</p>
+            {recentHistory.map((entry, idx) => (
+              <div key={`${entry.createdAt}-${idx}`} className="flex flex-col rounded-lg border border-slate-100 bg-slate-50 px-2 py-1">
+                <span className="text-[11px] text-slate-700 font-semibold">{formatDate(entry.date)} • {formatCurrency(entry.amount)}</span>
+                <span className="text-[11px] text-slate-600">{entry.reason}</span>
+                <span className="text-[10px] text-slate-400">Registrado em {formatDate(entry.createdAt)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const getPrincipalAmount = (inst: Installment) => {
     const interest = inst.interestAmount ?? 0;
     return inst.principalAmount ?? Math.max(0, inst.amount - interest);
@@ -86,9 +132,10 @@ export const InstallmentsView: React.FC = () => {
 
   const openPromiseModal = (inst: Installment) => {
     setPromiseModal(inst);
-    setPromiseReason(inst.promisedPaymentReason || '');
-    setPromiseAmount(inst.promisedPaymentAmount || getInterestAmount(inst));
-    setPromiseDate(inst.promisedPaymentDate || getTodayDateString());
+    const defaults = getPromiseDefaults(inst);
+    setPromiseReason(defaults.reason);
+    setPromiseAmount(defaults.amount);
+    setPromiseDate(defaults.date);
   };
 
   const handleSavePromise = () => {
@@ -179,14 +226,7 @@ export const InstallmentsView: React.FC = () => {
                     <td className="p-4 font-medium">
                       {formatCurrency(inst.amount)}
                       <span className="block text-xs text-slate-500">Capital: {formatCurrency(getPrincipalAmount(inst))} • Juros: {formatCurrency(getInterestAmount(inst))}</span>
-                      {(inst.promisedPaymentAmount || inst.promisedPaymentReason) && (
-                        <span className="block text-xs text-purple-700 font-semibold mt-1">
-                          Promessa: {formatCurrency(inst.promisedPaymentAmount || 0)} — {inst.promisedPaymentReason || 'Sem motivo informado'}
-                          {inst.promisedPaymentDate && (
-                            <span className="block text-[11px] text-purple-600">Agendado para {formatDate(inst.promisedPaymentDate)}</span>
-                          )}
-                        </span>
-                      )}
+                      {renderPromiseInfo(inst)}
                       {inst.amountPaid > 0 && inst.amountPaid < inst.amount && (
                         <span className="block text-xs text-amber-600 font-semibold">Recebido: {formatCurrency(inst.amountPaid)}</span>
                       )}
@@ -242,14 +282,7 @@ export const InstallmentsView: React.FC = () => {
                             {inst.amountPaid > 0 && inst.amountPaid < inst.amount && (
                               <div className="text-xs text-amber-600 font-semibold">Recebido: {formatCurrency(inst.amountPaid)}</div>
                             )}
-                            {(inst.promisedPaymentAmount || inst.promisedPaymentReason) && (
-                              <div className="text-xs text-purple-700 font-semibold mt-1">
-                                Promessa: {formatCurrency(inst.promisedPaymentAmount || 0)} — {inst.promisedPaymentReason || 'Sem motivo informado'}
-                                {inst.promisedPaymentDate && (
-                                  <div className="text-[11px] text-purple-600">Agendado para {formatDate(inst.promisedPaymentDate)}</div>
-                                )}
-                              </div>
-                            )}
+                            {renderPromiseInfo(inst)}
                              {renderStatus(inst, late)}
                         </div>
                     </div>

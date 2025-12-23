@@ -268,25 +268,60 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     return interest > 0 ? interest : inst.amount;
   };
 
+  const getLatestPromise = (inst: Installment) => inst.promisedPaymentHistory?.[inst.promisedPaymentHistory.length - 1];
+
+  const getPromiseDefaults = (inst: Installment) => {
+    const latest = getLatestPromise(inst);
+    return {
+      reason: latest?.reason ?? inst.promisedPaymentReason ?? '',
+      amount: latest?.amount ?? inst.promisedPaymentAmount ?? getInterestAmount(inst),
+      date: latest?.date ?? inst.promisedPaymentDate ?? getTodayDateString()
+    };
+  };
+
+  const renderPromiseHistory = (inst: Installment) => {
+    const history = inst.promisedPaymentHistory;
+    if (!history?.length) return null;
+
+    const recentHistory = history.slice(-3).reverse();
+    return (
+      <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1">
+        <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Histórico de agendamentos</p>
+        {recentHistory.map((entry, idx) => (
+          <div key={`${entry.createdAt}-${idx}`} className="text-xs text-slate-700 leading-snug">
+            <div className="font-semibold">{formatDate(entry.date)} • {formatCurrency(entry.amount)}</div>
+            <div>{entry.reason}</div>
+            <div className="text-[10px] text-slate-500">Registrado em {formatDate(entry.createdAt)}</div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const findNextInstallment = (loanId: string) => {
+    return installments
+      .filter(inst => inst.loanId === loanId && inst.status !== InstallmentStatus.PAID)
+      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
+  };
+
   const getPrincipalAmount = (inst: Installment) => {
     const interest = inst.interestAmount ?? 0;
     return inst.principalAmount ?? Math.max(0, inst.amount - interest);
   };
 
   const openPromiseModal = (loan: Loan) => {
-    const nextInst = installments
-      .filter(inst => inst.loanId === loan.id && inst.status !== InstallmentStatus.PAID)
-      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
+    const nextInst = findNextInstallment(loan.id);
 
     if (!nextInst) {
       alert('Nenhuma parcela pendente para agendar recebimento.');
       return;
     }
 
+    const defaults = getPromiseDefaults(nextInst);
     setPromiseModal({ loan, installment: nextInst });
-    setPromiseReason(nextInst.promisedPaymentReason || '');
-    setPromiseAmount(nextInst.promisedPaymentAmount || getInterestAmount(nextInst));
-    setPromiseDate(nextInst.promisedPaymentDate || getTodayDateString());
+    setPromiseReason(defaults.reason);
+    setPromiseAmount(defaults.amount);
+    setPromiseDate(defaults.date);
   };
 
   const handleSavePromise = () => {
@@ -443,6 +478,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
               const clientInstallments = installments.filter(inst => inst.loanId === loan.id);
               const loanClient = clients.find(c => c.id === loan.clientId);
               const clientName = loanClient?.name || getClientName(loan.clientId);
+              const nextInstallment = findNextInstallment(loan.id);
+              const latestPromise = nextInstallment ? getLatestPromise(nextInstallment) : null;
               const statusStyle = loan.status === LoanStatus.ACTIVE
                 ? 'bg-blue-100 text-blue-700'
                 : loan.status === LoanStatus.PAID
@@ -456,7 +493,15 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
 
               return (
               <tr key={loan.id} className="hover:bg-slate-50 transition">
-                <td className="p-4 font-medium text-slate-800">{clientName}</td>
+                <td className="p-4 font-medium text-slate-800">
+                  {clientName}
+                  {latestPromise && latestPromise.date && (
+                    <div className="mt-1 text-xs text-purple-700 font-semibold leading-snug">
+                      Próximo agendamento: {formatDate(latestPromise.date)} — {formatCurrency(latestPromise.amount)}
+                      <div className="text-[11px] text-slate-500 font-normal">{latestPromise.reason}</div>
+                    </div>
+                  )}
+                </td>
                 <td className="p-4">{formatCurrency(loan.amount)}</td>
                 <td className="p-4 font-semibold text-emerald-600">{formatCurrency(loan.totalAmount)}</td>
                 <td className="p-4 text-slate-600">{loanModelLabel(loan.model)}</td>
@@ -822,6 +867,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 />
               </div>
             </div>
+
+            {renderPromiseHistory(promiseModal.installment)}
 
             <div className="flex gap-3 mt-6">
               <button onClick={() => setPromiseModal(null)} className="flex-1 py-2 rounded-lg border hover:bg-slate-50">Cancelar</button>
