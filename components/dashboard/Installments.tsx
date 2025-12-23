@@ -85,7 +85,7 @@ export const InstallmentsView: React.FC = () => {
     return (
       <div className="mt-1 text-xs">
         <span className="block text-xs text-purple-700 font-semibold">
-          Promessa: {formatCurrency(latest?.amount ?? inst.promisedPaymentAmount ?? 0)} — {latest?.reason ?? inst.promisedPaymentReason || 'Sem motivo informado'}
+          Promessa: {formatCurrency(latest?.amount ?? inst.promisedPaymentAmount ?? 0)} — {(latest?.reason ?? inst.promisedPaymentReason) || 'Sem motivo informado'}
         </span>
         {(() => {
           const targetDate = latest?.date || inst.promisedPaymentDate;
