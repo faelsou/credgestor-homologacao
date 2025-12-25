@@ -107,12 +107,25 @@ export const ClientsView: React.FC = () => {
       status: newClient.status || 'active'
     };
 
+    const sendClientToWebhook = async (client: Client) => {
+      try {
+        await fetch('https://n8n.aiagentautomate.com.br/webhook/clientes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(client)
+        });
+      } catch (error) {
+        console.error('Erro ao enviar cliente para o webhook', error);
+      }
+    };
+
     setIsSavingClient(true);
     try {
       if (editingClientId) {
         updateClient(clientToSave);
       } else {
         await addClient(clientToSave);
+        await sendClientToWebhook(clientToSave);
       }
 
       setIsModalOpen(false);
