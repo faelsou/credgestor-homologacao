@@ -1,7 +1,7 @@
 import { Client, User, UserRole } from './types';
 import { formatCep, formatCpf, formatPhone, stripNonDigits } from './utils';
 
-const N8N_BASE_URL = (import.meta.env.VITE_N8N_BASE_URL as string | undefined)?.replace(/\/$/, '');
+const N8N_BASE_URL = ((import.meta.env.VITE_N8N_BASE_URL as string | undefined) ?? 'https://n8n.aiagentautomate.com.br/webhook').replace(/\/$/, '');
 const DEFAULT_TENANT_ID = import.meta.env.VITE_N8N_TENANT_ID as string | undefined;
 
 export const isN8NBackendConfigured = Boolean(N8N_BASE_URL);
@@ -55,7 +55,9 @@ export async function loginWithN8N(email: string, password: string): Promise<N8N
     throw new Error('N8N backend não configurado.');
   }
 
-  const response = await fetch(buildUrl('auth/login'), {
+  const loginUrl = (import.meta.env.VITE_N8N_LOGIN_URL as string | undefined)?.replace(/\/$/, '') || `${N8N_BASE_URL}/auth/login`;
+
+  const response = await fetch(loginUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, senha: password }),
