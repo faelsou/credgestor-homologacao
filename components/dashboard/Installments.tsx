@@ -5,7 +5,7 @@ import { InstallmentStatus, Installment, UserRole } from '../../types';
 import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Bot } from 'lucide-react';
 
 export const InstallmentsView: React.FC = () => {
-  const { installments, clients, payInstallment, scheduleFuturePayment, user } = useContext(AppContext);
+  const { installments, clients, payInstallment, scheduleFuturePayment, user, n8nSession } = useContext(AppContext);
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'LATE' | 'PAID'>('ALL');
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
   const [paymentMode, setPaymentMode] = useState<'INTEREST' | 'CUSTOM'>('INTEREST');
@@ -39,7 +39,7 @@ export const InstallmentsView: React.FC = () => {
         daysLate: isLate(inst.dueDate) ? Math.floor((new Date().getTime() - new Date(inst.dueDate).getTime()) / (1000 * 3600 * 24)) : 0
       };
       
-      sendToN8N(payload);
+      sendToN8N(payload, { accessToken: n8nSession?.accessToken });
       alert('Solicitação enviada para o Agente IA! A mensagem será enviada em breve.');
     } else {
       // Fallback: Link direto

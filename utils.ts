@@ -66,16 +66,29 @@ export const generateNoteHash = () => {
 // Webhook padrão apontando para o agente de clientes no n8n
 const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://n8n.aiagentautomate.com.br/webhook/clientes';
 
-export async function sendToN8N(payload: any) {
+type SendToN8NOptions = {
+  accessToken?: string;
+  webhookUrl?: string;
+};
+
+export async function sendToN8N(payload: any, options: SendToN8NOptions = {}) {
+  const { accessToken, webhookUrl } = options;
   try {
-    if (!N8N_WEBHOOK_URL || N8N_WEBHOOK_URL.includes('seu-n8n')) {
+    const targetUrl = webhookUrl || N8N_WEBHOOK_URL;
+
+    if (!targetUrl || targetUrl.includes('seu-n8n')) {
       console.log('[N8N Webhook Disparado - modo simulado]', payload);
       return true;
     }
 
-    const response = await fetch(N8N_WEBHOOK_URL, {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+    }
+
+    const response = await fetch(targetUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(payload)
     });
 
