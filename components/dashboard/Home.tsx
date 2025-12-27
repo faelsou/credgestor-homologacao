@@ -6,7 +6,7 @@ import { InstallmentStatus, LoanStatus, UserRole } from '../../types';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 export const DashboardHome: React.FC = () => {
-  const { clients, installments, loans, user, setView, usersList } = useContext(AppContext);
+  const { clients, installments, loans, user, setView, usersList, n8nSession } = useContext(AppContext);
   const [sendingReport, setSendingReport] = useState(false);
   const [detailFilter, setDetailFilter] = useState<'PAID' | 'RECEIVABLE' | 'LATE' | null>(null);
   const today = new Date().toISOString().split('T')[0];
@@ -161,7 +161,7 @@ export const DashboardHome: React.FC = () => {
       }))
     };
 
-    await sendToN8N(payload);
+    await sendToN8N(payload, { accessToken: n8nSession?.accessToken });
 
     setTimeout(() => {
       alert(`Relatório enviado para ${adminContacts.length} contato(s) de Admin no WhatsApp! (${stats.lateCount} atrasos identificados)`);

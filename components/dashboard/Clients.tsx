@@ -2,10 +2,10 @@ import React, { useContext, useState } from 'react';
 import { AppContext } from '../../App';
 import { Search, Plus, Phone, Mail, User, Pencil, Trash2, MapPin, Loader2 } from 'lucide-react';
 import { Client, UserRole } from '../../types';
-import { formatCep, formatCpf, formatPhone } from '../../utils';
+import { formatCep, formatCpf, formatPhone, sendToN8N } from '../../utils';
 
 export const ClientsView: React.FC = () => {
-  const { clients, addClient, updateClient, deleteClient, user, loans } = useContext(AppContext);
+  const { clients, addClient, updateClient, deleteClient, user, loans, n8nSession } = useContext(AppContext);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
@@ -109,11 +109,7 @@ export const ClientsView: React.FC = () => {
 
     const sendClientToWebhook = async (client: Client) => {
       try {
-        await fetch('https://n8n.aiagentautomate.com.br/webhook/clientes', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(client)
-        });
+        await sendToN8N(client, { accessToken: n8nSession?.accessToken });
       } catch (error) {
         console.error('Erro ao enviar cliente para o webhook', error);
       }
