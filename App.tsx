@@ -287,7 +287,6 @@ const App: React.FC = () => {
 
     if (!isSupabaseConfigured || !supabase) {
       setUsersList(MOCK_USERS);
-      setUser(MOCK_USERS[0]);
       return;
     }
 
@@ -340,10 +339,17 @@ const App: React.FC = () => {
     }
 
     if (!isSupabaseConfigured || !supabase) {
-      const fallbackUser = MOCK_USERS.find(u => u.email === email) ?? MOCK_USERS[0];
-      setUser(fallbackUser);
-      setView('home');
-      return true;
+      if (!password) return false;
+
+      const fallbackUser = MOCK_USERS.find(u => u.email === email && u.password === password);
+
+      if (fallbackUser) {
+        setUser(fallbackUser);
+        setView('home');
+        return true;
+      }
+
+      return false;
     }
 
     if (provider === 'google') {
