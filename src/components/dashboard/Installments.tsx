@@ -1,8 +1,8 @@
 import React, { useContext, useState } from 'react';
-import { AppContext } from '../../App';
-import { formatCurrency, formatDate, getTodayDateString, isLate, sendToN8N } from '../../utils';
-import { InstallmentStatus, Installment, UserRole } from '../../types';
 import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Bot } from 'lucide-react';
+import { AppContext } from '@/pages/App';
+import { formatCurrency, formatDate, getTodayDateString, isLate, sendToN8N } from '@/utils';
+import { InstallmentStatus, Installment, UserRole } from '@/types';
 
 export const InstallmentsView: React.FC = () => {
   const { installments, clients, payInstallment, scheduleFuturePayment, user, n8nSession } = useContext(AppContext);

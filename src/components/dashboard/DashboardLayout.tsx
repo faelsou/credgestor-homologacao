@@ -1,8 +1,8 @@
 import React, { useContext, useMemo, useState } from 'react';
-import { AppContext, ThemeOption } from '../../App';
 import { Home, Users, DollarSign, Calendar, LogOut, Menu, X, Shield, Briefcase, MoonStar, SunMedium, Palette, History } from 'lucide-react';
-import { cn } from '../../utils';
-import { UserRole } from '../../types';
+import { AppContext, ThemeOption } from '@/pages/App';
+import { cn } from '@/utils';
+import { UserRole } from '@/types';
 
 export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, logout, view, setView, theme, setTheme } = useContext(AppContext);

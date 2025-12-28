@@ -1,8 +1,8 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
-import { AppContext } from '../../App';
-import { formatCurrency, formatDate, generateNoteHash, getTodayDateString } from '../../utils';
-import { LoanStatus, Installment, InstallmentStatus, UserRole, Loan, PromissoryNote, IndicationType, Client, LoanModel } from '../../types';
 import { Plus, Calculator, Pencil, Trash2, FileText, Clock8 } from 'lucide-react';
+import { AppContext } from '@/pages/App';
+import { formatCurrency, formatDate, generateNoteHash, getTodayDateString } from '@/utils';
+import { LoanStatus, Installment, InstallmentStatus, UserRole, Loan, PromissoryNote, IndicationType, Client, LoanModel } from '@/types';
 
 interface LoansViewProps {
   editingLoanId?: string | null;

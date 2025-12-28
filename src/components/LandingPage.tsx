@@ -1,6 +1,6 @@
 import React, { useContext, useState } from 'react';
 import { Menu, X, CheckCircle, TrendingUp, Shield, Smartphone, ArrowRight, BarChart3, Users, PieChart, MessageCircle, Lock, Mail } from 'lucide-react';
-import { AppContext } from '../App';
+import { AppContext } from '@/pages/App';
 
 export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
   const { login } = useContext(AppContext);
