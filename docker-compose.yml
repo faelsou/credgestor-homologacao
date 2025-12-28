@@ -2,7 +2,7 @@ version: '3.9'
 
 services:
   site:
-    image: faelsouz/credgestor:v1.0.0
+    image: faelsouz/credgestor:v1.0.7
     deploy:
       replicas: 1
       restart_policy:
