@@ -13,6 +13,8 @@ import { isSupabaseConfigured, supabase } from './supabaseClient';
 import { createN8NClient, fetchN8NClients, isN8NBackendConfigured, loginWithN8N } from './n8nApi';
 
 // --- MOCK DATA INITIALIZATION ---
+const CLIENTS_STORAGE_KEY = 'credgestor:clients';
+
 const MOCK_CLIENTS: Client[] = [
   {
     id: '1',
@@ -151,7 +153,21 @@ const App: React.FC = () => {
   const [view, setView] = useState('home'); // home, clients, loans, installments, users
   
   // App Data State
-  const [clients, setClients] = useState<Client[]>(MOCK_CLIENTS);
+  const [clients, setClients] = useState<Client[]>(() => {
+    if (typeof window === 'undefined') return MOCK_CLIENTS;
+
+    const storedClients = localStorage.getItem(CLIENTS_STORAGE_KEY);
+    if (!storedClients) return MOCK_CLIENTS;
+
+    try {
+      const parsed: Client[] = JSON.parse(storedClients);
+      return parsed.length ? parsed : MOCK_CLIENTS;
+    } catch (error) {
+      console.error('Não foi possível ler clientes salvos localmente', error);
+      localStorage.removeItem(CLIENTS_STORAGE_KEY);
+      return MOCK_CLIENTS;
+    }
+  });
   const [loans, setLoans] = useState<Loan[]>(MOCK_LOANS);
   const [installments, setInstallments] = useState<Installment[]>(MOCK_INSTALLMENTS);
   const [usersList, setUsersList] = useState<User[]>([]);
@@ -195,6 +211,12 @@ const App: React.FC = () => {
       localStorage.removeItem(N8N_SESSION_STORAGE_KEY);
     }
   }, [n8nSession, user, usingN8NBackend]);
+
+  useEffect(() => {
+    if (usingN8NBackend) return;
+
+    localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(clients));
+  }, [clients, usingN8NBackend]);
 
   useEffect(() => {
     if (!usingN8NBackend || !n8nSession?.accessToken) return;

@@ -28,6 +28,7 @@ export interface Client {
   state: string;
   status: 'active' | 'blocked';
   notes?: string;
+  birthDate?: string;
 }
 
 export enum LoanStatus {
