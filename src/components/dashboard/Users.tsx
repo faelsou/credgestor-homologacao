@@ -1,7 +1,7 @@
 import React, { useContext, useState } from 'react';
-import { AppContext } from '../../App';
-import { UserRole, User } from '../../types';
 import { Shield, Briefcase, Plus, Trash2, Mail } from 'lucide-react';
+import { AppContext } from '@/pages/App';
+import { UserRole, User } from '@/types';
 
 export const UsersView: React.FC = () => {
   const { usersList, addUser, removeUser, user } = useContext(AppContext);

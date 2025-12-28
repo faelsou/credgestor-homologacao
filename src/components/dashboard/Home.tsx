@@ -1,9 +1,9 @@
 import React, { useContext, useMemo, useState } from 'react';
-import { AppContext } from '../../App';
 import { TrendingUp, TrendingDown, Users, AlertTriangle, Send, FileText, X, Calendar, DownloadCloud, Filter } from 'lucide-react';
-import { formatCurrency, formatDate, isLate, sendToN8N } from '../../utils';
-import { InstallmentStatus, LoanStatus, UserRole } from '../../types';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { AppContext } from '@/pages/App';
+import { formatCurrency, formatDate, isLate, sendToN8N } from '@/utils';
+import { InstallmentStatus, LoanStatus, UserRole } from '@/types';
 
 export const DashboardHome: React.FC = () => {
   const { clients, installments, loans, user, setView, usersList, n8nSession } = useContext(AppContext);

@@ -1,8 +1,8 @@
 import React, { useContext, useMemo, useState } from 'react';
-import { AppContext } from '../../App';
-import { formatCurrency, formatDate, getTodayDateString } from '../../utils';
-import { Installment, InstallmentStatus, LoanStatus } from '../../types';
 import { Search, CalendarRange, Pencil, Clock8 } from 'lucide-react';
+import { AppContext } from '@/pages/App';
+import { formatCurrency, formatDate, getTodayDateString } from '@/utils';
+import { Installment, InstallmentStatus, LoanStatus } from '@/types';
 
 export const LoanHistoryView: React.FC = () => {
   const { loans, clients, installments, scheduleFuturePayment, startEditingLoan } = useContext(AppContext);

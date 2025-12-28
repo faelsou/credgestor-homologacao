@@ -1,5 +1,5 @@
-import { Client, User, UserRole } from './types';
-import { formatCep, formatCpf, formatPhone, stripNonDigits } from './utils';
+import { Client, User, UserRole } from '@/types';
+import { formatCep, formatCpf, formatPhone, stripNonDigits } from '@/utils';
 
 const N8N_BASE_URL = ((import.meta.env.VITE_N8N_BASE_URL as string | undefined) ?? 'https://n8n.aiagentautomate.com.br/webhook').replace(/\/$/, '');
 const DEFAULT_TENANT_ID = import.meta.env.VITE_N8N_TENANT_ID as string | undefined;

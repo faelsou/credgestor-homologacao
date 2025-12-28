@@ -1377,18 +1377,18 @@
 //export default App;
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { LandingPage } from './components/LandingPage';
-import { DashboardLayout } from './components/dashboard/DashboardLayout';
-import { DashboardHome } from './components/dashboard/Home';
-import { ClientsView } from './components/dashboard/Clients';
-import { LoansView } from './components/dashboard/Loans';
-import { InstallmentsView } from './components/dashboard/Installments';
-import { UsersView } from './components/dashboard/Users';
-import { LoanHistoryView } from './components/dashboard/LoanHistory';
-import { User, UserRole, Client, Loan, Installment, LoanStatus, InstallmentStatus, LoanModel } from './types';
-import { getTodayDateString, isLate } from './utils';
-import { isSupabaseConfigured, supabase } from './supabaseClient';
-import { createN8NClient, fetchN8NClients, isN8NBackendConfigured, loginWithN8N } from './n8nApi';
+import { LandingPage } from '@/components/LandingPage';
+import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
+import { DashboardHome } from '@/components/dashboard/Home';
+import { ClientsView } from '@/components/dashboard/Clients';
+import { LoansView } from '@/components/dashboard/Loans';
+import { InstallmentsView } from '@/components/dashboard/Installments';
+import { UsersView } from '@/components/dashboard/Users';
+import { LoanHistoryView } from '@/components/dashboard/LoanHistory';
+import { User, UserRole, Client, Loan, Installment, LoanStatus, InstallmentStatus, LoanModel } from '@/types';
+import { getTodayDateString, isLate } from '@/utils';
+import { isSupabaseConfigured, supabase } from '@/services/supabaseClient';
+import { createN8NClient, fetchN8NClients, isN8NBackendConfigured, loginWithN8N } from '@/services/n8nApi';
 
 // --- MOCK DATA INITIALIZATION ---
 const CLIENTS_STORAGE_KEY = 'credgestor:clients';
