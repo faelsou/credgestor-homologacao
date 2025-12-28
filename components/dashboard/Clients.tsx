@@ -19,6 +19,7 @@ export const ClientsView: React.FC = () => {
     cpf: '',
     phone: '',
     email: '',
+    birthDate: '',
     cep: '',
     street: '',
     complement: '',
@@ -66,6 +67,7 @@ export const ClientsView: React.FC = () => {
       cpf: '',
       phone: '',
       email: '',
+      birthDate: '',
       cep: '',
       street: '',
       complement: '',
@@ -98,6 +100,7 @@ export const ClientsView: React.FC = () => {
       cpf: newClient.cpf,
       phone: newClient.phone || '',
       email: newClient.email || '',
+      birthDate: newClient.birthDate || '',
       cep: newClient.cep || '',
       street: newClient.street || '',
       complement: newClient.complement || '',
@@ -362,14 +365,23 @@ export const ClientsView: React.FC = () => {
                   />
                 </div>
               </div>
-               <div>
+              <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Email (Opcional)</label>
                 <input
                     type="email"
                     className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
                     placeholder="email@exemplo.com"
-                    value={newClient.email} 
-                    onChange={e => setNewClient({...newClient, email: e.target.value})} 
+                    value={newClient.email}
+                    onChange={e => setNewClient({...newClient, email: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Data de Nascimento (Opcional)</label>
+                <input
+                  type="date"
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
+                  value={newClient.birthDate}
+                  onChange={e => setNewClient({ ...newClient, birthDate: e.target.value })}
                 />
               </div>
               <div className="flex flex-col sm:flex-row gap-3 mt-6">

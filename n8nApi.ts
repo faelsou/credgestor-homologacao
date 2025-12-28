@@ -97,6 +97,7 @@ const normalizeApiClient = (payload: ApiClientPayload): Client => {
     city: payload.cidade || '',
     state: payload.estado || '',
     status: payload.status || 'active',
+    birthDate: payload.data_nascimento || payload.dataNascimento || '',
     notes: payload.observacoes || payload.observacao || '',
   };
 };
@@ -139,6 +140,7 @@ export async function createN8NClient(
     bairro: client.neighborhood,
     cidade: client.city,
     estado: client.state,
+    data_nascimento: client.birthDate || null,
     observacoes: client.notes,
     tenant_id_required: tenantId || DEFAULT_TENANT_ID,
   };
