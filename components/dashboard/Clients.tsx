@@ -122,6 +122,7 @@ export const ClientsView: React.FC = () => {
     try {
       if (editingClientId) {
         updateClient(clientToSave);
+        await sendClientToWebhook(clientToSave);
       } else {
         await addClient(clientToSave);
         await sendClientToWebhook(clientToSave);
