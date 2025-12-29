@@ -1803,22 +1803,23 @@ const App: React.FC = () => {
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (!error && data.user) {
-      const profile = await fetchUserProfile(data.user.id, email);
+    const authUser = data.user ?? data.session?.user;
+
+    if (!error && authUser) {
+      const profile = await fetchUserProfile(authUser.id, authUser.email ?? email);
       if (profile) {
         setUser(profile);
         setView('home');
         return true;
       }
 
-      const fallbackUser = mapAuthUserToLocalUser(data.user, email);
       setUser(fallbackUser);
       setUsersList(prev => prev.some(u => u.id === fallbackUser.id) ? prev : [...prev, fallbackUser]);
       setView('home');
       return true;
     }
 
-    console.error('Falha ao autenticar usuário', error);
+    console.error('Falha ao autenticar usuário', error ?? 'Sessão retornada sem usuário');
 
     // Fallback para usuários de demonstração caso o Supabase esteja indisponível
     const fallbackUser = MOCK_USERS.find(u => u.email === email && u.password === password);
