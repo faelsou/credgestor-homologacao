@@ -15,13 +15,13 @@ View your app in AI Studio: https://ai.studio/apps/temp/1
 
 1. Install frontend dependencies:
    `npm install`
-2. Copy [.env.example](.env.example) to `.env.local` and set:
-   - `GEMINI_API_KEY` (required for the AI features)
-   - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (frontend-safe, limited by RLS)
-   - `SUPABASE_URL` and `SUPABASE_ANON_KEY` for CLI/Node utilities such as `npm run test:supabase`
-   - `VITE_N8N_BASE_URL` (optional) apontando para seus webhooks do n8n. Ex.: `https://n8n.suaempresa.com/webhook`
-   - `VITE_N8N_TENANT_ID` (opcional) para pré-definir o tenant em chamadas públicas como `GET /clientes/:tenant_id`
-   - `VITE_N8N_WEBHOOK_URL` (opcional) para disparos de relatórios WhatsApp automatizados. O padrão deste projeto aponta para `https://n8n.aiagentautomate.com.br/webhook/clientes`.
+2. Configure your environment variables directly in the provided [.env](.env) file (already tracked for local use):
+   - `VITE_SUPABASE_URL=https://avszitcisjexrjkbkxat.supabase.co`
+   - `VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c3ppdGNpc2pleHJqa2JreGF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4NzE2MjMsImV4cCI6MjA4MTQ0NzYyM30.AyOFyM8uScHLWdhc9diTsn9WM_2dlMc5m4-jfN_LOtU`
+   - `SUPABASE_URL=https://avszitcisjexrjkbkxat.supabase.co`
+   - `SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c3ppdGNpc2pleHJqa2JreGF0Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTg3MTYyMywiZXhwIjoyMDgxNDQ3NjIzfQ.p-3mHE0HZ719ZLfOTjTeXSLC9hmlmmFfdtBZxt4qLtY`
+   - `SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c3ppdGNpc2pleHJqa2JreGF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4NzE2MjMsImV4cCI6MjA4MTQ0NzYyM30.AyOFyM8uScHLWdhc9diTsn9WM_2dlMc5m4-jfN_LOtU`
+   - `VITE_N8N_WEBHOOK_URL=https://n8n.aiagentautomate.com.br/webhook/clientes`
    - Never place the `service_role` key in frontend-facing variables; keep it only in backend services or secret managers if you need privileged tasks.
 3. Run the frontend app:
    `npm run dev`
