@@ -1025,11 +1025,24 @@ export const ClientsView: React.FC = () => {
     setIsSavingClient(true);
 
     try {
-      // 1. Salva no banco de dados via webhook n8n
+      // 1. Tenta salvar no banco de dados via webhook n8n (quando autenticado)
       const action = editingClientId ? 'update' : 'create';
-      await saveToDatabase(clientToSave, action);
+      let savedRemotely = false;
+      let remoteError: unknown = null;
 
-      // 2. Atualiza o estado local após confirmar salvamento no banco
+      if (n8nSession?.accessToken) {
+        try {
+          await saveToDatabase(clientToSave, action);
+          savedRemotely = true;
+        } catch (error) {
+          console.warn('⚠️ Não foi possível salvar no banco de dados, seguindo com salvamento local.', error);
+          remoteError = error;
+        }
+      } else {
+        console.log('ℹ️ Sessão n8n não encontrada - salvando cliente apenas localmente.');
+      }
+
+      // 2. Atualiza o estado local independentemente do resultado do backend
       if (editingClientId) {
         console.log('✏️ Atualizando cliente no estado local');
         updateClient(clientToSave);
@@ -1039,7 +1052,11 @@ export const ClientsView: React.FC = () => {
       }
 
       console.log('✅ Cliente salvo com sucesso!');
-      
+
+      if (!savedRemotely && remoteError) {
+        alert('Cliente salvo localmente, mas não foi possível sincronizar com o banco de dados. Verifique a conexão e tente novamente.');
+      }
+
       setIsModalOpen(false);
       resetForm();
     } catch (error) {
