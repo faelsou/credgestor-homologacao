@@ -1,10 +1,36 @@
 import { Client, User, UserRole } from '@/types';
 import { formatCep, formatCpf, formatPhone, stripNonDigits } from '@/utils';
 
-const N8N_BASE_URL = (import.meta.env.VITE_N8N_BASE_URL as string | undefined)?.replace(/\/$/, '');
-const DEFAULT_TENANT_ID = import.meta.env.VITE_N8N_TENANT_ID as string | undefined;
+const API_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) ||
+  (import.meta.env.VITE_N8N_BASE_URL as string | undefined);
 
-export const isN8NBackendConfigured = Boolean(N8N_BASE_URL);
+const NORMALIZED_BASE_URL = API_BASE_URL?.replace(/\/$/, '');
+
+const resolveLoginUrl = () => {
+  const explicitLoginUrl =
+    (import.meta.env.VITE_API_LOGIN_URL as string | undefined) ||
+    (import.meta.env.VITE_N8N_LOGIN_URL as string | undefined);
+
+  if (explicitLoginUrl) {
+    return explicitLoginUrl.replace(/\/$/, '');
+  }
+
+  if (NORMALIZED_BASE_URL) {
+    return `${NORMALIZED_BASE_URL}/auth/login`;
+  }
+
+  return undefined;
+};
+
+const CONFIGURED_LOGIN_URL = resolveLoginUrl();
+
+const DEFAULT_TENANT_ID =
+  (import.meta.env.VITE_API_TENANT_ID as string | undefined) ||
+  (import.meta.env.VITE_N8N_TENANT_ID as string | undefined);
+
+// Mantém o nome exportado para compatibilidade com o restante da aplicação
+export const isN8NBackendConfigured = Boolean(NORMALIZED_BASE_URL || CONFIGURED_LOGIN_URL);
 
 type ApiClientPayload = Record<string, any>;
 
@@ -18,8 +44,8 @@ const toJson = async (response: Response) => {
 };
 
 const buildUrl = (path: string) => {
-  if (!N8N_BASE_URL) throw new Error('N8N base URL is not configured');
-  return `${N8N_BASE_URL}/${path.replace(/^\//, '')}`;
+  if (!NORMALIZED_BASE_URL) throw new Error('N8N base URL is not configured');
+  return `${NORMALIZED_BASE_URL}/${path.replace(/^\//, '')}`;
 };
 
 const assertOk = (response: Response, body: any) => {
@@ -51,15 +77,13 @@ export interface N8NLoginResult {
 }
 
 export async function loginWithN8N(email: string, password: string): Promise<N8NLoginResult> {
-  if (!isN8NBackendConfigured) {
+  if (!CONFIGURED_LOGIN_URL) {
     throw new Error('N8N backend não configurado.');
   }
 
   const tenantId = DEFAULT_TENANT_ID;
 
-  const loginUrl = (import.meta.env.VITE_N8N_LOGIN_URL as string | undefined)?.replace(/\/$/, '') || `${N8N_BASE_URL}/auth/login`;
-
-  const response = await fetch(loginUrl, {
+  const response = await fetch(CONFIGURED_LOGIN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, senha: password, tenant_id: tenantId }),

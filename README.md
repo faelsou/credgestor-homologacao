@@ -16,6 +16,8 @@ View your app in AI Studio: https://ai.studio/apps/temp/1
 1. Install frontend dependencies:
    `npm install`
 2. Configure your environment variables directly in the provided [.env](.env) file (already tracked for local use):
+   - `VITE_API_BASE_URL=http://localhost:8000` (URL do backend Python; opcionalmente use `VITE_N8N_BASE_URL` para compatibilidade)
+   - `VITE_API_LOGIN_URL=https://credgestor.app.br/auth/login` (opcional; força usar um endpoint de login específico mesmo sem `VITE_API_BASE_URL`)
    - `VITE_SUPABASE_URL=https://avszitcisjexrjkbkxat.supabase.co`
    - `VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c3ppdGNpc2pleHJqa2JreGF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4NzE2MjMsImV4cCI6MjA4MTQ0NzYyM30.AyOFyM8uScHLWdhc9diTsn9WM_2dlMc5m4-jfN_LOtU`
    - `SUPABASE_URL=https://avszitcisjexrjkbkxat.supabase.co`
