@@ -38,6 +38,11 @@ export const isN8NBackendConfigured = Boolean(NORMALIZED_BASE_URL || CONFIGURED_
 
 type ApiClientPayload = Record<string, any>;
 
+const sanitizeToken = (token?: string | null) => {
+  const cleaned = token?.replace(/[\r\n]+/g, '').trim();
+  return cleaned && cleaned.length > 0 ? cleaned : null;
+};
+
 const toJson = async (response: Response) => {
   const text = await response.text();
   try {
@@ -97,10 +102,16 @@ export async function loginWithN8N(email: string, password: string): Promise<N8N
   assertOk(response, body);
 
   const user = mapApiUserToUser(body.usuario || {});
+  const accessToken = sanitizeToken(body.access_token);
+  const refreshToken = sanitizeToken(body.refresh_token);
+
+  if (!accessToken) {
+    throw new Error('Token de acesso inválido recebido do backend.');
+  }
 
   return {
-    accessToken: body.access_token,
-    refreshToken: body.refresh_token,
+    accessToken,
+    refreshToken: refreshToken || '',
     tokenType: body.token_type || 'Bearer',
     expiresIn: body.expires_in ?? 900,
     accessExpiresAt: body.access_expires_at,
@@ -138,8 +149,13 @@ export async function fetchN8NClients(token: string, tenantId?: string): Promise
     throw new Error('tenant_id não informado para buscar clientes.');
   }
 
+  const bearerToken = sanitizeToken(token);
+  if (!bearerToken) {
+    throw new Error('Token de acesso inválido ou ausente para buscar clientes.');
+  }
+
   const response = await fetch(buildUrl(`clientes/${effectiveTenantId}`), {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${bearerToken}` },
   });
 
   const body = await toJson(response);
@@ -159,6 +175,11 @@ export async function createN8NClient(
   tenantId: string | undefined,
   client: Client,
 ): Promise<Client> {
+  const bearerToken = sanitizeToken(token);
+  if (!bearerToken) {
+    throw new Error('Token de acesso inválido ou ausente para criar clientes.');
+  }
+
   const payload: ApiClientPayload = {
     nome_completo: client.name,
     cpf: stripNonDigits(client.cpf),
@@ -179,7 +200,7 @@ export async function createN8NClient(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${bearerToken}`,
     },
     body: JSON.stringify(payload),
   });
