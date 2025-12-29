@@ -1386,7 +1386,7 @@ import { InstallmentsView } from '@/components/dashboard/Installments';
 import { UsersView } from '@/components/dashboard/Users';
 import { LoanHistoryView } from '@/components/dashboard/LoanHistory';
 import { User, UserRole, Client, Loan, Installment, LoanStatus, InstallmentStatus, LoanModel } from '@/types';
-import { getTodayDateString, isLate } from '@/utils';
+import { getTodayDateString, isLate, normalizeUserRole } from '@/utils';
 import { isSupabaseConfigured, supabase } from '@/services/supabaseClient';
 import { createN8NClient, fetchN8NClients, isN8NBackendConfigured, loginWithN8N } from '@/services/n8nApi';
 
@@ -1560,7 +1560,7 @@ const App: React.FC = () => {
     id: record.id,
     name: record.name ?? record.email?.split('@')[0] ?? 'Usuário',
     email: record.email,
-    role: (record.role as UserRole) ?? UserRole.ADMIN,
+    role: normalizeUserRole(record.role),
     whatsappContacts: record.whatsapp_contacts ?? [],
     password: ''
   }), []);
@@ -1574,7 +1574,7 @@ const App: React.FC = () => {
       id: authUser?.id ?? `local-${crypto.randomUUID?.() || Date.now()}`,
       email: email || 'usuario@temporario.local',
       name: derivedName,
-      role: UserRole.ADMIN,
+      role: normalizeUserRole((authUser?.user_metadata?.role as string | undefined) ?? UserRole.ADMIN),
       whatsappContacts: [],
     };
   }, []);
@@ -1587,7 +1587,11 @@ const App: React.FC = () => {
     try {
       const parsed = JSON.parse(stored) as { session: N8NSession; user: User };
       const session = { ...parsed.session, tenantId: parsed.session.tenantId ?? DEFAULT_N8N_TENANT_ID };
-      const storedUser = { ...parsed.user, tenantId: parsed.user.tenantId ?? DEFAULT_N8N_TENANT_ID };
+      const storedUser = {
+        ...parsed.user,
+        tenantId: parsed.user.tenantId ?? DEFAULT_N8N_TENANT_ID,
+        role: normalizeUserRole(parsed.user.role),
+      };
       setN8nSession(session);
       setUser(storedUser);
       setUsersList([storedUser]);
@@ -1748,7 +1752,11 @@ const App: React.FC = () => {
       if (!password) return false;
       try {
         const result = await loginWithN8N(email, password);
-        const normalizedUser = { ...result.user, tenantId: result.user.tenantId ?? DEFAULT_N8N_TENANT_ID };
+        const normalizedUser = {
+          ...result.user,
+          tenantId: result.user.tenantId ?? DEFAULT_N8N_TENANT_ID,
+          role: normalizeUserRole(result.user.role),
+        };
         const sessionInfo: N8NSession = {
           accessToken: result.accessToken,
           refreshToken: result.refreshToken,
