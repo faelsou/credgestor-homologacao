@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_service_role_key: str
     supabase_anon_key: str | None = None
+    default_tenant_id: str | None = None
 
 
 @lru_cache

@@ -1813,6 +1813,7 @@ const App: React.FC = () => {
         return true;
       }
 
+
       setUser(fallbackUser);
       setUsersList(prev => prev.some(u => u.id === fallbackUser.id) ? prev : [...prev, fallbackUser]);
       setView('home');
