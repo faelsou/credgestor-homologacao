@@ -1496,6 +1496,7 @@ type N8NSession = {
 };
 
 const N8N_SESSION_STORAGE_KEY = 'credgestor:n8n-session';
+const DEFAULT_N8N_TENANT_ID = import.meta.env.VITE_N8N_TENANT_ID as string | undefined;
 
 export type ThemeOption = 'light' | 'dark-emerald' | 'dark-graphite';
 
@@ -1571,9 +1572,11 @@ const App: React.FC = () => {
 
     try {
       const parsed = JSON.parse(stored) as { session: N8NSession; user: User };
-      setN8nSession(parsed.session);
-      setUser(parsed.user);
-      setUsersList([parsed.user]);
+      const session = { ...parsed.session, tenantId: parsed.session.tenantId ?? DEFAULT_N8N_TENANT_ID };
+      const storedUser = { ...parsed.user, tenantId: parsed.user.tenantId ?? DEFAULT_N8N_TENANT_ID };
+      setN8nSession(session);
+      setUser(storedUser);
+      setUsersList([storedUser]);
     } catch (error) {
       console.error('Não foi possível restaurar a sessão do n8n', error);
       localStorage.removeItem(N8N_SESSION_STORAGE_KEY);
@@ -1717,17 +1720,18 @@ const App: React.FC = () => {
       if (!password) return false;
       try {
         const result = await loginWithN8N(email, password);
+        const normalizedUser = { ...result.user, tenantId: result.user.tenantId ?? DEFAULT_N8N_TENANT_ID };
         const sessionInfo: N8NSession = {
           accessToken: result.accessToken,
           refreshToken: result.refreshToken,
           accessExpiresAt: result.accessExpiresAt,
           refreshExpiresAt: result.refreshExpiresAt,
-          tenantId: result.user.tenantId,
-          tenantName: result.user.tenantName,
+          tenantId: normalizedUser.tenantId,
+          tenantName: normalizedUser.tenantName,
         };
 
-        setUser(result.user);
-        setUsersList([result.user]);
+        setUser(normalizedUser);
+        setUsersList([normalizedUser]);
         setN8nSession(sessionInfo);
         setView('home');
         return true;
