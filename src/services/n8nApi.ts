@@ -1,9 +1,12 @@
 import { Client, User, UserRole } from '@/types';
 import { formatCep, formatCpf, formatPhone, stripNonDigits } from '@/utils';
 
+const DEFAULT_BASE_URL = 'https://n8n.aiagentautomate.com.br/webhook';
+
 const API_BASE_URL =
+  (import.meta.env.VITE_N8N_BASE_URL as string | undefined) ||
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ||
-  (import.meta.env.VITE_N8N_BASE_URL as string | undefined);
+  DEFAULT_BASE_URL;
 
 const NORMALIZED_BASE_URL = API_BASE_URL?.replace(/\/$/, '');
 
