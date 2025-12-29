@@ -1,5 +1,5 @@
 import { Client, User, UserRole } from '@/types';
-import { formatCep, formatCpf, formatPhone, stripNonDigits } from '@/utils';
+import { formatCep, formatCpf, formatPhone, normalizeUserRole, stripNonDigits } from '@/utils';
 
 const DEFAULT_BASE_URL = 'https://n8n.aiagentautomate.com.br/webhook';
 
@@ -69,7 +69,7 @@ export const mapApiUserToUser = (apiUser: any): User => ({
   id: apiUser.id || apiUser.user_id || '',
   name: apiUser.nome || apiUser.name || apiUser.email?.split('@')[0] || 'Usuário',
   email: apiUser.email || '',
-  role: (apiUser.role as UserRole) || UserRole.ADMIN,
+  role: normalizeUserRole(apiUser.role),
   whatsappContacts: apiUser.whatsapp_contacts || apiUser.whatsappContacts || [],
   tenantId: apiUser.tenant_id || apiUser.tenantId || DEFAULT_TENANT_ID,
   tenantName: apiUser.tenant_nome || apiUser.tenantName,

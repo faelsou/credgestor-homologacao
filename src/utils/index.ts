@@ -106,10 +106,20 @@
 
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { UserRole } from '@/types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+export const normalizeUserRole = (role?: string | null): UserRole => {
+  const normalized = role?.toString().trim().toUpperCase();
+
+  if (normalized === UserRole.COLLECTION) return UserRole.COLLECTION;
+  if (normalized === UserRole.ADMIN) return UserRole.ADMIN;
+
+  return UserRole.ADMIN;
+};
 
 export const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', {
