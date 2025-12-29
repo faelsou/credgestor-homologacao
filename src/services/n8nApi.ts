@@ -36,7 +36,7 @@ export const mapApiUserToUser = (apiUser: any): User => ({
   email: apiUser.email || '',
   role: (apiUser.role as UserRole) || UserRole.ADMIN,
   whatsappContacts: apiUser.whatsapp_contacts || apiUser.whatsappContacts || [],
-  tenantId: apiUser.tenant_id,
+  tenantId: apiUser.tenant_id || apiUser.tenantId || DEFAULT_TENANT_ID,
   tenantName: apiUser.tenant_nome || apiUser.tenantName,
 });
 
@@ -55,12 +55,14 @@ export async function loginWithN8N(email: string, password: string): Promise<N8N
     throw new Error('N8N backend não configurado.');
   }
 
+  const tenantId = DEFAULT_TENANT_ID;
+
   const loginUrl = (import.meta.env.VITE_N8N_LOGIN_URL as string | undefined)?.replace(/\/$/, '') || `${N8N_BASE_URL}/auth/login`;
 
   const response = await fetch(loginUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, senha: password }),
+    body: JSON.stringify({ email, senha: password, tenant_id: tenantId }),
   });
 
   const body = await toJson(response);
