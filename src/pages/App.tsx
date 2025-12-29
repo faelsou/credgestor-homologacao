@@ -1775,14 +1775,21 @@ const App: React.FC = () => {
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error || !data.user) {
-      console.error('Falha ao autenticar usuário', error);
-      return false;
+    if (!error && data.user) {
+      const profile = await fetchUserProfile(data.user.id, email);
+      if (profile) {
+        setUser(profile);
+        setView('home');
+        return true;
+      }
     }
 
-    const profile = await fetchUserProfile(data.user.id, email);
-    if (profile) {
-      setUser(profile);
+    console.error('Falha ao autenticar usuário', error);
+
+    // Fallback para usuários de demonstração caso o Supabase esteja indisponível
+    const fallbackUser = MOCK_USERS.find(u => u.email === email && u.password === password);
+    if (fallbackUser) {
+      setUser(fallbackUser);
       setView('home');
       return true;
     }
