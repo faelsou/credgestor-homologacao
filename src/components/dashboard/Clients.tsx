@@ -856,6 +856,7 @@
 import React, { useContext, useState } from 'react';
 import { Search, Plus, Phone, Mail, User, Pencil, Trash2, MapPin, Loader2 } from 'lucide-react';
 import { AppContext } from '@/pages/App';
+import { createN8NClient } from '@/services/n8nApi';
 import { Client, UserRole } from '@/types';
 import { formatCep, formatCpf, formatPhone } from '@/utils';
 
@@ -941,65 +942,17 @@ export const ClientsView: React.FC = () => {
   );
 
   // Função para salvar no banco via webhook n8n
-  const saveToDatabase = async (client: Client, action: 'create' | 'update') => {
+  const saveToDatabase = async (client: Client, action: 'create' | 'update'): Promise<Client | null> => {
     if (!usingN8NBackend || !n8nSession?.accessToken) {
       console.warn('Sincronização com n8n desabilitada ou sem sessão válida. Salvando apenas localmente.');
-      return false;
+      return null;
     }
-
-    const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_URL as string | undefined;
-
-    if (!webhookUrl) {
-      console.warn('URL do webhook n8n não configurada. Pulando sincronização remota.');
-      return false;
-    }
-    
-    const payload = {
-      action,
-      timestamp: new Date().toISOString(),
-      client: {
-        id: client.id,
-        nome_completo: client.name,
-        cpf: client.cpf.replace(/\D/g, ''),
-        whatsapp: client.phone.replace(/\D/g, ''),
-        email: client.email || '',
-        data_nascimento: client.birthDate || '',
-        cep: client.cep.replace(/\D/g, ''),
-        endereco: client.street || '',
-        complemento: client.complement || '',
-        bairro: client.neighborhood || '',
-        cidade: client.city || '',
-        estado: client.state || '',
-        status: client.status,
-        observacoes: client.notes || ''
-      }
-    };
-
-    console.log('📤 Enviando para banco de dados:', payload);
 
     try {
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-      };
-
-      // Adiciona token de autenticação se disponível
-      if (n8nSession?.accessToken) {
-        headers['Authorization'] = `Bearer ${n8nSession.accessToken}`;
-      }
-
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      console.log('✅ Cliente salvo no banco de dados:', result);
-      return true;
+      console.log(`📤 Sincronizando cliente via n8n (${action})`);
+      const syncedClient = await createN8NClient(n8nSession.accessToken, n8nSession.tenantId, client);
+      console.log('✅ Cliente salvo no banco de dados:', syncedClient);
+      return syncedClient;
     } catch (error) {
       console.error('❌ Erro ao salvar no banco de dados:', error);
       throw error;
@@ -1038,23 +991,26 @@ export const ClientsView: React.FC = () => {
       // 1. Tenta salvar no banco de dados via webhook n8n (quando autenticado)
       const action = editingClientId ? 'update' : 'create';
       let savedRemotely = false;
+      let remoteClient: Client | null = null;
       let remoteError: unknown = null;
 
       try {
-        await saveToDatabase(clientToSave, action);
-        savedRemotely = true;
+        remoteClient = await saveToDatabase(clientToSave, action);
+        savedRemotely = Boolean(remoteClient);
       } catch (error) {
         console.warn('⚠️ Não foi possível salvar no banco de dados, seguindo com salvamento local.', error);
         remoteError = error;
       }
 
       // 2. Atualiza o estado local independentemente do resultado do backend
+      const clientForState = remoteClient ?? clientToSave;
+
       if (editingClientId) {
         console.log('✏️ Atualizando cliente no estado local');
-        updateClient(clientToSave);
+        updateClient(clientForState);
       } else {
         console.log('➕ Adicionando cliente no estado local');
-        await addClient(clientToSave);
+        await addClient(clientForState);
       }
 
       console.log('✅ Cliente salvo com sucesso!');
