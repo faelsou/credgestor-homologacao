@@ -120,10 +120,27 @@ export async function loginWithN8N(email: string, password: string): Promise<N8N
   };
 }
 
+const normalizeClientStatus = (rawStatus: any): Client['status'] => {
+  if (rawStatus === true) return 'active';
+  if (rawStatus === false) return 'blocked';
+
+  const normalized = String(rawStatus ?? '')
+    .trim()
+    .toLowerCase();
+
+  if (!normalized) return 'active';
+
+  const activeValues = ['active', 'ativo', 'ativado', 'liberado', 'ok'];
+  if (activeValues.includes(normalized)) return 'active';
+
+  return 'blocked';
+};
+
 const normalizeApiClient = (payload: ApiClientPayload): Client => {
   const cpf = payload.cpf || payload.CPF || '';
   const phone = payload.whatsapp || payload.phone || payload.telefone || payload.whatsapp_contacts?.[0] || '';
   const cep = payload.cep || '';
+  const rawStatus = payload.status ?? payload.situacao ?? payload.ativo ?? payload.situacao_cliente;
 
   return {
     id: String(payload.id || payload.uuid || payload.user_id || crypto.randomUUID?.() || Date.now()),
@@ -137,7 +154,7 @@ const normalizeApiClient = (payload: ApiClientPayload): Client => {
     neighborhood: payload.bairro || '',
     city: payload.cidade || '',
     state: payload.estado || '',
-    status: payload.status || 'active',
+    status: normalizeClientStatus(rawStatus),
     birthDate: payload.data_nascimento || payload.dataNascimento || '',
     notes: payload.observacoes || payload.observacao || '',
   };
