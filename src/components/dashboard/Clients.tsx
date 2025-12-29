@@ -1030,16 +1030,12 @@ export const ClientsView: React.FC = () => {
       let savedRemotely = false;
       let remoteError: unknown = null;
 
-      if (n8nSession?.accessToken) {
-        try {
-          await saveToDatabase(clientToSave, action);
-          savedRemotely = true;
-        } catch (error) {
-          console.warn('⚠️ Não foi possível salvar no banco de dados, seguindo com salvamento local.', error);
-          remoteError = error;
-        }
-      } else {
-        console.log('ℹ️ Sessão n8n não encontrada - salvando cliente apenas localmente.');
+      try {
+        await saveToDatabase(clientToSave, action);
+        savedRemotely = true;
+      } catch (error) {
+        console.warn('⚠️ Não foi possível salvar no banco de dados, seguindo com salvamento local.', error);
+        remoteError = error;
       }
 
       // 2. Atualiza o estado local independentemente do resultado do backend
