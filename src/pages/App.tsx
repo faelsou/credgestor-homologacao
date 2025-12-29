@@ -1813,7 +1813,7 @@ const App: React.FC = () => {
         return true;
       }
 
-      const fallbackUser = mapAuthUserToLocalUser(authUser, email);
+
       setUser(fallbackUser);
       setUsersList(prev => prev.some(u => u.id === fallbackUser.id) ? prev : [...prev, fallbackUser]);
       setView('home');
