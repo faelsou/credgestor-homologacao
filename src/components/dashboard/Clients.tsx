@@ -860,7 +860,7 @@ import { Client, UserRole } from '@/types';
 import { formatCep, formatCpf, formatPhone } from '@/utils';
 
 export const ClientsView: React.FC = () => {
-  const { clients, addClient, updateClient, deleteClient, user, loans, n8nSession } = useContext(AppContext);
+  const { clients, addClient, updateClient, deleteClient, user, loans, n8nSession, usingN8NBackend } = useContext(AppContext);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
@@ -942,7 +942,17 @@ export const ClientsView: React.FC = () => {
 
   // Função para salvar no banco via webhook n8n
   const saveToDatabase = async (client: Client, action: 'create' | 'update') => {
-    const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://n8n.aiagentautomate.com.br/webhook/clientes';
+    if (!usingN8NBackend || !n8nSession?.accessToken) {
+      console.warn('Sincronização com n8n desabilitada ou sem sessão válida. Salvando apenas localmente.');
+      return false;
+    }
+
+    const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_URL as string | undefined;
+
+    if (!webhookUrl) {
+      console.warn('URL do webhook n8n não configurada. Pulando sincronização remota.');
+      return false;
+    }
     
     const payload = {
       action,
