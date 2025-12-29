@@ -10,10 +10,10 @@ View your app in AI Studio: https://ai.studio/apps/temp/1
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
+**Prerequisites:**  Node.js for the frontend and Python 3.10+ for the backend API.
 
 
-1. Install dependencies:
+1. Install frontend dependencies:
    `npm install`
 2. Copy [.env.example](.env.example) to `.env.local` and set:
    - `GEMINI_API_KEY` (required for the AI features)
@@ -23,8 +23,33 @@ View your app in AI Studio: https://ai.studio/apps/temp/1
    - `VITE_N8N_TENANT_ID` (opcional) para pré-definir o tenant em chamadas públicas como `GET /clientes/:tenant_id`
    - `VITE_N8N_WEBHOOK_URL` (opcional) para disparos de relatórios WhatsApp automatizados. O padrão deste projeto aponta para `https://n8n.aiagentautomate.com.br/webhook/clientes`.
    - Never place the `service_role` key in frontend-facing variables; keep it only in backend services or secret managers if you need privileged tasks.
-3. Run the app:
+3. Run the frontend app:
    `npm run dev`
+
+4. Install backend dependencies (Python):
+   ```bash
+   cd backend
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+5. Configure Supabase secrets for the backend API in the project `.env` file:
+   - `SUPABASE_URL` – URL do projeto Supabase
+   - `SUPABASE_SERVICE_ROLE_KEY` – chave `service_role` (necessária para consolidar dados multi-tenant)
+   - `SUPABASE_ANON_KEY` – opcional, caso você queira reutilizar no backend
+
+6. Start the Python backend (FastAPI) from the project root:
+   ```bash
+   uvicorn backend.main:app --reload --port 8000
+   ```
+
+   Principais rotas:
+   - `GET /health` – valida se o backend consegue carregar as variáveis de ambiente
+   - `GET /tables` – lista quais tabelas estão disponíveis
+   - `GET /tenants` e `GET /tenants/{tenant_id}` – para leitura dos tenants
+   - `GET|POST /tenants/{tenant_id}/{resource}` – leitura e criação de registros vinculados ao tenant (`clients`, `experiences`, `historic_scores`, `login_audit`, `tenant_roles`, `tenant_users`, `role_permissions`, `custom_domains`, `user_sessions`)
+   - `GET|POST /users` – leitura/criação de usuários globais
 
 ## Testar conexão com o Supabase
 
