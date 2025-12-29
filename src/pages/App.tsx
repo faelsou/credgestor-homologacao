@@ -1565,6 +1565,20 @@ const App: React.FC = () => {
     password: ''
   }), []);
 
+  const mapAuthUserToLocalUser = useCallback((authUser: { id?: string; email?: string; user_metadata?: Record<string, any> } | null, fallbackEmail?: string): User => {
+    const email = authUser?.email ?? fallbackEmail ?? '';
+    const nameFromMetadata = authUser?.user_metadata?.full_name as string | undefined;
+    const derivedName = nameFromMetadata || email.split('@')[0] || 'Usuário';
+
+    return {
+      id: authUser?.id ?? `local-${crypto.randomUUID?.() || Date.now()}`,
+      email: email || 'usuario@temporario.local',
+      name: derivedName,
+      role: UserRole.ADMIN,
+      whatsappContacts: [],
+    };
+  }, []);
+
   useEffect(() => {
     if (!usingN8NBackend) return;
     const stored = localStorage.getItem(N8N_SESSION_STORAGE_KEY);
@@ -1698,13 +1712,27 @@ const App: React.FC = () => {
       const sessionUser = data.session?.user;
       if (!sessionUser) return;
       const profile = await fetchUserProfile(sessionUser.id, sessionUser.email ?? undefined);
-      if (profile) setUser(profile);
+      if (profile) {
+        setUser(profile);
+        return;
+      }
+
+      const fallbackUser = mapAuthUserToLocalUser(sessionUser, sessionUser.email ?? undefined);
+      setUser(fallbackUser);
+      setUsersList(prev => prev.some(u => u.id === fallbackUser.id) ? prev : [...prev, fallbackUser]);
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
         const profile = await fetchUserProfile(session.user.id, session.user.email ?? undefined);
-        if (profile) setUser(profile);
+        if (profile) {
+          setUser(profile);
+          return;
+        }
+
+        const fallbackUser = mapAuthUserToLocalUser(session.user, session.user.email ?? undefined);
+        setUser(fallbackUser);
+        setUsersList(prev => prev.some(u => u.id === fallbackUser.id) ? prev : [...prev, fallbackUser]);
       } else {
         setUser(null);
       }
@@ -1713,7 +1741,7 @@ const App: React.FC = () => {
     return () => {
       authListener?.subscription.unsubscribe();
     };
-  }, [fetchUserProfile, loadUsers, usingN8NBackend]);
+  }, [fetchUserProfile, loadUsers, mapAuthUserToLocalUser, usingN8NBackend]);
 
   const login = useCallback(async (email: string, password?: string, provider?: 'google') => {
     if (usingN8NBackend) {
@@ -1775,16 +1803,24 @@ const App: React.FC = () => {
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (!error && data.user) {
-      const profile = await fetchUserProfile(data.user.id, email);
+    const authUser = data.user ?? data.session?.user;
+
+    if (!error && authUser) {
+      const profile = await fetchUserProfile(authUser.id, authUser.email ?? email);
       if (profile) {
         setUser(profile);
         setView('home');
         return true;
       }
+
+      const fallbackUser = mapAuthUserToLocalUser(authUser, email);
+      setUser(fallbackUser);
+      setUsersList(prev => prev.some(u => u.id === fallbackUser.id) ? prev : [...prev, fallbackUser]);
+      setView('home');
+      return true;
     }
 
-    console.error('Falha ao autenticar usuário', error);
+    console.error('Falha ao autenticar usuário', error ?? 'Sessão retornada sem usuário');
 
     // Fallback para usuários de demonstração caso o Supabase esteja indisponível
     const fallbackUser = MOCK_USERS.find(u => u.email === email && u.password === password);
@@ -1795,7 +1831,7 @@ const App: React.FC = () => {
     }
 
     return false;
-  }, [fetchUserProfile, usingN8NBackend]);
+  }, [fetchUserProfile, mapAuthUserToLocalUser, usingN8NBackend]);
 
   const logout = useCallback(async () => {
     if (usingN8NBackend) {
