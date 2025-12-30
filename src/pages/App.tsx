@@ -1904,18 +1904,7 @@ const App: React.FC = () => {
         return true;
       }
 
-      if (shouldUseLocalFallback(error)) {
-        const fallbackUser = mapAuthUserToLocalUser(null, email);
-        setUser(fallbackUser);
-        setUsersList(prev => prev.some(u => u.id === fallbackUser.id) ? prev : [...prev, fallbackUser]);
-        setView('home');
-        return true;
-      }
 
-      console.error('Falha ao autenticar usuário', error ?? 'Sessão retornada sem usuário');
-    } catch (error) {
-      console.error('Erro ao tentar autenticar usuário', error);
-      const fallbackUser = mapAuthUserToLocalUser(null, email);
       setUser(fallbackUser);
       setUsersList(prev => prev.some(u => u.id === fallbackUser.id) ? prev : [...prev, fallbackUser]);
       setView('home');
