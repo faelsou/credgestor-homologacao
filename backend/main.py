@@ -73,6 +73,22 @@ def _insert_row(table: str, payload: Dict[str, Any]):
     return response.data or []
 
 
+def _delete_row(table: str, record_id: str, tenant_filter: Tuple[str, Any] | None = None):
+    supabase = get_supabase_client()
+    query = supabase.table(table).delete().eq("id", record_id)
+
+    if tenant_filter:
+        column, value = tenant_filter
+        query = query.eq(column, value)
+
+    response = query.execute()
+
+    if response.error:
+        raise HTTPException(status_code=400, detail=_format_error(response.error))
+
+    return response.data or []
+
+
 def _validate_tenant_table(resource: str) -> str:
     table = resource.replace("-", "_")
     if table not in TENANT_TABLES:
@@ -237,6 +253,13 @@ def create_tenant_resource(
     body = {**payload}
     body.setdefault(column, tenant_id)
     return _insert_row(table, body)
+
+
+@app.delete("/tenants/{tenant_id}/{resource}/{record_id}")
+def delete_tenant_resource(tenant_id: str, resource: str, record_id: str):
+    table = _validate_tenant_table(resource)
+    column = TENANT_TABLES[table]
+    return _delete_row(table, record_id, (column, tenant_id))
 
 
 @app.get("/users")
