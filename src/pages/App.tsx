@@ -1392,6 +1392,17 @@ import { createN8NClient, fetchN8NClients, isN8NBackendConfigured, loginWithN8N 
 
 // --- MOCK DATA INITIALIZATION ---
 const CLIENTS_STORAGE_KEY = 'credgestor:clients';
+const LOCAL_APP_STATE_KEY = 'credgestor:app-state';
+
+type LocalAppState = {
+  user?: User | null;
+  usersList?: User[];
+  clients?: Client[];
+  loans?: Loan[];
+  installments?: Installment[];
+  view?: string;
+  theme?: ThemeOption;
+};
 
 const MOCK_CLIENTS: Client[] = [
   {
@@ -1500,6 +1511,31 @@ const DEFAULT_N8N_TENANT_ID = import.meta.env.VITE_N8N_TENANT_ID as string | und
 
 export type ThemeOption = 'light' | 'dark-emerald' | 'dark-graphite';
 
+const loadStoredAppState = (): LocalAppState => {
+  if (typeof window === 'undefined') return {};
+
+  const stored = localStorage.getItem(LOCAL_APP_STATE_KEY);
+  if (!stored) return {};
+
+  try {
+    const parsed = JSON.parse(stored) as LocalAppState;
+
+    return {
+      clients: Array.isArray(parsed.clients) ? parsed.clients : undefined,
+      loans: Array.isArray(parsed.loans) ? parsed.loans : undefined,
+      installments: Array.isArray(parsed.installments) ? parsed.installments : undefined,
+      usersList: Array.isArray(parsed.usersList) ? parsed.usersList : undefined,
+      user: parsed.user,
+      view: typeof parsed.view === 'string' ? parsed.view : undefined,
+      theme: parsed.theme,
+    };
+  } catch (error) {
+    console.error('Não foi possível restaurar o estado salvo do app', error);
+    localStorage.removeItem(LOCAL_APP_STATE_KEY);
+    return {};
+  }
+};
+
 export const AppContext = React.createContext<{
   user: User | null;
   usersList: User[];
@@ -1528,10 +1564,18 @@ export const AppContext = React.createContext<{
 }>({} as any);
 
 const App: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
-  const [view, setView] = useState('home');
-  
+  const usingN8NBackend = isN8NBackendConfigured;
+  const shouldUseLocalPersistence = !usingN8NBackend && !isSupabaseConfigured;
+  const [storedState] = useState<LocalAppState>(() => shouldUseLocalPersistence ? loadStoredAppState() : {});
+
+  const [user, setUser] = useState<User | null>(() => shouldUseLocalPersistence ? storedState.user ?? null : null);
+  const [view, setView] = useState(storedState.view ?? 'home');
+
   const [clients, setClients] = useState<Client[]>(() => {
+    if (shouldUseLocalPersistence) {
+      return storedState.clients && storedState.clients.length ? storedState.clients : MOCK_CLIENTS;
+    }
+
     if (typeof window === 'undefined') return MOCK_CLIENTS;
 
     const storedClients = localStorage.getItem(CLIENTS_STORAGE_KEY);
@@ -1546,15 +1590,13 @@ const App: React.FC = () => {
       return MOCK_CLIENTS;
     }
   });
-  
-  const [loans, setLoans] = useState<Loan[]>(MOCK_LOANS);
-  const [installments, setInstallments] = useState<Installment[]>(MOCK_INSTALLMENTS);
-  const [usersList, setUsersList] = useState<User[]>([]);
-  const [theme, setTheme] = useState<ThemeOption>('light');
+
+  const [loans, setLoans] = useState<Loan[]>(() => shouldUseLocalPersistence && storedState.loans ? storedState.loans : MOCK_LOANS);
+  const [installments, setInstallments] = useState<Installment[]>(() => shouldUseLocalPersistence && storedState.installments ? storedState.installments : MOCK_INSTALLMENTS);
+  const [usersList, setUsersList] = useState<User[]>(() => shouldUseLocalPersistence && storedState.usersList ? storedState.usersList : []);
+  const [theme, setTheme] = useState<ThemeOption>(storedState.theme ?? 'light');
   const [loanToEditId, setLoanToEditId] = useState<string | null>(null);
   const [n8nSession, setN8nSession] = useState<N8NSession | null>(null);
-
-  const usingN8NBackend = isN8NBackendConfigured;
 
   const mapDbUserToUser = useCallback((record: any): User => ({
     id: record.id,
@@ -1616,6 +1658,22 @@ const App: React.FC = () => {
 
     localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(clients));
   }, [clients, usingN8NBackend]);
+
+  useEffect(() => {
+    if (!shouldUseLocalPersistence) return;
+
+    const payload: LocalAppState = {
+      user,
+      usersList,
+      clients,
+      loans,
+      installments,
+      view,
+      theme,
+    };
+
+    localStorage.setItem(LOCAL_APP_STATE_KEY, JSON.stringify(payload));
+  }, [clients, installments, loans, shouldUseLocalPersistence, theme, user, usersList, view]);
 
   useEffect(() => {
     if (!usingN8NBackend || !n8nSession?.accessToken) return;
@@ -1706,7 +1764,9 @@ const App: React.FC = () => {
     if (usingN8NBackend) return;
 
     if (!isSupabaseConfigured || !supabase) {
-      setUsersList(MOCK_USERS);
+      if (!shouldUseLocalPersistence || !storedState.usersList || storedState.usersList.length === 0) {
+        setUsersList(MOCK_USERS);
+      }
       return;
     }
 
@@ -1745,7 +1805,14 @@ const App: React.FC = () => {
     return () => {
       authListener?.subscription.unsubscribe();
     };
-  }, [fetchUserProfile, loadUsers, mapAuthUserToLocalUser, usingN8NBackend]);
+  }, [
+    fetchUserProfile,
+    loadUsers,
+    mapAuthUserToLocalUser,
+    shouldUseLocalPersistence,
+    storedState.usersList,
+    usingN8NBackend,
+  ]);
 
   const login = useCallback(async (email: string, password?: string, provider?: 'google') => {
     if (usingN8NBackend) {
