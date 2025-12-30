@@ -1388,7 +1388,7 @@ import { LoanHistoryView } from '@/components/dashboard/LoanHistory';
 import { User, UserRole, Client, Loan, Installment, LoanStatus, InstallmentStatus, LoanModel } from '@/types';
 import { getTodayDateString, isLate, normalizeUserRole } from '@/utils';
 import { isSupabaseConfigured, supabase } from '@/services/supabaseClient';
-import { createN8NClient, fetchN8NClients, isN8NBackendConfigured, loginWithN8N } from '@/services/n8nApi';
+import { createN8NClient, deleteN8NClient, fetchN8NClients, isN8NBackendConfigured, loginWithN8N } from '@/services/n8nApi';
 
 // --- MOCK DATA INITIALIZATION ---
 const CLIENTS_STORAGE_KEY = 'credgestor:clients';
@@ -1548,7 +1548,7 @@ export const AppContext = React.createContext<{
   logout: () => Promise<void>;
   addClient: (client: Client) => Promise<Client | null>;
   updateClient: (client: Client) => void;
-  deleteClient: (id: string) => void;
+  deleteClient: (id: string) => Promise<void>;
   addLoan: (loan: Loan, generatedInstallments: Installment[]) => void;
   updateLoan: (loan: Loan, generatedInstallments: Installment[]) => void;
   deleteLoan: (id: string) => void;
@@ -1974,11 +1974,19 @@ const App: React.FC = () => {
     setClients(prev => prev.map(item => item.id === client.id ? client : item));
   };
 
-  const deleteClient = (id: string) => {
+  const deleteClient = useCallback(async (id: string) => {
+    if (usingN8NBackend && n8nSession?.accessToken) {
+      try {
+        await deleteN8NClient(n8nSession.accessToken, n8nSession.tenantId, id);
+      } catch (error) {
+        console.error('Erro ao excluir cliente no backend n8n', error);
+      }
+    }
+
     setClients(prev => prev.filter(client => client.id !== id));
     setLoans(prev => prev.filter(loan => loan.clientId !== id));
     setInstallments(prev => prev.filter(inst => inst.clientId !== id));
-  };
+  }, [n8nSession, usingN8NBackend]);
 
   const addLoan = (loan: Loan, generatedInstallments: Installment[]) => {
     setLoans([...loans, loan]);

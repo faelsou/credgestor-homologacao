@@ -10,6 +10,7 @@ const API_BASE_URL =
   DEFAULT_BASE_URL;
 
 const NORMALIZED_BASE_URL = API_BASE_URL?.replace(/\/$/, '');
+const isWebhookStyleApi = NORMALIZED_BASE_URL?.includes('webhook');
 
 const resolveLoginUrl = () => {
   const explicitLoginUrl =
@@ -171,7 +172,11 @@ export async function fetchN8NClients(token: string, tenantId?: string): Promise
     throw new Error('Token de acesso inválido ou ausente para buscar clientes.');
   }
 
-  const response = await fetch(buildUrl(`clientes/${effectiveTenantId}`), {
+  const endpoint = isWebhookStyleApi
+    ? `clientes/${effectiveTenantId}`
+    : `tenants/${effectiveTenantId}/clients`;
+
+  const response = await fetch(buildUrl(endpoint), {
     headers: { Authorization: `Bearer ${bearerToken}` },
   });
 
@@ -197,23 +202,40 @@ export async function createN8NClient(
     throw new Error('Token de acesso inválido ou ausente para criar clientes.');
   }
 
-  const payload: ApiClientPayload = {
+  const basePayload: ApiClientPayload = {
     nome_completo: client.name,
+    name: client.name,
     cpf: stripNonDigits(client.cpf),
     whatsapp: stripNonDigits(client.phone),
+    phone: stripNonDigits(client.phone),
     email: client.email,
     cep: stripNonDigits(client.cep),
     endereco: client.street,
+    street: client.street,
     complemento: client.complement,
     bairro: client.neighborhood,
+    neighborhood: client.neighborhood,
     cidade: client.city,
+    city: client.city,
     estado: client.state,
+    state: client.state,
+    status: client.status,
     data_nascimento: client.birthDate || null,
+    birth_date: client.birthDate || null,
     observacoes: client.notes,
+    notes: client.notes,
     tenant_id_required: tenantId || DEFAULT_TENANT_ID,
   };
 
-  const response = await fetch(buildUrl('clientes'), {
+  const payload = isWebhookStyleApi
+    ? basePayload
+    : { ...basePayload, tenant_id: tenantId || DEFAULT_TENANT_ID };
+
+  const endpoint = isWebhookStyleApi
+    ? 'clientes'
+    : `tenants/${tenantId || DEFAULT_TENANT_ID}/clients`;
+
+  const response = await fetch(buildUrl(endpoint), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -227,4 +249,24 @@ export async function createN8NClient(
 
   const record = Array.isArray(body) ? body[0] : body?.cliente || body;
   return normalizeApiClient(record);
+}
+
+export async function deleteN8NClient(token: string, tenantId: string | undefined, clientId: string) {
+  const bearerToken = sanitizeToken(token);
+  if (!bearerToken) {
+    throw new Error('Token de acesso inválido ou ausente para excluir clientes.');
+  }
+
+  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const endpoint = isWebhookStyleApi
+    ? `clientes/${clientId}`
+    : `tenants/${effectiveTenantId}/clients/${clientId}`;
+
+  const response = await fetch(buildUrl(endpoint), {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${bearerToken}` },
+  });
+
+  const body = await toJson(response);
+  assertOk(response, body);
 }
