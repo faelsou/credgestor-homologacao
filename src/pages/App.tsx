@@ -1876,28 +1876,51 @@ const App: React.FC = () => {
 
     if (!password) return false;
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const shouldUseLocalFallback = (authError?: { message?: string; status?: number }) => {
+      if (!authError) return false;
+      if (typeof authError.status === 'number' && authError.status >= 500) return true;
 
-    const authUser = data.user ?? data.session?.user;
+      const message = authError.message?.toLowerCase() ?? '';
+      return message.includes('fetch') || message.includes('network') || message.includes('cors');
+    };
 
-    if (!error && authUser) {
-      const profile = await fetchUserProfile(authUser.id, authUser.email ?? email);
-      if (profile) {
-        setUser(profile);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+      const authUser = data.user ?? data.session?.user;
+
+      if (!error && authUser) {
+        const profile = await fetchUserProfile(authUser.id, authUser.email ?? email);
+        if (profile) {
+          setUser(profile);
+          setView('home');
+          return true;
+        }
+
+        const fallbackUser = mapAuthUserToLocalUser(authUser, authUser.email ?? email);
+        setUser(fallbackUser);
+        setUsersList(prev => prev.some(u => u.id === fallbackUser.id) ? prev : [...prev, fallbackUser]);
         setView('home');
         return true;
       }
 
+      if (shouldUseLocalFallback(error)) {
+        const fallbackUser = mapAuthUserToLocalUser(null, email);
+        setUser(fallbackUser);
+        setUsersList(prev => prev.some(u => u.id === fallbackUser.id) ? prev : [...prev, fallbackUser]);
+        setView('home');
+        return true;
+      }
 
+      console.error('Falha ao autenticar usuário', error ?? 'Sessão retornada sem usuário');
+    } catch (error) {
+      const fallbackUser = mapAuthUserToLocalUser(null, email);
       setUser(fallbackUser);
       setUsersList(prev => prev.some(u => u.id === fallbackUser.id) ? prev : [...prev, fallbackUser]);
       setView('home');
       return true;
     }
 
-    console.error('Falha ao autenticar usuário', error ?? 'Sessão retornada sem usuário');
-
-    // Fallback para usuários de demonstração caso o Supabase esteja indisponível
     const fallbackUser = MOCK_USERS.find(u => u.email === email && u.password === password);
     if (fallbackUser) {
       setUser(fallbackUser);
