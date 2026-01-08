@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from datetime import date, datetime
-from crud_operations import DatabaseConnection, obter_cruds
+from .crud_operations import DatabaseConnection, obter_cruds
 import uvicorn
 
 app = FastAPI(
