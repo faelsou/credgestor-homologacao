@@ -32,7 +32,7 @@ export DATABASE_URL="postgresql://postgres:KydFq3qOLj5kOi4V@db.aclyrcuahiujgtjui
 ### 4️⃣ Crie as Tabelas
 
 ```bash
-python create_tables.py
+python -m backend.legacy.create_tables
 ```
 
 Isso irá:
@@ -43,7 +43,7 @@ Isso irá:
 ### 5️⃣ Inicie a API (Opcional)
 
 ```bash
-python api_rest.py
+python -m backend.legacy.api_rest
 ```
 
 Acesse a documentação em: **http://localhost:8000/docs**
@@ -53,7 +53,7 @@ Acesse a documentação em: **http://localhost:8000/docs**
 Execute os testes automatizados:
 
 ```bash
-python test_sistema.py
+python -m backend.legacy.test_sistema
 ```
 
 ## 📚 Uso Básico
@@ -61,7 +61,7 @@ python test_sistema.py
 ### Usando o CRUD Python Diretamente
 
 ```python
-from crud_operations import conectar_banco, obter_cruds
+from backend.legacy.crud_operations import conectar_banco, obter_cruds
 
 # Conectar
 db = conectar_banco()
@@ -106,10 +106,10 @@ curl -X POST "http://localhost:8000/api/clientes" \
 
 ```
 credgestor/
-├── create_tables.py       # Criação do banco de dados
-├── crud_operations.py     # Operações CRUD
-├── api_rest.py           # API REST com FastAPI
-├── test_sistema.py       # Testes automatizados
+├── backend/legacy/create_tables.py       # Criação do banco de dados
+├── backend/legacy/crud_operations.py     # Operações CRUD
+├── backend/legacy/api_rest.py            # API REST com FastAPI
+├── backend/legacy/test_sistema.py        # Testes automatizados
 ├── queries_uteis.sql     # Queries SQL úteis
 ├── DIAGRAMA_ER.md        # Diagrama do banco
 ├── README.md             # Documentação completa
@@ -193,9 +193,9 @@ pip install psycopg2-binary --break-system-packages
 - [ ] Python 3.8+ instalado
 - [ ] PostgreSQL acessível
 - [ ] Dependências instaladas (`pip install -r requirements.txt`)
-- [ ] Tabelas criadas (`python create_tables.py`)
-- [ ] Testes executados com sucesso (`python test_sistema.py`)
-- [ ] API funcionando (`python api_rest.py`)
+- [ ] Tabelas criadas (`python -m backend.legacy.create_tables`)
+- [ ] Testes executados com sucesso (`python -m backend.legacy.test_sistema`)
+- [ ] API funcionando (`python -m backend.legacy.api_rest`)
 
 ## 🎉 Pronto!
 

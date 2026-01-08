@@ -46,7 +46,7 @@ services:
         condition: service_healthy
     networks:
       - credgestor-network
-    command: uvicorn api_rest:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn backend.legacy.api_rest:app --host 0.0.0.0 --port 8000 --reload
 
   # PgAdmin (Opcional - Interface web para gerenciar PostgreSQL)
   pgadmin:
@@ -97,7 +97,7 @@ networks:
 #    - PgAdmin: http://localhost:5050
 #
 # 6. Executar comando no container:
-#    docker-compose exec api python create_tables.py
+#    docker-compose exec api python -m backend.legacy.create_tables
 #
 # 7. Conectar no banco via PgAdmin:
 #    - Host: postgres
