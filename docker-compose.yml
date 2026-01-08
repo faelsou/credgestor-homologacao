@@ -1,43 +1,109 @@
-version: '3.9'
+version: '3.8'
 
 services:
-  site:
-    image: faelsouz/credgestor:v1.0.8
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
-      labels:
-        - traefik.enable=true
-        - traefik.docker.network=network_public
-
-        # HTTP -> HTTPS
-        - traefik.http.routers.credgestor-web.rule=Host(`credgestor.app.br`,`www.credgestor.app.br`)
-        - traefik.http.routers.credgestor-web.entrypoints=web
-        - traefik.http.routers.credgestor-web.middlewares=credgestor-https-redirect
-        - traefik.http.middlewares.credgestor-https-redirect.redirectscheme.scheme=https
-        - traefik.http.middlewares.credgestor-https-redirect.redirectscheme.permanent=true
-        - traefik.http.routers.credgestor-web.service=credgestor          # 👈 novo
-
-        # HTTPS
-        - traefik.http.routers.credgestor-secure.rule=Host(`credgestor.app.br`,`www.credgestor.app.br`)
-        - traefik.http.routers.credgestor-secure.entrypoints=websecure
-        - traefik.http.routers.credgestor-secure.tls=true
-        - traefik.http.routers.credgestor-secure.tls.certresolver=letsencryptresolver
-        - traefik.http.routers.credgestor-secure.service=credgestor       # 👈 novo
-        - traefik.http.routers.credgestor-secure.tls.domains[0].main=credgestor.app.br     # 👈 ajuda o ACME
-        - traefik.http.routers.credgestor-secure.tls.domains[0].sans=www.credgestor.app.br # 👈 idem
-
-        # Porta interna do Nginx
-        - traefik.http.services.credgestor.loadbalancer.server.port=80
-
-    # Use caminho ABSOLUTO no Swarm (recomendado)
-    # volumes:
-    #  - /var/www/grd-mad/dist:/usr/share/nginx/html:ro
-
+  # Banco de dados PostgreSQL local (opcional - use se não tiver Supabase)
+  postgres:
+    image: postgres:15-alpine
+    container_name: credgestor-db
+    environment:
+      POSTGRES_DB: credgestor
+      POSTGRES_USER: credgestor_user
+      POSTGRES_PASSWORD: credgestor_pass_123
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     networks:
-      - network_public
+      - credgestor-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U credgestor_user -d credgestor"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # API FastAPI
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: credgestor-api
+    environment:
+      # Usar banco local
+      # DATABASE_URL: postgresql://credgestor_user:credgestor_pass_123@postgres:5432/credgestor
+      
+      # Ou usar Supabase
+      DATABASE_URL: postgresql://postgres:KydFq3qOLj5kOi4V@db.aclyrcuahiujgtjuimoh.supabase.co:5432/postgres
+      
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - credgestor-network
+    command: uvicorn api_rest:app --host 0.0.0.0 --port 8000 --reload
+
+  # PgAdmin (Opcional - Interface web para gerenciar PostgreSQL)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: credgestor-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@credgestor.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_LISTEN_PORT: 80
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - credgestor-network
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
 
 networks:
-  network_public:
-    external: true
+  credgestor-network:
+    driver: bridge
+
+# ===================================================================
+# INSTRUÇÕES DE USO
+# ===================================================================
+#
+# 1. Iniciar todos os serviços:
+#    docker-compose up -d
+#
+# 2. Ver logs:
+#    docker-compose logs -f api
+#
+# 3. Parar todos os serviços:
+#    docker-compose down
+#
+# 4. Parar e remover volumes (CUIDADO: apaga o banco):
+#    docker-compose down -v
+#
+# 5. Acessar serviços:
+#    - API: http://localhost:8000
+#    - API Docs: http://localhost:8000/docs
+#    - PgAdmin: http://localhost:5050
+#
+# 6. Executar comando no container:
+#    docker-compose exec api python create_tables.py
+#
+# 7. Conectar no banco via PgAdmin:
+#    - Host: postgres
+#    - Port: 5432
+#    - Username: credgestor_user
+#    - Password: credgestor_pass_123
+#    - Database: credgestor
+#
+# ===================================================================
