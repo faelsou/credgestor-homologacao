@@ -1,8 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
-
-import bcrypt
 from fastapi import Body, Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -169,14 +167,6 @@ def _log_login_event(tenant_id: str | None, user_id: str, email: str):
         print("Falha ao registrar auditoria de login", _format_error(response.error))
 
 
-def _get_user_attr(user: Any, attr: str) -> Any:
-    if user is None:
-        return None
-    if isinstance(user, dict):
-        return user.get(attr)
-    return getattr(user, attr, None)
-
-
 def _get_user_metadata(user: Any) -> Dict[str, Any]:
     metadata = _get_user_attr(user, "user_metadata") or {}
     if not isinstance(metadata, dict):
@@ -205,79 +195,6 @@ def _tenant_ids_for_email(email: str) -> List[str]:
     if response.error:
         raise HTTPException(status_code=500, detail=_format_error(response.error))
     return [row.get("tenant_id") for row in response.data or [] if row.get("tenant_id")]
-
-
-def _fetch_tenant_user(email: str, tenant_id: str | None) -> Tuple[Dict[str, Any], str]:
-    supabase = get_supabase_admin_client()
-    query = (
-        supabase.table("tenant_users")
-        .select("id, email, password_hash, tenant_id, name, role")
-        .eq("email", email)
-    )
-    if tenant_id:
-        query = query.eq("tenant_id", tenant_id)
-
-    response = query.execute()
-    if response.error:
-        raise HTTPException(status_code=500, detail=_format_error(response.error))
-
-    records = response.data or []
-    if not records:
-        raise HTTPException(status_code=401, detail="Usuário ou senha inválidos")
-
-    if not tenant_id and len(records) > 1:
-        raise HTTPException(
-            status_code=400,
-            detail="Informe o tenant_id para contas com o mesmo e-mail",
-        )
-
-    user = records[0]
-    resolved_tenant_id = tenant_id or user.get("tenant_id")
-    if not resolved_tenant_id:
-        raise HTTPException(status_code=400, detail="Registro de tenant não encontrado para o usuário")
-
-    return user, resolved_tenant_id
-
-
-def _get_auth_user_by_email(email: str) -> Any | None:
-    supabase = get_supabase_admin_client()
-    response = supabase.auth.admin.list_users()
-    data = getattr(response, "data", None) or response
-    users = data.get("users") if isinstance(data, dict) else None
-    if not users:
-        return None
-    for user in users:
-        if _get_user_email(user) == email:
-            return user
-    return None
-
-
-def _sync_auth_user(email: str, password: str, metadata: Dict[str, Any]) -> str:
-    supabase = get_supabase_admin_client()
-    existing_user = _get_auth_user_by_email(email)
-    attributes = {
-        "email": email,
-        "password": password,
-        "email_confirm": True,
-        "user_metadata": metadata,
-    }
-    if existing_user:
-        user_id = _get_user_id(existing_user)
-        if not user_id:
-            raise HTTPException(status_code=500, detail="Usuário de autenticação inválido.")
-        response = supabase.auth.admin.update_user_by_id(user_id, attributes)
-        if getattr(response, "error", None):
-            raise HTTPException(status_code=500, detail=_format_error(response.error))
-        return user_id
-
-    response = supabase.auth.admin.create_user(attributes)
-    if getattr(response, "error", None):
-        raise HTTPException(status_code=500, detail=_format_error(response.error))
-    auth_user = getattr(response, "user", None) or getattr(response, "data", None)
-    user_id = _get_user_id(auth_user)
-    if not user_id:
-        raise HTTPException(status_code=500, detail="Falha ao criar usuário de autenticação.")
-    return user_id
 
 
 def _assert_user_in_tenant(email: str | None, tenant_id: str):
@@ -384,38 +301,6 @@ def _authenticate_user(payload: LoginRequest):
     if not settings.supabase_anon_key:
         raise HTTPException(status_code=500, detail="SUPABASE_ANON_KEY não configurada.")
 
-    tenant_user, resolved_tenant_id = _fetch_tenant_user(payload.email, tenant_id)
-    password_hash = tenant_user.get("password_hash") or ""
-    if not password_hash or not bcrypt.checkpw(
-        payload.senha.encode("utf-8"), password_hash.encode("utf-8")
-    ):
-        raise HTTPException(status_code=401, detail="Usuário ou senha inválidos")
-
-    metadata = {
-        "tenant_id": resolved_tenant_id,
-        "role": tenant_user.get("role") or "admin",
-        "name": tenant_user.get("name") or payload.email.split("@")[0],
-    }
-    _sync_auth_user(payload.email, payload.senha, metadata)
-
-    supabase = get_supabase_anon_client()
-    response = supabase.auth.sign_in_with_password(
-        {"email": payload.email, "password": payload.senha}
-    )
-    error = getattr(response, "error", None)
-    auth_data = getattr(response, "data", None) or response
-
-    if error or not auth_data:
-        raise HTTPException(status_code=401, detail="Usuário ou senha inválidos")
-
-    session = getattr(auth_data, "session", None) or auth_data.get("session")
-    user = getattr(auth_data, "user", None) or auth_data.get("user")
-    if not session or not user:
-        raise HTTPException(status_code=401, detail="Usuário ou senha inválidos")
-
-    user_id = _get_user_id(user)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Usuário inválido no Supabase Auth.")
 
     access_token = session.get("access_token") if isinstance(session, dict) else session.access_token
     refresh_token = (
@@ -437,9 +322,7 @@ def _authenticate_user(payload: LoginRequest):
         "tenant_nome": tenant_name,
         "name": _get_user_metadata(user).get("name")
         or _get_user_metadata(user).get("nome")
-        or tenant_user.get("name")
-        or payload.email.split("@")[0],
-        "role": _get_role_from_user(user) or tenant_user.get("role") or "admin",
+
     }
 
     return {
