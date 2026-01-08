@@ -2,7 +2,7 @@
 
 ## Fluxo de autenticação
 
-1. O front-end envia `POST /auth/login` (ou `/webhook/auth/login`) com `{ email, senha, tenant_id }`.
+1. O front-end envia `POST /auth/login` com `{ email, senha, tenant_id }`.
 
 
 ## Resolução do tenant
