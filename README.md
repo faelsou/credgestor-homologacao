@@ -53,6 +53,10 @@ View your app in AI Studio: https://ai.studio/apps/temp/1
    - `GET|POST /tenants/{tenant_id}/{resource}` – leitura e criação de registros vinculados ao tenant (`clients`, `experiences`, `historic_scores`, `login_audit`, `tenant_roles`, `tenant_users`, `role_permissions`, `custom_domains`, `user_sessions`)
    - `GET|POST /users` – leitura/criação de usuários globais
 
+## Documentação técnica do backend
+
+Consulte [`backend/TECHNICAL.md`](backend/TECHNICAL.md) para detalhes sobre autenticação Supabase, resolução de tenant, payloads e políticas RLS.
+
 ## Testar conexão com o Supabase
 
    ```bash
