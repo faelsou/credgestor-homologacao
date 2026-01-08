@@ -23,4 +23,4 @@ COPY . .
 EXPOSE 8000
 
 # Comando padrão
-CMD ["uvicorn", "api_rest:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "backend.legacy.api_rest:app", "--host", "0.0.0.0", "--port", "8000"]
