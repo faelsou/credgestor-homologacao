@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Plus, Calculator, Pencil, Trash2, FileText, Clock8 } from 'lucide-react';
 import { AppContext } from '@/pages/App';
-import { formatCurrency, formatDate, generateNoteHash, getTodayDateString, sendToN8N } from '@/utils';
+import { formatCurrency, formatDate, generateNoteHash, getTodayDateString } from '@/utils';
 import { LoanStatus, Installment, InstallmentStatus, UserRole, Loan, PromissoryNote, IndicationType, Client, LoanModel } from '@/types';
 
 interface LoansViewProps {
@@ -228,23 +228,6 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     const client = clients.find(c => c.id === selectedClientId);
     if (client) {
       generatePromissoryNotePDF(client.name, client, loanToPersist, generatedInstallments, user?.name || 'Empresa credora');
-
-      // Webhook de confirmação de empréstimo
-      const loanPayload = {
-        action: editingLoan ? 'update' : 'create',
-        confirmedAt: new Date().toISOString(),
-        loan: loanToPersist,
-        installments: generatedInstallments,
-        client,
-      };
-
-      try {
-        await sendToN8N(loanPayload, {
-          webhookUrl: 'https://n8n.aiagentautomate.com.br/webhook/emprestimos',
-        });
-      } catch (error) {
-        console.warn('⚠️ Não foi possível enviar o empréstimo para o webhook', error);
-      }
     }
 
     handleCloseModal();
