@@ -3,10 +3,7 @@
 ## Fluxo de autenticação
 
 1. O front-end envia `POST /auth/login` (ou `/webhook/auth/login`) com `{ email, senha, tenant_id }`.
-2. O backend valida o usuário contra `tenant_users` (hash bcrypt) e sincroniza o usuário no **Supabase Auth** (`create_user`/`update_user_by_id`).
-3. Em seguida, usa `sign_in_with_password` com a `SUPABASE_ANON_KEY` para obter o JWT do Supabase.
-4. O token de acesso retornado pelo Supabase é repassado ao front-end no formato esperado.
-5. Todas as operações protegidas exigem o header `Authorization: Bearer <token>`.
+
 
 ## Resolução do tenant
 
