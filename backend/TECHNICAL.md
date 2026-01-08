@@ -3,9 +3,7 @@
 ## Fluxo de autenticação
 
 1. O front-end envia `POST /auth/login` (ou `/webhook/auth/login`) com `{ email, senha, tenant_id }`.
-2. O backend usa o **Supabase Auth** (`sign_in_with_password`) com a `SUPABASE_ANON_KEY`.
-3. O token de acesso retornado pelo Supabase é repassado ao front-end no formato esperado.
-4. Todas as operações protegidas exigem o header `Authorization: Bearer <token>`.
+
 
 ## Resolução do tenant
 
