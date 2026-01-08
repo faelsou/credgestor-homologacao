@@ -76,4 +76,3 @@ O backend tenta registrar log em `login_audit` (caso exista) com `tenant_id`, `u
 
 - Nunca expor a `SUPABASE_SERVICE_ROLE_KEY` no frontend.
 - Manter RLS ativo em todas as tabelas.
-- Garantir que todo acesso do backend valide o tenant.
