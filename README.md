@@ -71,3 +71,4 @@ Para autenticar dois clientes distintos (e seus usuários) por e-mail e senha ma
   - O login pode ser validado comparando a senha informada com o hash armazenado no campo `password_hash`.
 # credgestor
 # credgestor
+# credgestor-homologacao
