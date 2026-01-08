@@ -167,14 +167,6 @@ def _log_login_event(tenant_id: str | None, user_id: str, email: str):
         print("Falha ao registrar auditoria de login", _format_error(response.error))
 
 
-def _get_user_attr(user: Any, attr: str) -> Any:
-    if user is None:
-        return None
-    if isinstance(user, dict):
-        return user.get(attr)
-    return getattr(user, attr, None)
-
-
 def _get_user_metadata(user: Any) -> Dict[str, Any]:
     metadata = _get_user_attr(user, "user_metadata") or {}
     if not isinstance(metadata, dict):
@@ -309,28 +301,6 @@ def _authenticate_user(payload: LoginRequest):
     if not settings.supabase_anon_key:
         raise HTTPException(status_code=500, detail="SUPABASE_ANON_KEY não configurada.")
 
-    supabase = get_supabase_anon_client()
-    response = supabase.auth.sign_in_with_password(
-        {"email": payload.email, "password": payload.senha}
-    )
-    error = getattr(response, "error", None)
-    auth_data = getattr(response, "data", None) or response
-
-    if error or not auth_data:
-        raise HTTPException(status_code=401, detail="Usuário ou senha inválidos")
-
-    session = getattr(auth_data, "session", None) or auth_data.get("session")
-    user = getattr(auth_data, "user", None) or auth_data.get("user")
-    if not session or not user:
-        raise HTTPException(status_code=401, detail="Usuário ou senha inválidos")
-
-    user_id = _get_user_id(user)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Usuário inválido no Supabase Auth.")
-
-    resolved_tenant_id = _resolve_tenant_id(user, tenant_id)
-    if not resolved_tenant_id:
-        raise HTTPException(status_code=400, detail="Tenant não encontrado para o usuário.")
 
     access_token = session.get("access_token") if isinstance(session, dict) else session.access_token
     refresh_token = (
@@ -352,8 +322,7 @@ def _authenticate_user(payload: LoginRequest):
         "tenant_nome": tenant_name,
         "name": _get_user_metadata(user).get("name")
         or _get_user_metadata(user).get("nome")
-        or payload.email.split("@")[0],
-        "role": _get_role_from_user(user) or "admin",
+
     }
 
     return {
