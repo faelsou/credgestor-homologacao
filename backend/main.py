@@ -189,6 +189,14 @@ def _get_user_id(user: Any) -> str | None:
     return _get_user_attr(user, "id")
 
 
+def _get_user_attr(user: Any, attr: str):
+    if user is None:
+        return None
+    if isinstance(user, dict):
+        return user.get(attr)
+    return getattr(user, attr, None)
+
+
 def _tenant_ids_for_email(email: str) -> List[str]:
     supabase = get_supabase_admin_client()
     response = supabase.table("tenant_users").select("tenant_id").eq("email", email).execute()
@@ -301,6 +309,32 @@ def _authenticate_user(payload: LoginRequest):
     if not settings.supabase_anon_key:
         raise HTTPException(status_code=500, detail="SUPABASE_ANON_KEY não configurada.")
 
+    supabase = get_supabase_anon_client()
+    auth_response = supabase.auth.sign_in_with_password(
+        {"email": payload.email, "password": payload.senha}
+    )
+    error = getattr(auth_response, "error", None)
+    if error:
+        raise HTTPException(status_code=401, detail=_format_error(error))
+
+    user = getattr(auth_response, "user", None)
+    session = getattr(auth_response, "session", None)
+    if isinstance(auth_response, dict):
+        user = user or auth_response.get("user") or auth_response.get("data")
+        session = session or auth_response.get("session")
+
+    if not user or not session:
+        raise HTTPException(status_code=401, detail="Falha ao autenticar usuário.")
+
+    user_id = _get_user_id(user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Usuário inválido.")
+
+    resolved_tenant_id = _resolve_tenant_id(user, tenant_id)
+    if not resolved_tenant_id:
+        raise HTTPException(
+            status_code=400, detail="tenant_id não informado ou não identificado para o usuário."
+        )
 
     access_token = session.get("access_token") if isinstance(session, dict) else session.access_token
     refresh_token = (
@@ -322,7 +356,7 @@ def _authenticate_user(payload: LoginRequest):
         "tenant_nome": tenant_name,
         "name": _get_user_metadata(user).get("name")
         or _get_user_metadata(user).get("nome")
-
+        or payload.email.split("@")[0],
     }
 
     return {
@@ -433,4 +467,3 @@ def create_user(payload: Dict[str, Any] = Body(...), context: AuthContext = Depe
 @app.post("/auth/login")
 def login(payload: LoginRequest):
     return _authenticate_user(payload)
-
