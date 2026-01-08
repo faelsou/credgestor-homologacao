@@ -1,77 +1,417 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# CREDGESTOR - Sistema de Gestão de Crédito Multi-Tenancy
 
-# Run and deploy your AI Studio app
+## 📋 Sobre o Projeto
 
-This contains everything you need to run your app locally.
+Sistema completo de gestão de crédito com arquitetura multi-tenancy, permitindo que múltiplas empresas/organizações utilizem o mesmo sistema de forma isolada e segura.
 
-View your app in AI Studio: https://ai.studio/apps/temp/1
+## 🏗️ Arquitetura Multi-Tenancy
 
-## Run Locally
+A aplicação utiliza a estratégia de **Schema Compartilhado com Tenant ID**, onde:
 
-**Prerequisites:**  Node.js for the frontend and Python 3.10+ for the backend API.
+- Todas as organizações compartilham as mesmas tabelas
+- Cada registro possui um `tenant_id` para isolamento dos dados
+- Índices otimizados para queries filtradas por tenant
+- Segurança garantida através de filtros automáticos nas queries
 
+### Vantagens desta Arquitetura:
+✅ Manutenção simplificada (um único schema)
+✅ Menor custo de infraestrutura
+✅ Facilita análises agregadas entre tenants
+✅ Escalabilidade horizontal
 
-1. Install frontend dependencies:
-   `npm install`
-2. Configure your environment variables directly in the provided [.env](.env) file (already tracked for local use):
-   - `VITE_API_BASE_URL=http://localhost:8000` (URL do backend Python; opcionalmente use `VITE_N8N_BASE_URL` para compatibilidade)
-   - `VITE_API_LOGIN_URL=https://credgestor.app.br/auth/login` (opcional; força usar um endpoint de login específico mesmo sem `VITE_API_BASE_URL`)
-   - `VITE_SUPABASE_URL=https://avszitcisjexrjkbkxat.supabase.co`
-   - `VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c3ppdGNpc2pleHJqa2JreGF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4NzE2MjMsImV4cCI6MjA4MTQ0NzYyM30.AyOFyM8uScHLWdhc9diTsn9WM_2dlMc5m4-jfN_LOtU`
-   - `SUPABASE_URL=https://avszitcisjexrjkbkxat.supabase.co`
-   - `SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c3ppdGNpc2pleHJqa2JreGF0Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTg3MTYyMywiZXhwIjoyMDgxNDQ3NjIzfQ.p-3mHE0HZ719ZLfOTjTeXSLC9hmlmmFfdtBZxt4qLtY`
-   - `SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c3ppdGNpc2pleHJqa2JreGF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4NzE2MjMsImV4cCI6MjA4MTQ0NzYyM30.AyOFyM8uScHLWdhc9diTsn9WM_2dlMc5m4-jfN_LOtU`
-   - Never place the `service_role` key in frontend-facing variables; keep it only in backend services or secret managers if you need privileged tasks.
-3. Run the frontend app:
-   `npm run dev`
+## 📊 Estrutura do Banco de Dados
 
-4. Install backend dependencies (Python):
-   ```bash
-   cd backend
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
+### Tabelas Principais
 
-5. Configure Supabase secrets for the backend API in the project `.env` file:
-   - `SUPABASE_URL` – URL do projeto Supabase
-   - `SUPABASE_SERVICE_ROLE_KEY` – chave `service_role` (necessária para consolidar dados multi-tenant)
-   - `SUPABASE_ANON_KEY` – opcional, caso você queira reutilizar no backend
+#### 1. **tenants** - Organizações/Empresas
+```sql
+- id (PK)
+- nome
+- slug (unique)
+- cnpj
+- email
+- telefone
+- endereco
+- ativo
+- data_criacao
+- data_atualizacao
+- configuracoes (JSONB)
+```
 
-6. Start the Python backend (FastAPI) from the project root:
-   ```bash
-   uvicorn backend.main:app --reload --port 8000
-   ```
+#### 2. **usuarios** - Usuários do Sistema
+```sql
+- id (PK)
+- tenant_id (FK)
+- nome
+- email
+- senha_hash
+- cpf
+- telefone
+- cargo
+- ativo
+- tipo_usuario (admin, user, gestor)
+- ultimo_acesso
+```
 
-   Principais rotas:
-   - `GET /health` – valida se o backend consegue carregar as variáveis de ambiente
-   - `GET /tables` – lista quais tabelas estão disponíveis
-   - `GET /tenants` e `GET /tenants/{tenant_id}` – para leitura dos tenants
-   - `GET|POST /tenants/{tenant_id}/{resource}` – leitura e criação de registros vinculados ao tenant (`clients`, `experiences`, `historic_scores`, `login_audit`, `tenant_roles`, `tenant_users`, `role_permissions`, `custom_domains`, `user_sessions`)
-   - `GET|POST /users` – leitura/criação de usuários globais
+#### 3. **clientes** - Clientes/Tomadores de Crédito
+```sql
+- id (PK)
+- tenant_id (FK)
+- nome
+- cpf_cnpj
+- tipo_pessoa (PF/PJ)
+- email, telefone, celular
+- endereco completo
+- data_nascimento
+- renda_mensal
+- profissao
+- score_credito
+- ativo
+```
 
-## Documentação técnica do backend
+#### 4. **produtos** - Produtos Financeiros
+```sql
+- id (PK)
+- tenant_id (FK)
+- nome
+- tipo (credito_pessoal, consignado, etc)
+- descricao
+- taxa_juros_min/max
+- prazo_min/max
+- valor_min/max
+- requisitos (JSONB)
+- ativo
+```
 
-Consulte [`backend/TECHNICAL.md`](backend/TECHNICAL.md) para detalhes sobre autenticação Supabase, resolução de tenant, payloads e políticas RLS.
+#### 5. **propostas** - Propostas/Contratos de Crédito
+```sql
+- id (PK)
+- tenant_id (FK)
+- cliente_id (FK)
+- produto_id (FK)
+- usuario_id (FK)
+- numero_proposta
+- valor_solicitado
+- valor_aprovado
+- taxa_juros
+- prazo
+- valor_parcela
+- status (em_analise, aprovado, reprovado, etc)
+- datas importantes
+```
 
-## Testar conexão com o Supabase
+#### 6. **parcelas** - Parcelas dos Contratos
+```sql
+- id (PK)
+- tenant_id (FK)
+- proposta_id (FK)
+- numero_parcela
+- valor_parcela
+- valor_pago
+- data_vencimento
+- data_pagamento
+- status (pendente, pago, atrasado)
+- juros_atraso, multa
+```
 
-   ```bash
-   npm run test:supabase
-   ```
-   O script realiza uma chamada de autenticação e informa se a comunicação com o Supabase foi bem-sucedida.
+#### 7. **pagamentos** - Registro de Pagamentos
+```sql
+- id (PK)
+- tenant_id (FK)
+- parcela_id (FK)
+- valor_pago
+- forma_pagamento
+- data_pagamento
+- comprovante
+```
 
-## Modelagem de autenticação multi-cliente
+#### 8. **documentos** - Anexos e Documentos
+```sql
+- id (PK)
+- tenant_id (FK)
+- entidade_tipo (cliente, proposta, usuario)
+- entidade_id
+- tipo_documento
+- nome_arquivo
+- caminho_arquivo
+```
 
-Para autenticar dois clientes distintos (e seus usuários) por e-mail e senha mantendo ambientes separados, importe o script SQL abaixo em seu Postgres/Supabase:
+#### 9. **auditoria** - Log de Auditoria
+```sql
+- id (PK)
+- tenant_id (FK)
+- usuario_id (FK)
+- acao (CREATE, UPDATE, DELETE, LOGIN)
+- tabela
+- registro_id
+- dados_anteriores (JSONB)
+- dados_novos (JSONB)
+- ip_address
+```
 
-- [`scripts/auth_multiclient.sql`](scripts/auth_multiclient.sql)
-  - Cria as tabelas `tenants`, `tenant_users` e `user_sessions`.
-  - Habilita as extensões necessárias para UUID e hash de senha.
-  - Inclui dois tenants de exemplo (Cliente Alpha e Cliente Beta) e usuários administradores com senha já criptografada via `crypt()`.
-  - O login pode ser validado comparando a senha informada com o hash armazenado no campo `password_hash`.
-# credgestor
-# credgestor
-# credgestor-homologacao
+#### 10. **comissoes** - Comissões dos Vendedores
+```sql
+- id (PK)
+- tenant_id (FK)
+- proposta_id (FK)
+- usuario_id (FK)
+- percentual
+- valor_comissao
+- status (pendente, pago)
+```
+
+## 🚀 Como Usar
+
+### 1. Criando as Tabelas
+
+```bash
+python create_tables.py
+```
+
+Este script irá:
+- Conectar no banco PostgreSQL
+- Criar todas as 10 tabelas
+- Criar índices para otimização
+- Inserir dados de exemplo
+
+### 2. Usando o CRUD Diretamente
+
+```python
+from crud_operations import conectar_banco, obter_cruds
+
+# Conectar ao banco
+db = conectar_banco()
+cruds = obter_cruds(db)
+
+# Criar um tenant
+tenant = cruds['tenant'].create(
+    nome="Minha Empresa",
+    slug="minha-empresa",
+    cnpj="12.345.678/0001-90",
+    email="contato@empresa.com"
+)
+
+# Criar um cliente
+cliente = cruds['cliente'].create(
+    tenant_id=tenant['id'],
+    nome="João Silva",
+    cpf_cnpj="123.456.789-00",
+    tipo_pessoa="PF",
+    email="joao@email.com",
+    renda_mensal=5000.00
+)
+
+# Listar clientes do tenant
+clientes = cruds['cliente'].list_by_tenant(tenant['id'])
+
+# Buscar cliente específico
+cliente = cruds['cliente'].get_by_id(1, tenant['id'])
+
+# Atualizar cliente
+cruds['cliente'].update(1, tenant['id'], 
+    telefone="(11) 98765-4321",
+    renda_mensal=6000.00
+)
+
+# Desativar cliente
+cruds['cliente'].delete(1, tenant['id'])
+
+db.disconnect()
+```
+
+### 3. Usando a API REST
+
+#### Instalar dependências:
+```bash
+pip install fastapi uvicorn --break-system-packages
+```
+
+#### Iniciar o servidor:
+```bash
+python api_rest.py
+```
+
+A API estará disponível em `http://localhost:8000`
+
+Documentação automática em:
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+
+#### Exemplos de Requisições:
+
+**Listar Tenants:**
+```bash
+curl -X GET "http://localhost:8000/api/tenants"
+```
+
+**Criar Cliente (precisa do header X-Tenant-ID):**
+```bash
+curl -X POST "http://localhost:8000/api/clientes" \
+  -H "X-Tenant-ID: 1" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nome": "Maria Santos",
+    "cpf_cnpj": "987.654.321-00",
+    "tipo_pessoa": "PF",
+    "email": "maria@email.com",
+    "renda_mensal": 4500.00
+  }'
+```
+
+**Buscar Clientes:**
+```bash
+curl -X GET "http://localhost:8000/api/clientes" \
+  -H "X-Tenant-ID: 1"
+```
+
+**Criar Proposta:**
+```bash
+curl -X POST "http://localhost:8000/api/propostas" \
+  -H "X-Tenant-ID: 1" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cliente_id": 1,
+    "produto_id": 1,
+    "usuario_id": 1,
+    "numero_proposta": "PROP-2025-0002",
+    "valor_solicitado": 15000.00,
+    "status": "em_analise"
+  }'
+```
+
+**Aprovar Proposta:**
+```bash
+curl -X POST "http://localhost:8000/api/propostas/1/aprovar" \
+  -H "X-Tenant-ID: 1" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "valor_aprovado": 15000.00,
+    "taxa_juros": 2.99,
+    "prazo": 24,
+    "valor_parcela": 698.50
+  }'
+```
+
+**Listar Parcelas Vencidas:**
+```bash
+curl -X GET "http://localhost:8000/api/parcelas/vencidas" \
+  -H "X-Tenant-ID: 1"
+```
+
+**Registrar Pagamento:**
+```bash
+curl -X POST "http://localhost:8000/api/parcelas/1/pagar?valor_pago=698.50" \
+  -H "X-Tenant-ID: 1"
+```
+
+## 🔒 Segurança Multi-Tenancy
+
+### Boas Práticas Implementadas:
+
+1. **Isolamento de Dados**
+   - Todas as queries incluem filtro por `tenant_id`
+   - Índices compostos otimizam a performance
+   - Foreign keys garantem integridade referencial
+
+2. **Header X-Tenant-ID**
+   - API requer header em todas as requisições
+   - Validação automática do tenant
+   - Previne acesso cruzado entre tenants
+
+3. **Soft Delete**
+   - Marcação de registros como inativos
+   - Mantém histórico completo
+   - Possibilita recuperação de dados
+
+4. **Auditoria**
+   - Log completo de todas as ações
+   - Rastreabilidade de mudanças
+   - Suporte a conformidade (LGPD, etc)
+
+## 📦 Estrutura de Arquivos
+
+```
+credgestor/
+├── create_tables.py      # Script de criação das tabelas
+├── crud_operations.py    # Classes CRUD para todas as entidades
+├── api_rest.py          # API REST com FastAPI
+├── README.md            # Esta documentação
+└── requirements.txt     # Dependências do projeto
+```
+
+## 🔧 Configuração do Banco
+
+### String de Conexão:
+```
+postgresql://postgres:KydFq3qOLj5kOi4V@db.aclyrcuahiujgtjuimoh.supabase.co:5432/postgres
+```
+
+### Variáveis de Ambiente (Recomendado):
+```bash
+export DATABASE_URL="postgresql://user:pass@host:5432/dbname"
+```
+
+## 📈 Próximos Passos
+
+### Funcionalidades Sugeridas:
+
+1. **Autenticação e Autorização**
+   - JWT tokens
+   - Roles e permissões
+   - OAuth2
+
+2. **Relatórios e Dashboards**
+   - Indicadores por tenant
+   - Análise de inadimplência
+   - Projeções financeiras
+
+3. **Integrações**
+   - Bureaus de crédito (Serasa, etc)
+   - Sistemas bancários
+   - Nota fiscal eletrônica
+
+4. **Notificações**
+   - Email
+   - SMS
+   - Push notifications
+
+5. **Simulador de Crédito**
+   - Cálculo de parcelas
+   - Comparação de produtos
+   - Análise de capacidade de pagamento
+
+## 🐛 Troubleshooting
+
+### Erro de Conexão:
+```
+Erro: could not translate host name to address
+```
+**Solução:** Verificar conectividade de rede e DNS
+
+### Erro de Permissão:
+```
+Erro: permission denied for table
+```
+**Solução:** Verificar permissões do usuário PostgreSQL
+
+### Erro de Unique Constraint:
+```
+Erro: duplicate key value violates unique constraint
+```
+**Solução:** Verificar se CPF/CNPJ, email ou slug já existem
+
+## 📞 Suporte
+
+Para dúvidas ou problemas:
+- Documentação da API: `/docs`
+- Issues no GitHub
+- Email: suporte@credgestor.com.br
+
+## 📄 Licença
+
+Este projeto é proprietário e confidencial.
+
+---
+
+**Desenvolvido para o Sistema Credgestor**
+Versão 1.0.0 - Janeiro 2025

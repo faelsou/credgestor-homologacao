@@ -1,0 +1,19 @@
+# CREDGESTOR - Dependências do Projeto
+
+# Banco de Dados
+psycopg2-binary==2.9.11
+sqlalchemy==2.0.45
+
+# API REST
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.5
+python-multipart==0.0.20
+
+# Segurança
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.1
+
+# Utilitários
+python-dateutil==2.9.0
