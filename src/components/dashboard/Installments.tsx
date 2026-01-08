@@ -1,11 +1,11 @@
 import React, { useContext, useState } from 'react';
-import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Bot } from 'lucide-react';
+import { Search, MessageCircle, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import { AppContext } from '@/pages/App';
-import { formatCurrency, formatDate, getTodayDateString, isLate, sendToN8N } from '@/utils';
+import { formatCurrency, formatDate, getTodayDateString, isLate } from '@/utils';
 import { InstallmentStatus, Installment, UserRole } from '@/types';
 
 export const InstallmentsView: React.FC = () => {
-  const { installments, clients, payInstallment, scheduleFuturePayment, user, n8nSession } = useContext(AppContext);
+  const { installments, clients, payInstallment, scheduleFuturePayment, user } = useContext(AppContext);
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'LATE' | 'PAID'>('ALL');
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
   const [paymentMode, setPaymentMode] = useState<'INTEREST' | 'CUSTOM'>('INTEREST');
@@ -24,29 +24,13 @@ export const InstallmentsView: React.FC = () => {
 
   const getClient = (id: string) => clients.find(c => c.id === id);
 
-  const handleWhatsapp = (inst: Installment, useAI: boolean = false) => {
+  const handleWhatsapp = (inst: Installment) => {
     const client = getClient(inst.clientId);
     if (!client) return;
 
-    if (useAI) {
-      // Disparo via n8n Webhook
-      const payload = {
-        type: 'CLIENT_REMINDER',
-        clientName: client.name,
-        clientPhone: client.phone,
-        amount: inst.amount,
-        dueDate: inst.dueDate,
-        daysLate: isLate(inst.dueDate) ? Math.floor((new Date().getTime() - new Date(inst.dueDate).getTime()) / (1000 * 3600 * 24)) : 0
-      };
-      
-      sendToN8N(payload, { accessToken: n8nSession?.accessToken });
-      alert('Solicitação enviada para o Agente IA! A mensagem será enviada em breve.');
-    } else {
-      // Fallback: Link direto
-      const message = `Olá ${client.name}, lembrete da parcela ${inst.number} no valor de ${formatCurrency(inst.amount)} vencendo em ${formatDate(inst.dueDate)}.`;
-      const url = `https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`;
-      window.open(url, '_blank');
-    }
+    const message = `Olá ${client.name}, lembrete da parcela ${inst.number} no valor de ${formatCurrency(inst.amount)} vencendo em ${formatDate(inst.dueDate)}.`;
+    const url = `https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
   };
 
   const handlePay = (id: string) => {
@@ -233,12 +217,8 @@ export const InstallmentsView: React.FC = () => {
                     </td>
                     <td className="p-4">{renderStatus(inst, late)}</td>
                     <td className="p-4 flex justify-end gap-2">
-                        {/* Botão AI Agent */}
-                        <button onClick={() => handleWhatsapp(inst, true)} className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg" title="Cobrar com IA (n8n)">
-                            <Bot size={18} />
-                        </button>
                         {/* Botão Whats Direto */}
-                        <button onClick={() => handleWhatsapp(inst, false)} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg" title="Abrir WhatsApp Web">
+                        <button onClick={() => handleWhatsapp(inst)} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg" title="Abrir WhatsApp Web">
                             <MessageCircle size={18} />
                         </button>
                         
@@ -287,10 +267,7 @@ export const InstallmentsView: React.FC = () => {
                         </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-100">
-                         <button onClick={() => handleWhatsapp(inst, true)} className="py-2 bg-purple-50 text-purple-700 font-semibold rounded-lg text-sm flex items-center justify-center gap-2">
-                            <Bot size={16} /> IA Cobrança
-                         </button>
-                         <button onClick={() => handleWhatsapp(inst, false)} className="py-2 bg-emerald-50 text-emerald-700 font-semibold rounded-lg text-sm flex items-center justify-center gap-2">
+                         <button onClick={() => handleWhatsapp(inst)} className="py-2 bg-emerald-50 text-emerald-700 font-semibold rounded-lg text-sm flex items-center justify-center gap-2">
                             <MessageCircle size={16} /> WhatsApp
                          </button>
                     </div>
