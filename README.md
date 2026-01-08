@@ -165,7 +165,7 @@ A aplicação utiliza a estratégia de **Schema Compartilhado com Tenant ID**, o
 ### 1. Criando as Tabelas
 
 ```bash
-python create_tables.py
+python -m backend.legacy.create_tables
 ```
 
 Este script irá:
@@ -177,7 +177,7 @@ Este script irá:
 ### 2. Usando o CRUD Diretamente
 
 ```python
-from crud_operations import conectar_banco, obter_cruds
+from backend.legacy.crud_operations import conectar_banco, obter_cruds
 
 # Conectar ao banco
 db = conectar_banco()
@@ -228,7 +228,7 @@ pip install fastapi uvicorn --break-system-packages
 
 #### Iniciar o servidor:
 ```bash
-python api_rest.py
+python -m backend.legacy.api_rest
 ```
 
 A API estará disponível em `http://localhost:8000`
@@ -332,9 +332,9 @@ curl -X POST "http://localhost:8000/api/parcelas/1/pagar?valor_pago=698.50" \
 
 ```
 credgestor/
-├── create_tables.py      # Script de criação das tabelas
-├── crud_operations.py    # Classes CRUD para todas as entidades
-├── api_rest.py          # API REST com FastAPI
+├── backend/legacy/create_tables.py      # Script de criação das tabelas
+├── backend/legacy/crud_operations.py    # Classes CRUD para todas as entidades
+├── backend/legacy/api_rest.py           # API REST com FastAPI
 ├── README.md            # Esta documentação
 └── requirements.txt     # Dependências do projeto
 ```

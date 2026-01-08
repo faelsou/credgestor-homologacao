@@ -3,7 +3,7 @@ CREDGESTOR - Script de Testes
 Testa todas as funcionalidades CRUD do sistema
 """
 
-from crud_operations import conectar_banco, obter_cruds
+from .crud_operations import conectar_banco, obter_cruds
 from datetime import date, datetime, timedelta
 
 def teste_completo():
