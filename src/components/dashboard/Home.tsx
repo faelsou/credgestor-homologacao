@@ -1,13 +1,12 @@
 import React, { useContext, useMemo, useState } from 'react';
-import { TrendingUp, TrendingDown, Users, AlertTriangle, Send, FileText, X, Calendar, DownloadCloud, Filter } from 'lucide-react';
+import { TrendingUp, TrendingDown, Users, AlertTriangle, X, Calendar, DownloadCloud, Filter } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { AppContext } from '@/pages/App';
-import { formatCurrency, formatDate, isLate, sendToN8N } from '@/utils';
-import { InstallmentStatus, LoanStatus, UserRole } from '@/types';
+import { formatCurrency, formatDate, isLate } from '@/utils';
+import { InstallmentStatus, LoanStatus } from '@/types';
 
 export const DashboardHome: React.FC = () => {
-  const { clients, installments, loans, user, setView, usersList, n8nSession } = useContext(AppContext);
-  const [sendingReport, setSendingReport] = useState(false);
+  const { clients, installments, loans, setView } = useContext(AppContext);
   const [detailFilter, setDetailFilter] = useState<'PAID' | 'RECEIVABLE' | 'LATE' | null>(null);
   const today = new Date().toISOString().split('T')[0];
   const [reportStartDate, setReportStartDate] = useState(today);
@@ -131,65 +130,10 @@ export const DashboardHome: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  const handleSendAdminReport = async () => {
-    setSendingReport(true);
-
-    const adminContacts = Array.from(new Set(
-      usersList
-        .filter(u => u.role === UserRole.ADMIN)
-        .flatMap(u => u.whatsappContacts || [])
-        .filter(Boolean)
-    ));
-
-    if (adminContacts.length === 0) {
-      alert('Nenhum contato de WhatsApp configurado para administradores. Cadastre um número em Equipe / Acessos.');
-      setSendingReport(false);
-      return;
-    }
-
-    // Prepara dados para o n8n
-    const payload = {
-      type: 'ADMIN_REPORT',
-      adminName: user?.name,
-      adminContacts,
-      totalLate: stats.totalLate,
-      countLate: stats.lateCount,
-      details: stats.lateInstallments.map(i => ({
-        client: clients.find(c => c.id === i.clientId)?.name,
-        amount: i.amount,
-        daysLate: Math.floor((new Date().getTime() - new Date(i.dueDate).getTime()) / (1000 * 3600 * 24))
-      }))
-    };
-
-    await sendToN8N(payload, { accessToken: n8nSession?.accessToken });
-
-    setTimeout(() => {
-      alert(`Relatório enviado para ${adminContacts.length} contato(s) de Admin no WhatsApp! (${stats.lateCount} atrasos identificados)`);
-      setSendingReport(false);
-    }, 1500);
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h2 className="text-2xl font-bold text-slate-800">Visão Geral</h2>
-        
-        {/* Botão de Relatório para Admin */}
-        {user?.role === UserRole.ADMIN && (
-          <button 
-            onClick={handleSendAdminReport}
-            disabled={sendingReport}
-            className="bg-slate-800 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:bg-slate-900 transition shadow-lg shadow-slate-200 disabled:opacity-70"
-          >
-            {sendingReport ? (
-              <span className="animate-pulse">Enviando...</span>
-            ) : (
-              <>
-                <FileText size={18} /> Relatório Diário no Whats
-              </>
-            )}
-          </button>
-        )}
       </div>
       
       {/* KPI Grid */}

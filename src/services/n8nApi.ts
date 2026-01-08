@@ -1,21 +1,14 @@
 import { Client, User, UserRole } from '@/types';
 import { formatCep, formatCpf, formatPhone, normalizeUserRole, stripNonDigits } from '@/utils';
 
-const DEFAULT_BASE_URL = 'https://n8n.aiagentautomate.com.br/webhook';
-
 const API_BASE_URL =
   (import.meta.env.VITE_N8N_BASE_URL as string | undefined) ||
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ||
-
-  DEFAULT_BASE_URL;
+  (import.meta.env.VITE_API_BASE_URL as string | undefined);
 
 const NORMALIZED_BASE_URL = API_BASE_URL?.replace(/\/$/, '');
-const isWebhookStyleApi = NORMALIZED_BASE_URL?.includes('webhook');
-
 const resolveLoginUrl = () => {
   const explicitLoginUrl =
-    (import.meta.env.VITE_API_LOGIN_URL as string | undefined) ||
-    (import.meta.env.VITE_N8N_LOGIN_URL as string | undefined);
+    (import.meta.env.VITE_API_LOGIN_URL as string | undefined);
 
   if (explicitLoginUrl) {
     return explicitLoginUrl.replace(/\/$/, '');
@@ -172,9 +165,7 @@ export async function fetchN8NClients(token: string, tenantId?: string): Promise
     throw new Error('Token de acesso inválido ou ausente para buscar clientes.');
   }
 
-  const endpoint = isWebhookStyleApi
-    ? `clientes/${effectiveTenantId}`
-    : `tenants/${effectiveTenantId}/clients`;
+  const endpoint = `tenants/${effectiveTenantId}/clients`;
 
   const response = await fetch(buildUrl(endpoint), {
     headers: { Authorization: `Bearer ${bearerToken}` },
@@ -224,16 +215,10 @@ export async function createN8NClient(
     birth_date: client.birthDate || null,
     observacoes: client.notes,
     notes: client.notes,
-    tenant_id_required: tenantId || DEFAULT_TENANT_ID,
   };
 
-  const payload = isWebhookStyleApi
-    ? basePayload
-    : { ...basePayload, tenant_id: tenantId || DEFAULT_TENANT_ID };
-
-  const endpoint = isWebhookStyleApi
-    ? 'clientes'
-    : `tenants/${tenantId || DEFAULT_TENANT_ID}/clients`;
+  const payload = { ...basePayload, tenant_id: tenantId || DEFAULT_TENANT_ID };
+  const endpoint = `tenants/${tenantId || DEFAULT_TENANT_ID}/clients`;
 
   const response = await fetch(buildUrl(endpoint), {
     method: 'POST',
@@ -258,9 +243,7 @@ export async function deleteN8NClient(token: string, tenantId: string | undefine
   }
 
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
-  const endpoint = isWebhookStyleApi
-    ? `clientes/${clientId}`
-    : `tenants/${effectiveTenantId}/clients/${clientId}`;
+  const endpoint = `tenants/${effectiveTenantId}/clients/${clientId}`;
 
   const response = await fetch(buildUrl(endpoint), {
     method: 'DELETE',

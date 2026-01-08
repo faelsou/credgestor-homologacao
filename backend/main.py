@@ -434,7 +434,3 @@ def create_user(payload: Dict[str, Any] = Body(...), context: AuthContext = Depe
 def login(payload: LoginRequest):
     return _authenticate_user(payload)
 
-
-@app.post("/webhook/auth/login")
-def webhook_login(payload: LoginRequest):
-    return _authenticate_user(payload)
