@@ -60,8 +60,12 @@ def ensure_client() -> None:
         get_supabase_client()
     except Exception as e:
         # Log error but don't crash the server - allows healthcheck to work
-        print(f"⚠️  Aviso: Não foi possível inicializar o cliente Supabase no startup: {e}")
-        print("   O servidor continuará rodando, mas operações que requerem Supabase falharão.")
+        print(
+            f"⚠️  Aviso: Não foi possível inicializar o cliente Supabase no startup: {e}"
+        )
+        print(
+            "   O servidor continuará rodando, mas operações que requerem Supabase falharão."
+        )
 
 
 def _format_error(error: Any) -> str:
@@ -85,7 +89,9 @@ def _apply_filters(table: str, filters: List[Tuple[str, Any]] | None = None):
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao consultar banco de dados: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao consultar banco de dados: {str(e)}"
+        )
 
 
 def _insert_row(table: str, payload: Dict[str, Any]):
@@ -98,10 +104,14 @@ def _insert_row(table: str, payload: Dict[str, Any]):
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao inserir no banco de dados: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao inserir no banco de dados: {str(e)}"
+        )
 
 
-def _delete_row(table: str, record_id: str, tenant_filter: Tuple[str, Any] | None = None):
+def _delete_row(
+    table: str, record_id: str, tenant_filter: Tuple[str, Any] | None = None
+):
     try:
         supabase = get_supabase_admin_client()
         query = supabase.table(table).delete().eq("id", record_id)
@@ -119,7 +129,9 @@ def _delete_row(table: str, record_id: str, tenant_filter: Tuple[str, Any] | Non
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao deletar do banco de dados: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao deletar do banco de dados: {str(e)}"
+        )
 
 
 def _validate_tenant_table(resource: str) -> str:
@@ -151,7 +163,9 @@ def _get_tenant_name(tenant_id: str) -> str | None:
     return tenant.get("name") if tenant else None
 
 
-def _store_user_session(user_id: str, tenant_id: str, refresh_token: str, expires_at: datetime):
+def _store_user_session(
+    user_id: str, tenant_id: str, refresh_token: str, expires_at: datetime
+):
     supabase = get_supabase_admin_client()
     payload = {
         "user_id": user_id,
@@ -218,7 +232,9 @@ def _get_user_attr(user: Any, attr: str):
 
 def _tenant_ids_for_email(email: str) -> List[str]:
     supabase = get_supabase_admin_client()
-    response = supabase.table("tenant_users").select("tenant_id").eq("email", email).execute()
+    response = (
+        supabase.table("tenant_users").select("tenant_id").eq("email", email).execute()
+    )
     if response.error:
         raise HTTPException(status_code=500, detail=_format_error(response.error))
     return [row.get("tenant_id") for row in response.data or [] if row.get("tenant_id")]
@@ -226,7 +242,9 @@ def _tenant_ids_for_email(email: str) -> List[str]:
 
 def _assert_user_in_tenant(email: str | None, tenant_id: str):
     if not email:
-        raise HTTPException(status_code=403, detail="Usuário sem e-mail válido no token.")
+        raise HTTPException(
+            status_code=403, detail="Usuário sem e-mail válido no token."
+        )
     supabase = get_supabase_admin_client()
     response = (
         supabase.table("tenant_users")
@@ -239,7 +257,9 @@ def _assert_user_in_tenant(email: str | None, tenant_id: str):
     if response.error:
         raise HTTPException(status_code=500, detail=_format_error(response.error))
     if not response.data:
-        raise HTTPException(status_code=403, detail="Usuário não autorizado para o tenant informado.")
+        raise HTTPException(
+            status_code=403, detail="Usuário não autorizado para o tenant informado."
+        )
 
 
 def _resolve_tenant_id(user: Any, requested_tenant_id: str | None) -> str | None:
@@ -247,8 +267,14 @@ def _resolve_tenant_id(user: Any, requested_tenant_id: str | None) -> str | None
     app_metadata = _get_app_metadata(user)
     metadata_tenant_id = metadata.get("tenant_id") or app_metadata.get("tenant_id")
 
-    if metadata_tenant_id and requested_tenant_id and metadata_tenant_id != requested_tenant_id:
-        raise HTTPException(status_code=403, detail="Tenant do token não corresponde à requisição.")
+    if (
+        metadata_tenant_id
+        and requested_tenant_id
+        and metadata_tenant_id != requested_tenant_id
+    ):
+        raise HTTPException(
+            status_code=403, detail="Tenant do token não corresponde à requisição."
+        )
 
     if metadata_tenant_id:
         return metadata_tenant_id
@@ -290,22 +316,30 @@ def require_auth(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ) -> AuthContext:
     if not credentials or not credentials.credentials:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token ausente.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token ausente."
+        )
 
     token = credentials.credentials
     supabase = get_supabase_anon_client()
     response = supabase.auth.get_user(token)
     error = getattr(response, "error", None)
-    user = getattr(response, "user", None) or getattr(response, "data", None) or response
+    user = (
+        getattr(response, "user", None) or getattr(response, "data", None) or response
+    )
 
     if error or not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido."
+        )
 
     user_id = _get_user_id(user)
     email = _get_user_email(user)
 
     if not user_id or not email:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido."
+        )
 
     metadata = _get_user_metadata(user)
     app_metadata = _get_app_metadata(user)
@@ -326,7 +360,9 @@ def _authenticate_user(payload: LoginRequest):
     tenant_id = payload.tenant_id or settings.default_tenant_id
 
     if not settings.supabase_anon_key:
-        raise HTTPException(status_code=500, detail="SUPABASE_ANON_KEY não configurada.")
+        raise HTTPException(
+            status_code=500, detail="SUPABASE_ANON_KEY não configurada."
+        )
 
     supabase = get_supabase_anon_client()
     auth_response = supabase.auth.sign_in_with_password(
@@ -352,16 +388,27 @@ def _authenticate_user(payload: LoginRequest):
     resolved_tenant_id = _resolve_tenant_id(user, tenant_id)
     if not resolved_tenant_id:
         raise HTTPException(
-            status_code=400, detail="tenant_id não informado ou não identificado para o usuário."
+            status_code=400,
+            detail="tenant_id não informado ou não identificado para o usuário.",
         )
 
-    access_token = session.get("access_token") if isinstance(session, dict) else session.access_token
+    access_token = (
+        session.get("access_token")
+        if isinstance(session, dict)
+        else session.access_token
+    )
     refresh_token = (
-        session.get("refresh_token") if isinstance(session, dict) else session.refresh_token
+        session.get("refresh_token")
+        if isinstance(session, dict)
+        else session.refresh_token
     )
     refresh_token = refresh_token or ""
-    expires_in = session.get("expires_in") if isinstance(session, dict) else session.expires_in
-    access_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in or 3600)
+    expires_in = (
+        session.get("expires_in") if isinstance(session, dict) else session.expires_in
+    )
+    access_expires_at = datetime.now(timezone.utc) + timedelta(
+        seconds=expires_in or 3600
+    )
     refresh_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
 
     _store_user_session(user_id, resolved_tenant_id, refresh_token, refresh_expires_at)
@@ -477,7 +524,9 @@ def list_users(context: AuthContext = Depends(require_auth)):
 
 
 @app.post("/users")
-def create_user(payload: Dict[str, Any] = Body(...), context: AuthContext = Depends(require_auth)):
+def create_user(
+    payload: Dict[str, Any] = Body(...), context: AuthContext = Depends(require_auth)
+):
     if (context.role or "").lower() not in {"super_admin"}:
         raise HTTPException(status_code=403, detail="Acesso restrito a super_admin.")
     return _insert_row("users", payload)
