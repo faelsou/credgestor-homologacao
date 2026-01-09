@@ -3,12 +3,27 @@ Script para criar tabelas multi-tenancy para o sistema Credgestor
 Arquitetura: Multi-tenancy com schema compartilhado e tenant_id
 """
 
+import os
 import psycopg2
 from psycopg2 import sql
 from datetime import datetime
 
-# Configuração de conexão
-DATABASE_URL = "postgresql://postgres:KydFq3qOLj5kOi4V@db.aclyrcuahiujgtjuimoh.supabase.co:5432/postgres"
+# Configuração de conexão - carrega de variáveis de ambiente
+# Fallback para compatibilidade (NÃO RECOMENDADO em produção)
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    os.getenv(
+        "POSTGRES_URL",
+        None  # Não usar valor padrão hardcoded por segurança
+    )
+)
+
+if not DATABASE_URL:
+    raise ValueError(
+        "DATABASE_URL não está configurada. "
+        "Defina a variável de ambiente DATABASE_URL ou POSTGRES_URL. "
+        "Exemplo: export DATABASE_URL='postgresql://user:pass@host:5432/db'"
+    )
 
 def create_connection():
     """Cria conexão com o banco de dados"""
