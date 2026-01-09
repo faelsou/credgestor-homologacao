@@ -281,6 +281,22 @@ jobs:
           echo "✅ Imagens criadas com as seguintes tags:"
           echo "${{ steps.meta.outputs.tags }}" | tr ',' '\n' | sed 's/^/  - /'
 
+      - name: 🔒 Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY }}-${{ matrix.component }}:${{ steps.meta.outputs.version || 'latest' }}
+          format: 'sarif'
+          output: 'trivy-image-${{ matrix.component }}.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'  # Não falha o build, apenas reporta
+
+      - name: 📤 Upload Trivy image scan results
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && github.event_name != 'pull_request'
+        with:
+          sarif_file: 'trivy-image-${{ matrix.component }}.sarif'
+          wait-for-processing: false
+
   # ===================================================================
   # SECURITY SCAN
   # ===================================================================
@@ -308,12 +324,14 @@ jobs:
           sarif_file: 'trivy-results.sarif'
           wait-for-processing: false
 
-      - name: 🔍 Check for secrets
+      - name: 🔍 Check for secrets (TruffleHog)
         uses: trufflesecurity/trufflehog@main
+        if: github.event_name == 'pull_request' || github.event.before != github.event.after
         with:
           path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
+          base: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          head: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event.after }}
+        continue-on-error: true  # Continua mesmo se encontrar possíveis secrets (apenas reporta)
 
   # ===================================================================
   # DEPLOY STAGING
