@@ -16,9 +16,13 @@ def get_supabase_admin_client() -> Client:
     if _supabase_admin_client is None:
         settings = get_settings()
         if not settings.supabase_url:
-            raise RuntimeError("SUPABASE_URL não está configurada. Defina a variável de ambiente.")
+            raise RuntimeError(
+                "SUPABASE_URL não está configurada. Defina a variável de ambiente."
+            )
         if not settings.supabase_service_role_key:
-            raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY não está configurada. Defina a variável de ambiente.")
+            raise RuntimeError(
+                "SUPABASE_SERVICE_ROLE_KEY não está configurada. Defina a variável de ambiente."
+            )
         _supabase_admin_client = create_client(
             settings.supabase_url, settings.supabase_service_role_key
         )
@@ -34,9 +38,13 @@ def get_supabase_anon_client() -> Client:
     if _supabase_anon_client is None:
         settings = get_settings()
         if not settings.supabase_url:
-            raise RuntimeError("SUPABASE_URL não está configurada. Defina a variável de ambiente.")
+            raise RuntimeError(
+                "SUPABASE_URL não está configurada. Defina a variável de ambiente."
+            )
         if not settings.supabase_anon_key:
-            raise RuntimeError("SUPABASE_ANON_KEY é obrigatória para operações de autenticação. Defina a variável de ambiente.")
+            raise RuntimeError(
+                "SUPABASE_ANON_KEY é obrigatória para operações de autenticação. Defina a variável de ambiente."
+            )
         _supabase_anon_client = create_client(
             settings.supabase_url, settings.supabase_anon_key
         )
