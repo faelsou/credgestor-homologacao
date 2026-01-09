@@ -56,8 +56,12 @@ class AuthContext:
 @app.on_event("startup")
 def ensure_client() -> None:
     """Warm up the Supabase client on startup."""
-
-    get_supabase_client()
+    try:
+        get_supabase_client()
+    except Exception as e:
+        # Log error but don't crash the server - allows healthcheck to work
+        print(f"⚠️  Aviso: Não foi possível inicializar o cliente Supabase no startup: {e}")
+        print("   O servidor continuará rodando, mas operações que requerem Supabase falharão.")
 
 
 def _format_error(error: Any) -> str:
@@ -69,38 +73,53 @@ def _format_error(error: Any) -> str:
 
 
 def _apply_filters(table: str, filters: List[Tuple[str, Any]] | None = None):
-    supabase = get_supabase_admin_client()
-    query = supabase.table(table).select("*")
-    for column, value in filters or []:
-        query = query.eq(column, value)
-    response = query.execute()
-    if response.error:
-        raise HTTPException(status_code=500, detail=_format_error(response.error))
-    return response.data or []
+    try:
+        supabase = get_supabase_admin_client()
+        query = supabase.table(table).select("*")
+        for column, value in filters or []:
+            query = query.eq(column, value)
+        response = query.execute()
+        if response.error:
+            raise HTTPException(status_code=500, detail=_format_error(response.error))
+        return response.data or []
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao consultar banco de dados: {str(e)}")
 
 
 def _insert_row(table: str, payload: Dict[str, Any]):
-    supabase = get_supabase_admin_client()
-    response = supabase.table(table).insert(payload).execute()
-    if response.error:
-        raise HTTPException(status_code=400, detail=_format_error(response.error))
-    return response.data or []
+    try:
+        supabase = get_supabase_admin_client()
+        response = supabase.table(table).insert(payload).execute()
+        if response.error:
+            raise HTTPException(status_code=400, detail=_format_error(response.error))
+        return response.data or []
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao inserir no banco de dados: {str(e)}")
 
 
 def _delete_row(table: str, record_id: str, tenant_filter: Tuple[str, Any] | None = None):
-    supabase = get_supabase_admin_client()
-    query = supabase.table(table).delete().eq("id", record_id)
+    try:
+        supabase = get_supabase_admin_client()
+        query = supabase.table(table).delete().eq("id", record_id)
 
-    if tenant_filter:
-        column, value = tenant_filter
-        query = query.eq(column, value)
+        if tenant_filter:
+            column, value = tenant_filter
+            query = query.eq(column, value)
 
-    response = query.execute()
+        response = query.execute()
 
-    if response.error:
-        raise HTTPException(status_code=400, detail=_format_error(response.error))
+        if response.error:
+            raise HTTPException(status_code=400, detail=_format_error(response.error))
 
-    return response.data or []
+        return response.data or []
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao deletar do banco de dados: {str(e)}")
 
 
 def _validate_tenant_table(resource: str) -> str:
