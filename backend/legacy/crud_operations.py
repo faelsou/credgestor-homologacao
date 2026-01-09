@@ -3,12 +3,13 @@ CREDGESTOR - CRUD Operations
 Sistema completo de operações CRUD para todas as tabelas
 """
 
+import json
 import os
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from datetime import datetime
-from typing import List, Dict, Optional, Any
-import json
 
 # Carrega DATABASE_URL das variáveis de ambiente
 # Fallback para compatibilidade (NÃO RECOMENDADO em produção)
