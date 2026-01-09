@@ -22,11 +22,14 @@ services:
       timeout: 5s
       retries: 5
 
-  # API FastAPI
+  # API FastAPI (Backend)
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # Usar imagem do Docker Hub (recomendado para produção)
+    image: faelsouz/credgestor-homologacao-backend:latest
+    # Ou build local (descomente para desenvolvimento)
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.backend
     container_name: credgestor-api
     env_file:
       - .env  # Carrega variáveis de ambiente do arquivo .env
@@ -52,7 +55,38 @@ services:
         condition: service_healthy
     networks:
       - credgestor-network
-    command: uvicorn backend.legacy.api_rest:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend React + Vite
+  frontend:
+    # Usar imagem do Docker Hub (recomendado para produção)
+    image: faelsouz/credgestor-homologacao-frontend:latest
+    # Ou build local (descomente para desenvolvimento)
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.frontend
+    #   args:
+    #     VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+    #     VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+    container_name: credgestor-frontend
+    ports:
+      - "3000:80"
+    networks:
+      - credgestor-network
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
 
   # PgAdmin (Opcional - Interface web para gerenciar PostgreSQL)
   pgadmin:
