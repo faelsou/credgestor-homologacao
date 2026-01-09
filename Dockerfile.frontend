@@ -13,19 +13,24 @@ RUN npm ci --only=production=false
 COPY . .
 
 # Build da aplicação
+# Variáveis do Vite (opcionais - podem ser vazias)
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
 ARG VITE_N8N_BASE_URL
+# Metadata de build (opcionais)
 ARG BUILD_DATE
 ARG GIT_SHA
 ARG GIT_REF
 
-ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
-ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
-ENV VITE_N8N_BASE_URL=$VITE_N8N_BASE_URL
-ENV BUILD_DATE=$BUILD_DATE
-ENV GIT_SHA=$GIT_SHA
-ENV GIT_REF=$GIT_REF
+# Variáveis de ambiente para build (Vite usa variáveis de ambiente em build time)
+# Usa valor padrão vazio se não fornecido
+ENV VITE_SUPABASE_URL=${VITE_SUPABASE_URL:-}
+ENV VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY:-}
+ENV VITE_N8N_BASE_URL=${VITE_N8N_BASE_URL:-}
+# Metadata (não usado no build, apenas para labels)
+ENV BUILD_DATE=${BUILD_DATE:-}
+ENV GIT_SHA=${GIT_SHA:-}
+ENV GIT_REF=${GIT_REF:-}
 
 RUN npm run build
 
@@ -38,9 +43,9 @@ FROM nginx:alpine
 LABEL maintainer="CredGestor Team"
 LABEL description="CredGestor Frontend"
 LABEL version="1.0.0"
-LABEL build.date="${BUILD_DATE}"
-LABEL build.git.sha="${GIT_SHA}"
-LABEL build.git.ref="${GIT_REF}"
+LABEL build.date="${BUILD_DATE:-}"
+LABEL build.git.sha="${GIT_SHA:-}"
+LABEL build.git.ref="${GIT_REF:-}"
 
 # Copiar build do frontend
 COPY --from=builder /app/dist /usr/share/nginx/html
