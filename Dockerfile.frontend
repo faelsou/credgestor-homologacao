@@ -16,9 +16,9 @@ COPY . .
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
 ARG VITE_N8N_BASE_URL
-ARG BUILD_DATE
-ARG GIT_SHA
-ARG GIT_REF
+ARG BUILD_DATE=""
+ARG GIT_SHA=""
+ARG GIT_REF=""
 
 ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
 ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
@@ -38,9 +38,9 @@ FROM nginx:alpine
 LABEL maintainer="CredGestor Team"
 LABEL description="CredGestor Frontend"
 LABEL version="1.0.0"
-LABEL build.date="${BUILD_DATE}"
-LABEL build.git.sha="${GIT_SHA}"
-LABEL build.git.ref="${GIT_REF}"
+LABEL build.date="${BUILD_DATE:-}"
+LABEL build.git.sha="${GIT_SHA:-}"
+LABEL build.git.ref="${GIT_REF:-}"
 
 # Copiar build do frontend
 COPY --from=builder /app/dist /usr/share/nginx/html
