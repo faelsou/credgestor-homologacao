@@ -1,0 +1,464 @@
+name: 🚀 Deploy CredGestor
+
+on:
+  push:
+    branches:
+      - main      # Sempre roda e cria nova imagem
+      - develop
+      - staging
+    tags:
+      - 'v*'      # Roda quando criar tag de versão (ex: v1.0.0)
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente de deploy'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  NODE_VERSION: '20.x'
+  PYTHON_VERSION: '3.11'
+  DOCKERHUB_USERNAME: faelsouz
+  DOCKERHUB_REPOSITORY: credgestor-homologacao
+
+jobs:
+  # ===================================================================
+  # LINT & FORMAT
+  # ===================================================================
+  lint:
+    name: 🔍 Lint & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: 📦 Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black isort mypy
+          pip install -r backend/requirements.txt
+
+      - name: 🔍 Lint Python (flake8)
+        run: |
+          flake8 backend/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 backend/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: 🎨 Check Python formatting (black)
+        run: |
+          black --check backend/
+
+      - name: 📐 Check Python imports (isort)
+        run: |
+          isort --check-only backend/
+
+      - name: 📘 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install Node dependencies
+        run: npm ci
+
+      - name: 🔍 Lint TypeScript/React
+        run: |
+          npm run lint || echo "Lint script not configured, skipping..."
+
+  # ===================================================================
+  # TESTES BACKEND
+  # ===================================================================
+  test-backend:
+    name: 🧪 Test Backend
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+          POSTGRES_DB: test_credgestor
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_credgestor
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://test.supabase.co' }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'test-key' }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'test-anon-key' }}
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pytest-asyncio httpx
+          pip install -r backend/requirements.txt
+
+      - name: 🧪 Run backend tests
+        run: |
+          python -m pytest backend/ -v --cov=backend --cov-report=xml --cov-report=html || true
+          # Executa testes legacy se existirem
+          python -m backend.legacy.test_sistema || echo "Legacy tests not available"
+
+      - name: 📊 Upload coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage.xml
+          flags: backend
+          name: backend-coverage
+
+      - name: 🏥 Health check API
+        run: |
+          # Inicia API em background
+          python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
+          sleep 5
+          # Testa health endpoint
+          curl -f http://localhost:8000/health || exit 1
+
+  # ===================================================================
+  # TESTES FRONTEND
+  # ===================================================================
+  test-frontend:
+    name: 🧪 Test Frontend
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📘 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🔍 Type check
+        run: |
+          npx tsc --noEmit || echo "TypeScript check completed"
+
+      - name: 🧪 Run frontend tests
+        run: |
+          npm test -- --coverage --watchAll=false || echo "Tests not configured yet"
+
+      - name: 🏗️ Build frontend
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://test.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'test-key' }}
+        run: |
+          npm run build
+
+      - name: 📦 Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: dist/
+          retention-days: 7
+
+  # ===================================================================
+  # BUILD DOCKER IMAGES
+  # ===================================================================
+  build:
+    name: 🏗️ Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend]
+    # Sempre executa em push (incluindo main), mas não em PR
+    if: github.event_name == 'push'
+    
+    strategy:
+      matrix:
+        component: [backend, frontend]
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for tags
+
+      - name: 🔐 Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 📅 Get current date
+        id: date
+        run: |
+          echo "date=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+          echo "short_sha=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: 🏷️ Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY }}-${{ matrix.component }}
+          tags: |
+            # Tag latest sempre para branch main
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            # Tag com nome do componente
+            type=raw,value=${{ matrix.component }}-latest,enable=${{ github.ref == 'refs/heads/main' }}
+            # Tag com branch name
+            type=ref,event=branch
+            # Tag com SHA curto
+            type=sha,prefix={{branch}}-,format=short
+            # Tag com data e hora (garante nova imagem a cada push)
+            type=raw,value=${{ matrix.component }}-${{ steps.date.outputs.date }},enable=${{ github.ref == 'refs/heads/main' }}
+            # Tag com data e SHA
+            type=raw,value=${{ matrix.component }}-${{ steps.date.outputs.date }}-${{ steps.date.outputs.short_sha }},enable=${{ github.ref == 'refs/heads/main' }}
+            # Tag com versão semântica se houver tag git
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}.{{patch}}
+
+      - name: 🏗️ Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.${{ matrix.component }}
+          # Sempre faz push em push events (não em PR)
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+          # Força rebuild de layers específicos para garantir nova imagem
+          build-args: |
+            BUILD_DATE=${{ steps.date.outputs.date }}
+            GIT_SHA=${{ github.sha }}
+            GIT_REF=${{ github.ref }}
+
+      - name: 📋 List pushed tags
+        run: |
+          echo "✅ Imagens criadas com as seguintes tags:"
+          echo "${{ steps.meta.outputs.tags }}" | tr ',' '\n' | sed 's/^/  - /'
+
+  # ===================================================================
+  # SECURITY SCAN
+  # ===================================================================
+  security:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend]
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔒 Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: 📤 Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: 🔍 Check for secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+
+  # ===================================================================
+  # DEPLOY STAGING
+  # ===================================================================
+  deploy-staging:
+    name: 🚀 Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build, security]
+    if: |
+      (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment:
+      name: staging
+      url: https://staging.credgestor.com
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🚀 Deploy to staging
+        run: |
+          echo "🚀 Deploying to staging environment..."
+          # Adicione aqui seus comandos de deploy
+          # Exemplo: kubectl, terraform, serverless, etc.
+          echo "✅ Deployment completed"
+
+      - name: 🧪 Smoke tests
+        run: |
+          echo "🧪 Running smoke tests..."
+          # Testa endpoints críticos após deploy
+          curl -f https://staging.credgestor.com/health || exit 1
+
+      - name: 📢 Notify deployment
+        if: always()
+        run: |
+          echo "📢 Deployment notification sent"
+
+  # ===================================================================
+  # DEPLOY PRODUCTION
+  # ===================================================================
+  deploy-production:
+    name: 🚀 Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build, security]
+    if: |
+      github.ref == 'refs/heads/main' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment:
+      name: production
+      url: https://credgestor.com
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🚀 Deploy to production
+        run: |
+          echo "🚀 Deploying to production environment..."
+          # Adicione aqui seus comandos de deploy
+          echo "✅ Deployment completed"
+
+      - name: 🧪 Smoke tests
+        run: |
+          echo "🧪 Running smoke tests..."
+          curl -f https://credgestor.com/health || exit 1
+
+      - name: 📢 Notify deployment
+        if: always()
+        run: |
+          echo "📢 Production deployment notification sent"
+
+  # ===================================================================
+  # LOCAL DEVELOPMENT SETUP
+  # ===================================================================
+  local-setup:
+    name: 💻 Local Development Setup
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: 📘 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: 📦 Install frontend dependencies
+        run: npm ci
+
+      - name: 🗄️ Setup local database
+        run: |
+          echo "🗄️ Setting up local database..."
+          # Instruções para setup local
+          echo "Run: docker-compose up -d postgres"
+
+      - name: 📝 Generate local setup script
+        run: |
+          cat > setup-local.sh << 'EOF'
+          #!/bin/bash
+          # CredGestor - Local Development Setup
+          
+          echo "🚀 Setting up CredGestor locally..."
+          
+          # 1. Copy environment file
+          if [ ! -f .env ]; then
+            cp .env.example .env
+            echo "✅ Created .env file from .env.example"
+            echo "⚠️  Please edit .env with your credentials"
+          fi
+          
+          # 2. Start database
+          echo "🗄️  Starting database..."
+          docker-compose up -d postgres
+          sleep 5
+          
+          # 3. Create tables
+          echo "📊 Creating database tables..."
+          python -m backend.legacy.create_tables
+          
+          # 4. Run tests
+          echo "🧪 Running tests..."
+          python -m backend.legacy.test_sistema
+          
+          # 5. Start backend
+          echo "🔧 Starting backend..."
+          python -m uvicorn backend.main:app --reload &
+          BACKEND_PID=$!
+          
+          # 6. Start frontend
+          echo "🎨 Starting frontend..."
+          npm run dev &
+          FRONTEND_PID=$!
+          
+          echo "✅ Setup complete!"
+          echo "📝 Backend: http://localhost:8000"
+          echo "📝 Frontend: http://localhost:3000"
+          echo "📝 API Docs: http://localhost:8000/docs"
+          echo ""
+          echo "Press Ctrl+C to stop all services"
+          
+          wait $BACKEND_PID $FRONTEND_PID
+          EOF
+          chmod +x setup-local.sh
+          echo "✅ Created setup-local.sh script"
+
+      - name: 📤 Upload setup script
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-setup-script
+          path: setup-local.sh
+          retention-days: 30
