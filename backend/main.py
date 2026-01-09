@@ -1,17 +1,15 @@
-from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Tuple
+
 from fastapi import Body, Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from .settings import get_settings
-from .supabase_client import (
-    get_supabase_admin_client,
-    get_supabase_anon_client,
-    get_supabase_client,
-)
+from .supabase_client import (get_supabase_admin_client,
+                              get_supabase_anon_client, get_supabase_client)
 
 app = FastAPI(title="CredGestor Supabase backend", version="0.1.0")
 app.add_middleware(
