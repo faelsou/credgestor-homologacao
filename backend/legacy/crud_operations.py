@@ -3,13 +3,29 @@ CREDGESTOR - CRUD Operations
 Sistema completo de operações CRUD para todas as tabelas
 """
 
+import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 import json
 
-DATABASE_URL = "postgresql://postgres:KydFq3qOLj5kOi4V@db.aclyrcuahiujgtjuimoh.supabase.co:5432/postgres"
+# Carrega DATABASE_URL das variáveis de ambiente
+# Fallback para compatibilidade (NÃO RECOMENDADO em produção)
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    os.getenv(
+        "POSTGRES_URL",
+        None  # Não usar valor padrão hardcoded por segurança
+    )
+)
+
+if not DATABASE_URL:
+    raise ValueError(
+        "DATABASE_URL não está configurada. "
+        "Defina a variável de ambiente DATABASE_URL ou POSTGRES_URL. "
+        "Exemplo: export DATABASE_URL='postgresql://user:pass@host:5432/db'"
+    )
 
 class DatabaseConnection:
     """Gerenciador de conexão com o banco de dados"""
