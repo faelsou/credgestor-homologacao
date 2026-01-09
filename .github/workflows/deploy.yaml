@@ -213,6 +213,7 @@ jobs:
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+        continue-on-error: true  # Continua mesmo se login falhar (para PRs de forks)
 
       - name: 📅 Get current date
         id: date
