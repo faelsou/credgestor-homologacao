@@ -8,11 +8,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from .settings import get_settings
-from .supabase_client import (
-    get_supabase_admin_client,
-    get_supabase_anon_client,
-    get_supabase_client,
-)
+from .supabase_client import (get_supabase_admin_client,
+                              get_supabase_anon_client, get_supabase_client)
 
 app = FastAPI(title="CredGestor Supabase backend", version="0.1.0")
 app.add_middleware(
