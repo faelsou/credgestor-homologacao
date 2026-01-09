@@ -18,6 +18,7 @@ class Settings(BaseSettings):
         env_file=ROOT_DIR / ".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",  # Ignora variáveis de ambiente extras (ex: VITE_* para frontend)
     )
 
     supabase_url: str
