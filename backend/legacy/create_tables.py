@@ -4,9 +4,10 @@ Arquitetura: Multi-tenancy com schema compartilhado e tenant_id
 """
 
 import os
+from datetime import datetime
+
 import psycopg2
 from psycopg2 import sql
-from datetime import datetime
 
 # Configuração de conexão - carrega de variáveis de ambiente
 # Fallback para compatibilidade (NÃO RECOMENDADO em produção)

@@ -3,13 +3,15 @@ CREDGESTOR - API REST
 API completa com FastAPI para gestão de crédito multi-tenancy
 """
 
-from fastapi import FastAPI, HTTPException, Depends, Header
+from datetime import date, datetime
+from typing import List, Optional
+
+import uvicorn
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List
-from datetime import date, datetime
+
 from .crud_operations import DatabaseConnection, obter_cruds
-import uvicorn
 
 app = FastAPI(
     title="Credgestor API",
