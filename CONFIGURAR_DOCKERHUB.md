@@ -13,7 +13,9 @@
 3. Vá em **Account Settings** → **Security**
 4. Clique em **New Access Token**
 5. Dê um nome: `github-actions-credgestor`
-6. Permissões: **Read & Write**
+6. **⚠️ IMPORTANTE: Permissões: Read, Write & Delete** (ou pelo menos **Read & Write**)
+   - O token PRECISA ter permissão de **Write** para fazer push
+   - Sem Write, você receberá erro: "access token has insufficient scopes"
 7. Clique em **Generate**
 8. **COPIE O TOKEN** (você só verá ele uma vez!)
 

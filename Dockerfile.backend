@@ -1,5 +1,5 @@
 # Dockerfile para Backend CredGestor (FastAPI)
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 # Instalar dependências de build
 RUN apt-get update && apt-get install -y \
