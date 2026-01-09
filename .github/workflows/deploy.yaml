@@ -63,7 +63,7 @@ jobs:
 
       - name: 📐 Check Python imports (isort)
         run: |
-          isort --check-only backend/
+          isort --check-only --profile=black backend/
 
       - name: 📘 Setup Node.js
         uses: actions/setup-node@v4
