@@ -267,14 +267,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
-          # Build args - sempre passa metadata
+          # Build args - sempre passa metadata, variáveis VITE só para frontend
           build-args: |
             BUILD_DATE=${{ steps.date.outputs.date }}
             GIT_SHA=${{ github.sha }}
             GIT_REF=${{ github.ref }}
-            ${{ matrix.component == 'frontend' && 'VITE_SUPABASE_URL' || '' }}=${{ matrix.component == 'frontend' && secrets.VITE_SUPABASE_URL || '' }}
-            ${{ matrix.component == 'frontend' && 'VITE_SUPABASE_ANON_KEY' || '' }}=${{ matrix.component == 'frontend' && secrets.VITE_SUPABASE_ANON_KEY || '' }}
-            ${{ matrix.component == 'frontend' && 'VITE_N8N_BASE_URL' || '' }}=${{ matrix.component == 'frontend' && secrets.VITE_N8N_BASE_URL || '' }}
+            VITE_SUPABASE_URL=${{ matrix.component == 'frontend' && secrets.VITE_SUPABASE_URL || '' }}
+            VITE_SUPABASE_ANON_KEY=${{ matrix.component == 'frontend' && secrets.VITE_SUPABASE_ANON_KEY || '' }}
+            VITE_N8N_BASE_URL=${{ matrix.component == 'frontend' && secrets.VITE_N8N_BASE_URL || '' }}
 
       - name: 📋 List pushed tags
         run: |
