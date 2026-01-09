@@ -213,6 +213,7 @@ jobs:
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+        continue-on-error: true  # Continua mesmo se login falhar (para PRs de forks)
 
       - name: 📅 Get current date
         id: date
@@ -286,10 +287,11 @@ jobs:
           output: 'trivy-results.sarif'
 
       - name: 📤 Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
+          wait-for-processing: false
 
       - name: 🔍 Check for secrets
         uses: trufflesecurity/trufflehog@main
