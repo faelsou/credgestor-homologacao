@@ -523,6 +523,7 @@ def get_tenant(tenant_id: str, context: AuthContext = Depends(require_auth)):
 # NOTA: Rotas específicas devem vir ANTES das rotas genéricas
 # para evitar que o FastAPI tente fazer match com a rota genérica primeiro
 
+
 @app.get("/tenants/{tenant_id}/installments")
 def list_installments(
     tenant_id: str,
@@ -540,20 +541,22 @@ def create_installments_batch(
 ):
     _enforce_tenant_access(context, tenant_id)
     supabase = get_supabase_admin_client()
-    
+
     print(f"📦 Recebendo {len(payload)} parcelas para inserção no tenant {tenant_id}")
-    
+
     # Adicionar tenant_id a todas as parcelas
     installments = [{**inst, "tenant_id": tenant_id} for inst in payload]
-    
-    print(f"📋 Primeira parcela (exemplo): {installments[0] if installments else 'Nenhuma'}")
-    
+
+    print(
+        f"📋 Primeira parcela (exemplo): {installments[0] if installments else 'Nenhuma'}"
+    )
+
     response = supabase.table("installments").insert(installments).execute()
     error = getattr(response, "error", None)
     if error:
         print(f"❌ Erro ao inserir parcelas: {error}")
         raise HTTPException(status_code=400, detail=_format_error(error))
-    
+
     print(f"✅ {len(response.data or [])} parcelas inseridas com sucesso")
     return response.data or []
 
@@ -693,7 +696,13 @@ def update_loan(
         body["promissory_note"] = body["promissory_note"]
     # Atualizar
     supabase = get_supabase_admin_client()
-    response = supabase.table("loans").update(body).eq("id", loan_id).eq("tenant_id", tenant_id).execute()
+    response = (
+        supabase.table("loans")
+        .update(body)
+        .eq("id", loan_id)
+        .eq("tenant_id", tenant_id)
+        .execute()
+    )
     error = getattr(response, "error", None)
     if error:
         raise HTTPException(status_code=400, detail=_format_error(error))
@@ -710,8 +719,6 @@ def delete_loan(
     return _delete_row("loans", loan_id, ("tenant_id", tenant_id))
 
 
-
-
 @app.put("/tenants/{tenant_id}/installments/{installment_id}")
 def update_installment(
     tenant_id: str,
@@ -720,7 +727,9 @@ def update_installment(
     context: AuthContext = Depends(require_auth),
 ):
     _enforce_tenant_access(context, tenant_id)
-    return _update_row("installments", installment_id, payload, ("tenant_id", tenant_id))
+    return _update_row(
+        "installments", installment_id, payload, ("tenant_id", tenant_id)
+    )
 
 
 @app.delete("/tenants/{tenant_id}/installments/{installment_id}")
