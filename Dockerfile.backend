@@ -12,7 +12,9 @@ WORKDIR /app
 
 # Copiar e instalar dependências Python
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --user -r requirements.txt && \
+    pip list | grep -i pydantic || echo "⚠️  pydantic-settings não encontrado após instalação"
 
 # ===================================================================
 # STAGE 2: Runtime
