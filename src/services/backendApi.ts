@@ -210,3 +210,421 @@ export async function deleteBackendClient(
   const body = await toJson(response);
   assertOk(response, body);
 }
+
+/**
+ * Normaliza um empréstimo da API para o formato do frontend
+ */
+const normalizeApiLoan = (apiLoan: any): any => {
+  return {
+    id: apiLoan.id || '',
+    clientId: apiLoan.client_id || apiLoan.clientId || '',
+    amount: parseFloat(apiLoan.amount || 0),
+    interestRate: parseFloat(apiLoan.interest_rate || apiLoan.interestRate || 0),
+    totalAmount: parseFloat(apiLoan.total_amount || apiLoan.totalAmount || 0),
+    startDate: apiLoan.start_date || apiLoan.startDate || '',
+    installmentsCount: parseInt(apiLoan.installments_count || apiLoan.installmentsCount || 0),
+    model: apiLoan.model || 'PRICE',
+    status: apiLoan.status || 'open',
+    promissoryNote: apiLoan.promissory_note || apiLoan.promissoryNote || undefined,
+  };
+};
+
+/**
+ * Busca empréstimos do backend
+ */
+export async function fetchBackendLoans(
+  token: string,
+  tenantId: string
+): Promise<any[]> {
+  const bearerToken = token?.replace(/[\r\n]+/g, '').trim();
+  if (!bearerToken) {
+    throw new Error('Token de acesso inválido ou ausente.');
+  }
+
+  const endpoint = `tenants/${tenantId}/loans`;
+
+  const response = await fetch(buildUrl(endpoint), {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearerToken}`,
+    },
+  });
+
+  const body = await toJson(response);
+  assertOk(response, body);
+
+  const records = Array.isArray(body) ? body : body?.data || [];
+  return records.map(normalizeApiLoan);
+}
+
+/**
+ * Cria um empréstimo no backend
+ */
+export async function createBackendLoan(
+  token: string,
+  tenantId: string,
+  loan: any
+): Promise<any> {
+  const bearerToken = token?.replace(/[\r\n]+/g, '').trim();
+  if (!bearerToken) {
+    throw new Error('Token de acesso inválido ou ausente para criar empréstimos.');
+  }
+
+  const payload: any = {
+    client_id: loan.clientId,
+    amount: loan.amount,
+    interest_rate: loan.interestRate,
+    total_amount: loan.totalAmount,
+    start_date: loan.startDate,
+    installments_count: loan.installmentsCount,
+    model: loan.model,
+    status: loan.status || 'open',
+  };
+  
+  // Serializar promissory_note como JSON se existir
+  if (loan.promissoryNote) {
+    payload.promissory_note = loan.promissoryNote;
+  }
+
+  const endpoint = `tenants/${tenantId}/loans`;
+
+  const response = await fetch(buildUrl(endpoint), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearerToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const body = await toJson(response);
+  assertOk(response, body);
+
+  const record = Array.isArray(body) ? body[0] : body;
+  return normalizeApiLoan(record);
+}
+
+/**
+ * Atualiza um empréstimo no backend
+ */
+export async function updateBackendLoan(
+  token: string,
+  tenantId: string,
+  loanId: string,
+  loan: any
+): Promise<any> {
+  const bearerToken = token?.replace(/[\r\n]+/g, '').trim();
+  if (!bearerToken) {
+    throw new Error('Token de acesso inválido ou ausente para atualizar empréstimos.');
+  }
+
+  const payload: any = {
+    client_id: loan.clientId,
+    amount: loan.amount,
+    interest_rate: loan.interestRate,
+    total_amount: loan.totalAmount,
+    start_date: loan.startDate,
+    installments_count: loan.installmentsCount,
+    model: loan.model,
+    status: loan.status,
+  };
+  
+  // Serializar promissory_note como JSON se existir
+  if (loan.promissoryNote) {
+    payload.promissory_note = loan.promissoryNote;
+  }
+
+  const endpoint = `tenants/${tenantId}/loans/${loanId}`;
+
+  const response = await fetch(buildUrl(endpoint), {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearerToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const body = await toJson(response);
+  assertOk(response, body);
+
+  const record = Array.isArray(body) ? body[0] : body;
+  return normalizeApiLoan(record);
+}
+
+/**
+ * Deleta um empréstimo no backend
+ */
+export async function deleteBackendLoan(
+  token: string,
+  tenantId: string,
+  loanId: string
+): Promise<void> {
+  const bearerToken = token?.replace(/[\r\n]+/g, '').trim();
+  if (!bearerToken) {
+    throw new Error('Token de acesso inválido ou ausente para deletar empréstimos.');
+  }
+
+  const endpoint = `tenants/${tenantId}/loans/${loanId}`;
+
+  const response = await fetch(buildUrl(endpoint), {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearerToken}`,
+    },
+  });
+
+  const body = await toJson(response);
+  assertOk(response, body);
+}
+
+/**
+ * Normaliza uma parcela da API para o formato do frontend
+ */
+const normalizeApiInstallment = (apiInst: any): any => {
+  return {
+    id: apiInst.id || '',
+    loanId: apiInst.loan_id || apiInst.loanId || '',
+    clientId: apiInst.client_id || apiInst.clientId || '',
+    number: parseInt(apiInst.number || 0, 10),
+    dueDate: apiInst.due_date || apiInst.dueDate || '',
+    amount: parseFloat(apiInst.amount || 0),
+    amountPaid: parseFloat(apiInst.amount_paid || apiInst.amountPaid || 0),
+    interestAmount: apiInst.interest_amount || apiInst.interestAmount ? parseFloat(apiInst.interest_amount || apiInst.interestAmount) : undefined,
+    principalAmount: apiInst.principal_amount || apiInst.principalAmount ? parseFloat(apiInst.principal_amount || apiInst.principalAmount) : undefined,
+    promisedPaymentReason: apiInst.promised_payment_reason || apiInst.promisedPaymentReason || undefined,
+    promisedPaymentAmount: apiInst.promised_payment_amount || apiInst.promisedPaymentAmount ? parseFloat(apiInst.promised_payment_amount || apiInst.promisedPaymentAmount) : undefined,
+    promisedPaymentDate: apiInst.promised_payment_date || apiInst.promisedPaymentDate || undefined,
+    promisedPaymentHistory: apiInst.promised_payment_history || apiInst.promisedPaymentHistory || [],
+    status: apiInst.status || 'PENDING',
+    paidDate: apiInst.paid_date || apiInst.paidDate || undefined,
+  };
+};
+
+/**
+ * Busca parcelas do backend
+ */
+export async function fetchBackendInstallments(
+  token: string,
+  tenantId: string
+): Promise<any[]> {
+  const bearerToken = token?.replace(/[\r\n]+/g, '').trim();
+  if (!bearerToken) {
+    throw new Error('Token de acesso inválido ou ausente.');
+  }
+
+  const endpoint = `tenants/${tenantId}/installments`;
+
+  const response = await fetch(buildUrl(endpoint), {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearerToken}`,
+    },
+  });
+
+  const body = await toJson(response);
+  assertOk(response, body);
+
+  const records = Array.isArray(body) ? body : body?.data || [];
+  return records.map(normalizeApiInstallment);
+}
+
+/**
+ * Cria parcelas em lote no backend
+ */
+export async function createBackendInstallmentsBatch(
+  token: string,
+  tenantId: string,
+  installments: any[]
+): Promise<any[]> {
+  const bearerToken = token?.replace(/[\r\n]+/g, '').trim();
+  if (!bearerToken) {
+    throw new Error('Token de acesso inválido ou ausente para criar parcelas.');
+  }
+
+  const payload = installments.map(inst => {
+    // Normalizar status para o formato esperado pelo banco
+    let status = inst.status || 'PENDING';
+    if (typeof status === 'string') {
+      status = status.toUpperCase();
+    }
+    
+    return {
+      loan_id: inst.loanId,
+      client_id: inst.clientId,
+      number: inst.number,
+      due_date: inst.dueDate,
+      amount: inst.amount,
+      amount_paid: inst.amountPaid || 0,
+      interest_amount: inst.interestAmount || null,
+      principal_amount: inst.principalAmount || null,
+      status: status,
+      promised_payment_reason: inst.promisedPaymentReason || null,
+      promised_payment_amount: inst.promisedPaymentAmount || null,
+      promised_payment_date: inst.promisedPaymentDate || null,
+      promised_payment_history: inst.promisedPaymentHistory || [],
+    };
+  });
+  
+  console.log('📦 Payload das parcelas para o backend:', JSON.stringify(payload, null, 2));
+
+  const endpoint = `tenants/${tenantId}/installments/batch`;
+
+  const response = await fetch(buildUrl(endpoint), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearerToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const body = await toJson(response);
+  assertOk(response, body);
+
+  const records = Array.isArray(body) ? body : body?.data || [];
+  console.log('✅ Parcelas criadas no backend:', records.length, 'registros');
+  console.log('📋 Dados retornados:', records);
+  return records.map(normalizeApiInstallment);
+}
+
+/**
+ * Cria uma parcela no backend
+ */
+export async function createBackendInstallment(
+  token: string,
+  tenantId: string,
+  installment: any
+): Promise<any> {
+  const bearerToken = token?.replace(/[\r\n]+/g, '').trim();
+  if (!bearerToken) {
+    throw new Error('Token de acesso inválido ou ausente para criar parcelas.');
+  }
+
+  const payload = {
+    loan_id: installment.loanId,
+    client_id: installment.clientId,
+    number: installment.number,
+    due_date: installment.dueDate,
+    amount: installment.amount,
+    amount_paid: installment.amountPaid || 0,
+    interest_amount: installment.interestAmount || null,
+    principal_amount: installment.principalAmount || null,
+    status: installment.status || 'PENDING',
+    promised_payment_reason: installment.promisedPaymentReason || null,
+    promised_payment_amount: installment.promisedPaymentAmount || null,
+    promised_payment_date: installment.promisedPaymentDate || null,
+    promised_payment_history: installment.promisedPaymentHistory || [],
+  };
+
+  const endpoint = `tenants/${tenantId}/installments`;
+
+  const response = await fetch(buildUrl(endpoint), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearerToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const body = await toJson(response);
+  assertOk(response, body);
+
+  const record = Array.isArray(body) ? body[0] : body;
+  return normalizeApiInstallment(record);
+}
+
+/**
+ * Atualiza uma parcela no backend
+ */
+export async function updateBackendInstallment(
+  token: string,
+  tenantId: string,
+  installmentId: string,
+  installment: any
+): Promise<any> {
+  const bearerToken = token?.replace(/[\r\n]+/g, '').trim();
+  if (!bearerToken) {
+    throw new Error('Token de acesso inválido ou ausente para atualizar parcelas.');
+  }
+
+  const payload: any = {
+    loan_id: installment.loanId,
+    client_id: installment.clientId,
+    number: installment.number,
+    due_date: installment.dueDate,
+    amount: installment.amount,
+    amount_paid: installment.amountPaid || 0,
+    status: installment.status,
+  };
+  
+  if (installment.interestAmount !== undefined) {
+    payload.interest_amount = installment.interestAmount;
+  }
+  if (installment.principalAmount !== undefined) {
+    payload.principal_amount = installment.principalAmount;
+  }
+  if (installment.promisedPaymentReason !== undefined) {
+    payload.promised_payment_reason = installment.promisedPaymentReason;
+  }
+  if (installment.promisedPaymentAmount !== undefined) {
+    payload.promised_payment_amount = installment.promisedPaymentAmount;
+  }
+  if (installment.promisedPaymentDate !== undefined) {
+    payload.promised_payment_date = installment.promisedPaymentDate;
+  }
+  if (installment.promisedPaymentHistory !== undefined) {
+    payload.promised_payment_history = installment.promisedPaymentHistory;
+  }
+  if (installment.paidDate !== undefined) {
+    payload.paid_date = installment.paidDate;
+  }
+
+  const endpoint = `tenants/${tenantId}/installments/${installmentId}`;
+
+  const response = await fetch(buildUrl(endpoint), {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearerToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const body = await toJson(response);
+  assertOk(response, body);
+
+  const record = Array.isArray(body) ? body[0] : body;
+  return normalizeApiInstallment(record);
+}
+
+/**
+ * Deleta uma parcela no backend
+ */
+export async function deleteBackendInstallment(
+  token: string,
+  tenantId: string,
+  installmentId: string
+): Promise<void> {
+  const bearerToken = token?.replace(/[\r\n]+/g, '').trim();
+  if (!bearerToken) {
+    throw new Error('Token de acesso inválido ou ausente para deletar parcelas.');
+  }
+
+  const endpoint = `tenants/${tenantId}/installments/${installmentId}`;
+
+  const response = await fetch(buildUrl(endpoint), {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearerToken}`,
+    },
+  });
+
+  const body = await toJson(response);
+  assertOk(response, body);
+}
