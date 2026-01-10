@@ -6,9 +6,28 @@
 import { Client, User, UserRole } from '@/types';
 import { normalizeUserRole, stripNonDigits } from '@/utils';
 
-const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ||
-  'http://localhost:8000';
+// Em produção, se VITE_API_BASE_URL não estiver configurada, usa o mesmo domínio do frontend
+const getApiBaseUrl = () => {
+  const explicitUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
+  if (explicitUrl) {
+    return explicitUrl;
+  }
+  
+  // Em produção, tenta usar o mesmo domínio com /api
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    // Se não for localhost, assume produção e usa o mesmo domínio
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      const protocol = window.location.protocol;
+      return `${protocol}//${hostname}/api`;
+    }
+  }
+  
+  // Fallback para desenvolvimento local
+  return 'http://localhost:8000';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 const NORMALIZED_BASE_URL = API_BASE_URL?.replace(/\/$/, '');
 
@@ -91,6 +110,11 @@ export async function loginWithBackend(email: string, password: string): Promise
 
   const tenantId = DEFAULT_TENANT_ID;
 
+  console.log('🔐 Tentando login em:', CONFIGURED_LOGIN_URL);
+  console.log('📧 Email:', email);
+  console.log('🏢 Tenant ID:', tenantId || 'não informado');
+
+  try {
   const response = await fetch(CONFIGURED_LOGIN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -98,7 +122,32 @@ export async function loginWithBackend(email: string, password: string): Promise
   });
 
   const body = await toJson(response);
+    
+    if (!response.ok) {
+      const errorMessage = body?.detail || body?.error || body?.message || `Erro ${response.status}: ${response.statusText}`;
+      console.error('❌ Erro no login:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorMessage,
+        body: body
+      });
+      throw new Error(errorMessage);
+    }
+    
   assertOk(response, body);
+    console.log('✅ Login bem-sucedido');
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      console.error('❌ Erro de rede ao fazer login:', error.message);
+      console.error('🔗 URL tentada:', CONFIGURED_LOGIN_URL);
+      throw new Error(`Não foi possível conectar ao servidor. Verifique se a API está acessível em ${CONFIGURED_LOGIN_URL}`);
+    }
+    if (error instanceof Error) {
+      throw error;
+    }
+    console.error('❌ Erro desconhecido no login:', error);
+    throw new Error('Erro ao fazer login. Tente novamente.');
+  }
 
   const user = mapApiUserToUser(body.usuario || {});
   const accessToken = sanitizeToken(body.access_token);

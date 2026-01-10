@@ -183,19 +183,29 @@ services:
 
 ### Frontend (Vite)
 
+⚠️ **IMPORTANTE**: As variáveis do Vite devem ser configuradas durante o BUILD da imagem Docker (build-time), não em runtime!
+
 | Variável | Obrigatória | Descrição |
 |----------|-------------|-----------|
-| `VITE_API_BASE_URL` | ⚠️ Opcional | URL base da API (padrão: `http://localhost:8000`). Em produção: `https://credgestor.app.br/api` |
+| `VITE_API_BASE_URL` | ⚠️ Opcional | URL base da API (padrão: `http://localhost:8000`). Em produção: `https://credgestor.app.br/api` (configurado automaticamente no GitHub Actions se não fornecido) |
 | `VITE_API_LOGIN_URL` | ⚠️ Opcional | URL específica para login (sobrescreve `VITE_API_BASE_URL/auth/login`) |
-| `VITE_SUPABASE_URL` | ⚠️ Opcional | URL do Supabase para frontend |
-| `VITE_SUPABASE_ANON_KEY` | ⚠️ Opcional | Anon Key para frontend |
+| `VITE_SUPABASE_URL` | ✅ **Recomendado** | URL do Supabase para frontend (ex: `https://aclyrcuahiujgtjuimoh.supabase.co`) |
+| `VITE_SUPABASE_ANON_KEY` | ✅ **Recomendado** | Anon Key do Supabase para frontend |
 | `VITE_N8N_BASE_URL` | ⚠️ Opcional | URL do backend N8N |
 | `VITE_N8N_TENANT_ID` | ⚠️ Opcional | Tenant ID para N8N |
 
 **Nota para Produção:**
-- Em produção, configure `VITE_API_BASE_URL=https://credgestor.app.br/api` ou deixe vazio para usar o mesmo domínio do frontend
+- Em produção, `VITE_API_BASE_URL` é configurado automaticamente como `https://credgestor.app.br/api` no GitHub Actions
+- Você pode sobrescrever configurando o secret `VITE_API_BASE_URL` no GitHub
 - O frontend está disponível em: `https://credgestor.app.br`
 - A API está disponível em: `https://credgestor.app.br/api` (via Traefik) ou `http://167.235.76.26:8000` (acesso direto)
+- O Traefik está configurado para rotear `/api/*` para o backend automaticamente
+
+**⚠️ Como configurar variáveis do Vite:**
+1. As variáveis devem ser passadas como `build-args` durante o build da imagem Docker
+2. Configure os secrets no GitHub: `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`
+3. O workflow do GitHub Actions já está configurado para passar essas variáveis automaticamente
+4. Se a imagem foi construída sem essas variáveis, será necessário reconstruir a imagem
 
 ### Configuração no GitHub
 
@@ -384,10 +394,10 @@ npm run build
    - Copie a **Connection string** (formato: `postgresql://postgres:password@db.project.supabase.co:5432/postgres`)
 
 2. Adicione ao arquivo `.env` na VPS:
-   ```bash
-   # Verifique se o arquivo .env existe
-   ls -la .env
-   
+```bash
+# Verifique se o arquivo .env existe
+ls -la .env
+
    # Se não existir, crie um novo
    nano .env
    
@@ -402,6 +412,55 @@ SUPABASE_SERVICE_ROLE_KEY=sua-service-role-key
 SUPABASE_ANON_KEY=sua-anon-key
 DATABASE_URL=postgresql://postgres:password@db.aclyrcuahiujgtjuimoh.supabase.co:5432/postgres
 ```
+
+### Erro: Login não funciona / "Credenciais inválidas"
+
+**Possíveis causas e soluções:**
+
+1. **Verificar se a API está acessível:**
+   ```bash
+   # Testar health check da API
+   curl https://credgestor.app.br/api/health
+   # ou
+   curl http://167.235.76.26:8000/health
+   ```
+
+2. **Verificar logs do backend:**
+   ```bash
+   # Ver logs do serviço da API
+   docker service logs --tail 100 credgestor_api
+   ```
+
+3. **Verificar variáveis de ambiente do backend:**
+   - Certifique-se de que `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e `SUPABASE_ANON_KEY` estão configuradas no `.env` da VPS
+
+4. **Verificar se o usuário existe no Supabase:**
+   - Acesse o dashboard do Supabase: https://app.supabase.com
+   - Vá em **Authentication** → **Users**
+   - Verifique se o email do usuário existe e está ativo
+
+5. **Verificar console do navegador:**
+   - Abra o DevTools (F12)
+   - Vá na aba **Console** e **Network**
+   - Tente fazer login e veja os erros no console
+   - Verifique se a requisição para `/api/auth/login` está sendo feita
+   - Verifique o status da resposta (200, 401, 500, etc.)
+
+6. **Verificar URL da API:**
+   - O frontend tenta detectar automaticamente a URL da API
+   - Em produção, deve usar: `https://credgestor.app.br/api`
+   - Se não funcionar, configure `VITE_API_BASE_URL=https://credgestor.app.br/api` no build
+
+7. **Testar login diretamente na API:**
+   ```bash
+   curl -X POST https://credgestor.app.br/api/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"email":"seu-email@exemplo.com","senha":"sua-senha","tenant_id":null}'
+   ```
+
+8. **Verificar CORS:**
+   - O backend já está configurado com CORS permitindo todas as origens
+   - Se ainda houver problemas, verifique os logs do backend
 
 ### Erro: "Cannot connect to database"
 
@@ -478,14 +537,58 @@ docker build --no-cache -f Dockerfile.backend -t credgestor-backend .
 ### Logs
 
 ```bash
-# Backend logs (Docker)
+# Backend logs (Docker Compose)
 docker-compose logs -f api
 
-# Frontend logs (Docker)
+# Frontend logs (Docker Compose)
 docker-compose logs -f frontend
+
+# Backend logs (Docker Swarm)
+docker service logs -f credgestor_api
+
+# Frontend logs (Docker Swarm)
+docker service logs -f credgestor_site
+
+# Ver logs das últimas 100 linhas
+docker service logs --tail 100 credgestor_site
+
+# Ver status dos serviços
+docker service ps credgestor_site
+
+# Ver detalhes de um serviço específico
+docker service inspect credgestor_site
 
 # GitHub Actions logs
 # Vá em Actions → Selecione o workflow → Veja os logs
+```
+
+### Troubleshooting: Serviço com 0 réplicas
+
+Se um serviço mostrar `0 / 1` réplicas (como `credgestor_site`), significa que o container está crashando:
+
+```bash
+# 1. Ver logs do serviço para identificar o erro
+docker service logs --tail 200 credgestor_site
+
+# 2. Ver status detalhado do serviço
+docker service ps credgestor_site --no-trunc
+
+# 3. Verificar se a imagem existe e está atualizada
+docker images | grep credgestor-homologacao-frontend
+
+# 4. Fazer pull da imagem mais recente
+docker pull faelsouz/credgestor-homologacao-frontend:latest
+
+# 5. Verificar se a rede existe
+docker network ls | grep network_public
+
+# 6. Recriar o serviço
+docker service update --force credgestor_site
+
+# 7. Se o problema persistir, remover e recriar o stack
+docker stack rm credgestor
+# Aguarde alguns segundos
+docker stack deploy -c docker-compose.yml credgestor
 ```
 
 ## 🔒 Segurança

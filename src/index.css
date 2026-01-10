@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --bg-base: #f8fafc;
   --bg-muted: #f1f5f9;

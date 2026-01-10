@@ -6,9 +6,28 @@
 import { Client } from '@/types';
 import { stripNonDigits } from '@/utils';
 
-const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ||
-  'http://localhost:8000';
+// Em produção, se VITE_API_BASE_URL não estiver configurada, usa o mesmo domínio do frontend
+const getApiBaseUrl = () => {
+  const explicitUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
+  if (explicitUrl) {
+    return explicitUrl;
+  }
+  
+  // Em produção, tenta usar o mesmo domínio com /api
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    // Se não for localhost, assume produção e usa o mesmo domínio
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      const protocol = window.location.protocol;
+      return `${protocol}//${hostname}/api`;
+    }
+  }
+  
+  // Fallback para desenvolvimento local
+  return 'http://localhost:8000';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 const NORMALIZED_BASE_URL = API_BASE_URL?.replace(/\/$/, '');
 
