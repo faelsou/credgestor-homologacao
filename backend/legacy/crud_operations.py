@@ -37,12 +37,17 @@ if not DATABASE_URL:
 class DatabaseConnection:
     """Gerenciador de conexão com o banco de dados"""
 
-    def __init__(self, url: str = DATABASE_URL):
-        self.url = url
+    def __init__(self, url: str | None = None):
+        self.url = url or DATABASE_URL
         self.conn = None
 
     def connect(self):
         """Estabelece conexão com o banco"""
+        if not self.url:
+            raise ValueError(
+                "DATABASE_URL não está configurada. "
+                "Defina a variável de ambiente DATABASE_URL ou POSTGRES_URL."
+            )
         try:
             self.conn = psycopg2.connect(self.url)
             return True
