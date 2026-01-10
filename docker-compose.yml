@@ -4,7 +4,7 @@ services:
   # API FastAPI (Backend)
   api:
     # Usar imagem do Docker Hub (recomendado para produção)
-    image: faelsouz/credgestor-homologacao-backend:v1.0.0
+    image: faelsouz/credgestor-homologacao-backend:latest
     # container_name não é suportado em Docker Swarm (docker stack deploy)
     # container_name: credgestor-api
     # env_file não é suportado em Docker Swarm - use secrets/configs ou variáveis de ambiente
@@ -53,7 +53,7 @@ services:
   # Frontend React + Vite (Site)
   site:
     # Manter imagem de homologação
-    image: faelsouz/credgestor-homologacao-frontend:v1.0.0
+    image: faelsouz/credgestor-homologacao-frontend:latest
     # container_name não é suportado em Docker Swarm (docker stack deploy)
     # container_name: credgestor-frontend
     deploy:
