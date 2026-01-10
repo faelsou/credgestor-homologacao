@@ -383,11 +383,29 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     environment:
       name: production
-      url: https://credgestor.com
+      url: https://credgestor.app.br
 
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
+
+      - name: 🔐 Validar secrets de deploy
+        run: |
+          if [ -z "${{ secrets.VPS_USER }}" ]; then
+            echo "❌ Erro: VPS_USER não está configurado nos GitHub Secrets"
+            echo "📝 Configure em: Settings → Secrets and variables → Actions → New repository secret"
+            exit 1
+          fi
+          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "❌ Erro: VPS_SSH_KEY não está configurado nos GitHub Secrets"
+            echo "📝 Configure em: Settings → Secrets and variables → Actions → New repository secret"
+            echo "📖 Veja instruções em: DEPLOY.md"
+            exit 1
+          fi
+          echo "✅ Secrets validados com sucesso"
+          echo "📍 VPS Host: ${{ secrets.VPS_HOST || '167.235.76.26' }}"
+          echo "👤 VPS User: ${{ secrets.VPS_USER }}"
+          echo "🔑 VPS SSH Key: [configurado]"
 
       - name: 📤 Copy docker-compose.yml to VPS
         uses: appleboy/scp-action@v0.1.7
@@ -399,6 +417,7 @@ jobs:
           source: "docker-compose.yml"
           target: "/var/www/credgestor-homologacao/"
           strip_components: 0
+          timeout: 60s
 
       - name: 🚀 Deploy to production with Docker Stack
         uses: appleboy/ssh-action@v1.0.3
@@ -448,7 +467,10 @@ jobs:
         run: |
           echo "🧪 Running smoke tests..."
           sleep 10  # Aguarda alguns segundos para os serviços iniciarem
-          curl -f https://credgestor.app.br/health || echo "⚠️ Health check falhou, mas deploy foi concluído"
+          echo "🔍 Testando endpoint de health da API..."
+          curl -f https://credgestor.app.br/api/health || curl -f http://167.235.76.26:8000/health || echo "⚠️ Health check falhou, mas deploy foi concluído"
+          echo "🔍 Testando acesso ao frontend..."
+          curl -f https://credgestor.app.br/ || echo "⚠️ Frontend check falhou, mas deploy foi concluído"
 
       - name: 📢 Notify deployment
         if: always()
