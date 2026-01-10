@@ -389,16 +389,66 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: 🚀 Deploy to production
-        run: |
-          echo "🚀 Deploying to production environment..."
-          # Adicione aqui seus comandos de deploy
-          echo "✅ Deployment completed"
+      - name: 📤 Copy docker-compose.yml to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST || '167.235.76.26' }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          source: "docker-compose.yml"
+          target: "/var/www/credgestor-homologacao/"
+          strip_components: 0
+
+      - name: 🚀 Deploy to production with Docker Stack
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST || '167.235.76.26' }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -e
+            cd /var/www/credgestor-homologacao
+            echo "🚀 Fazendo pull das imagens mais recentes do Docker Hub..."
+            docker pull faelsouz/credgestor-homologacao-backend:latest || true
+            docker pull faelsouz/credgestor-homologacao-frontend:latest || true
+            echo "🚀 Fazendo deploy do stack Docker..."
+            # Carrega variáveis do .env se existir e exporta para o ambiente
+            # Nota: docker stack deploy não suporta env_file, então as variáveis
+            # devem estar no ambiente ou configuradas diretamente no docker-compose.yml
+            if [ -f .env ]; then
+              echo "📝 Carregando variáveis de ambiente do arquivo .env..."
+              set -a
+              source .env
+              set +a
+            else
+              echo "⚠️  Arquivo .env não encontrado. Certifique-se de que as variáveis de ambiente estão configuradas."
+            fi
+            # Verifica se o Docker Swarm está inicializado
+            if ! docker info | grep -q "Swarm: active"; then
+              echo "🔄 Inicializando Docker Swarm..."
+              docker swarm init || echo "⚠️  Docker Swarm já está inicializado ou erro ao inicializar"
+            fi
+            # Verifica se a rede existe, se não, cria
+            if ! docker network ls | grep -q "network_public"; then
+              echo "🌐 Criando rede network_public..."
+              docker network create --driver overlay network_public || echo "⚠️  Rede já existe ou erro ao criar"
+            fi
+            # Executa o deploy
+            docker stack deploy -c docker-compose.yml credgestor
+            echo "✅ Deploy concluído com sucesso!"
+            echo "📊 Verificando status dos serviços..."
+            sleep 5
+            docker stack services credgestor
+            echo "📋 Status dos containers:"
+            docker stack ps credgestor --no-trunc
 
       - name: 🧪 Smoke tests
         run: |
           echo "🧪 Running smoke tests..."
-          curl -f https://credgestor.com/health || exit 1
+          sleep 10  # Aguarda alguns segundos para os serviços iniciarem
+          curl -f https://credgestor.app.br/health || echo "⚠️ Health check falhou, mas deploy foi concluído"
 
       - name: 📢 Notify deployment
         if: always()

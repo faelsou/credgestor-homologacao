@@ -200,12 +200,30 @@ Adicione os secrets no GitHub:
    - `SUPABASE_ANON_KEY`
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
+   - **Para Deploy em Produção (VPS):**
+     - `VPS_HOST` - IP ou hostname da VPS (padrão: 167.235.76.26)
+     - `VPS_USER` - Usuário SSH da VPS (ex: root, ubuntu, etc.)
+     - `VPS_SSH_KEY` - Chave privada SSH para autenticação na VPS
+     - `VPS_PORT` - Porta SSH (opcional, padrão: 22)
 
 **Como criar o Docker Hub Token:**
 1. Acesse [Docker Hub](https://hub.docker.com/)
 2. Vá em **Account Settings** → **Security**
 3. Clique em **New Access Token**
 4. Copie o token e adicione como `DOCKERHUB_TOKEN` no GitHub
+
+**Como configurar SSH para Deploy na VPS:**
+1. Gere uma chave SSH (se ainda não tiver):
+   ```bash
+   ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/vps_deploy_key
+   ```
+2. Copie a chave pública para a VPS:
+   ```bash
+   ssh-copy-id -i ~/.ssh/vps_deploy_key.pub usuario@167.235.76.26
+   ```
+3. Copie o conteúdo da chave privada (`~/.ssh/vps_deploy_key`) e adicione como `VPS_SSH_KEY` no GitHub Secrets
+4. Adicione `VPS_USER` com o usuário SSH (ex: `root`, `ubuntu`, etc.)
+5. (Opcional) Adicione `VPS_PORT` se usar porta diferente de 22
 
 ## 🚀 Deploy Manual
 
@@ -221,12 +239,42 @@ Adicione os secrets no GitHub:
 
 ### Deploy para Production
 
+O deploy em produção é feito automaticamente na VPS `167.235.76.26` quando há push na branch `main` ou manualmente via workflow_dispatch.
+
+**Processo Automático:**
+1. Push para branch `main` → Build das imagens Docker → Deploy automático na VPS
+2. O workflow:
+   - Copia o `docker-compose.yml` para a VPS
+   - Faz pull das imagens mais recentes do Docker Hub
+   - Executa `docker stack deploy -c docker-compose.yml credgestor`
+
+**Deploy Manual:**
 ```bash
 # Via GitHub Actions UI
 1. Vá em Actions → Deploy CredGestor
 2. Clique em "Run workflow"
 3. Selecione branch: main
 4. Selecione environment: production
+```
+
+**Deploy Manual na VPS (SSH direto):**
+```bash
+# Conecte na VPS
+ssh usuario@167.235.76.26
+
+# Navegue até o diretório do projeto
+cd /var/www/credgestor-homologacao
+
+# Faça pull das imagens mais recentes
+docker pull faelsouz/credgestor-homologacao-backend:latest
+docker pull faelsouz/credgestor-homologacao-frontend:latest
+
+# Execute o deploy
+docker stack deploy -c docker-compose.yml credgestor
+
+# Verifique o status
+docker stack services credgestor
+docker stack ps credgestor
 ```
 
 ## 🧪 Testes

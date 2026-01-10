@@ -5,12 +5,15 @@ services:
   api:
     # Usar imagem do Docker Hub (recomendado para produção)
     image: faelsouz/credgestor-homologacao-backend:latest
-    container_name: credgestor-api
-    env_file:
-      - .env  # Carrega variáveis de ambiente do arquivo .env
+    # container_name não é suportado em Docker Swarm (docker stack deploy)
+    # container_name: credgestor-api
+    # env_file não é suportado em Docker Swarm - use secrets/configs ou variáveis de ambiente
+    # env_file:
+    #   - .env  # Carrega variáveis de ambiente do arquivo .env
     environment:
-      # ⚠️  NÃO coloque credenciais aqui! Use o arquivo .env
-      # As seguintes variáveis devem estar no .env:
+      # ⚠️  NÃO coloque credenciais aqui! Use secrets do Docker Swarm ou arquivo .env
+      # As variáveis serão carregadas do arquivo .env na VPS antes do deploy
+      # As seguintes variáveis devem estar no .env ou no ambiente:
       # - SUPABASE_URL
       # - SUPABASE_SERVICE_ROLE_KEY
       # - SUPABASE_ANON_KEY (opcional)
@@ -18,10 +21,24 @@ services:
       
       API_HOST: ${API_HOST:-0.0.0.0}
       API_PORT: ${API_PORT:-8000}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      DATABASE_URL: ${DATABASE_URL:-}
     ports:
       - "8000:8000"
     networks:
       - network_public
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -34,11 +51,18 @@ services:
   site:
     # Manter imagem de homologação
     image: faelsouz/credgestor-homologacao-frontend:latest
-    container_name: credgestor-frontend
+    # container_name não é suportado em Docker Swarm (docker stack deploy)
+    # container_name: credgestor-frontend
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
       labels:
         - traefik.enable=true
         - traefik.docker.network=network_public
@@ -65,8 +89,9 @@ services:
 
     networks:
       - network_public
-    depends_on:
-      - api
+    # depends_on não funciona em Docker Swarm - use deploy.placement.constraints se necessário
+    # depends_on:
+    #   - api
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
       interval: 30s
@@ -84,13 +109,20 @@ networks:
 #
 # 1. Iniciar todos os serviços:
 #    docker-compose up -d
+#    # OU para produção com Docker Swarm:
+#    docker stack deploy -c docker-compose.yml credgestor
 #
 # 2. Ver logs:
 #    docker-compose logs -f api
 #    docker-compose logs -f site
+#    # OU para Docker Swarm:
+#    docker service logs -f credgestor_api
+#    docker service logs -f credgestor_site
 #
 # 3. Parar todos os serviços:
 #    docker-compose down
+#    # OU para Docker Swarm:
+#    docker stack rm credgestor
 #
 # 4. Acessar serviços:
 #    - API: http://localhost:8000
@@ -99,6 +131,9 @@ networks:
 #
 # 5. Executar comando no container:
 #    docker-compose exec api python -m backend.legacy.create_tables
+#    # OU para Docker Swarm:
+#    docker service ps credgestor_api --no-trunc
+#    docker exec $(docker ps -q -f name=credgestor_api) python -m backend.legacy.create_tables
 #
 # ===================================================================
 # NOTAS
@@ -108,5 +143,8 @@ networks:
 # - Usa Supabase como banco de dados (não há PostgreSQL local)
 # - A imagem de homologação é mantida conforme solicitado
 # - pgAdmin foi removido pois não é necessário com Supabase
+# - Compatível com docker-compose e docker stack deploy (Docker Swarm)
+# - Para usar env_file com docker stack deploy, configure secrets do Docker Swarm
+#   ou use variáveis de ambiente diretamente no arquivo
 #
 # ===================================================================
