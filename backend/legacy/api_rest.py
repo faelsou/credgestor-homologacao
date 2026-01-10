@@ -11,7 +11,18 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 
-from .crud_operations import DatabaseConnection, obter_cruds
+# Importação condicional do código legacy - só funciona se DATABASE_URL estiver configurada
+try:
+    from .crud_operations import DatabaseConnection, obter_cruds
+    LEGACY_AVAILABLE = True
+except (ValueError, ImportError) as e:
+    # Se DATABASE_URL não estiver configurada, o código legacy não estará disponível
+    # Isso é esperado quando usando Supabase como banco principal
+    LEGACY_AVAILABLE = False
+    DatabaseConnection = None
+    obter_cruds = None
+    print(f"⚠️  Código legacy não disponível: {e}")
+    print("   Isso é esperado quando usando Supabase como banco principal.")
 
 app = FastAPI(
     title="Credgestor API",
@@ -31,6 +42,12 @@ app.add_middleware(
 
 # Dependency para conexão com banco
 def get_db():
+    if not LEGACY_AVAILABLE:
+        raise HTTPException(
+            status_code=503, 
+            detail="Código legacy não disponível. DATABASE_URL não está configurada. "
+                   "Use as rotas do Supabase em /tenants/{tenant_id}/..."
+        )
     db = DatabaseConnection()
     if not db.connect():
         raise HTTPException(
