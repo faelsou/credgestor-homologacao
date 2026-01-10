@@ -22,6 +22,7 @@ DATABASE_URL = os.getenv(
 if not DATABASE_URL:
     # Apenas avisar, não bloquear
     import warnings
+
     warnings.warn(
         "DATABASE_URL não está configurada. "
         "Este script não pode ser executado sem DATABASE_URL. "

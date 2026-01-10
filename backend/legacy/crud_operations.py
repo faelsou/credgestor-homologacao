@@ -25,6 +25,7 @@ DATABASE_URL = os.getenv(
 if not DATABASE_URL:
     # Apenas avisar, não bloquear - permite que a aplicação rode com Supabase
     import warnings
+
     warnings.warn(
         "DATABASE_URL não está configurada. "
         "O código legacy não estará disponível. "
