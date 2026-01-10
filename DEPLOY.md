@@ -179,7 +179,7 @@ services:
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅ Sim | Service Role Key (nunca exponha no frontend!) |
 | `SUPABASE_ANON_KEY` | ⚠️ Opcional | Anon Key (para autenticação) |
 | `DEFAULT_TENANT_ID` | ⚠️ Opcional | Tenant ID padrão |
-| `DATABASE_URL` | ⚠️ Opcional | Para código legacy |
+| `DATABASE_URL` | ⚠️ Opcional | Connection string PostgreSQL do Supabase (para código legacy). Formato: `postgresql://postgres:password@db.project.supabase.co:5432/postgres` |
 
 ### Frontend (Vite)
 
@@ -375,16 +375,32 @@ npm run build
 
 ### Erro: "DATABASE_URL não está configurada"
 
-**Solução:**
+**Nota:** Este erro só ocorre se você estiver tentando usar o código legacy. Se estiver usando Supabase como banco principal, este erro pode ser ignorado (o código legacy não será usado).
+
+**Solução (se precisar do código legacy):**
+1. Obtenha a connection string do Supabase:
+   - Acesse o dashboard do Supabase: https://app.supabase.com
+   - Vá em **Project Settings** → **Database**
+   - Copie a **Connection string** (formato: `postgresql://postgres:password@db.project.supabase.co:5432/postgres`)
+
+2. Adicione ao arquivo `.env` na VPS:
+   ```bash
+   # Verifique se o arquivo .env existe
+   ls -la .env
+   
+   # Se não existir, crie um novo
+   nano .env
+   
+   # Adicione a DATABASE_URL:
+   DATABASE_URL=postgresql://postgres:password@db.project.supabase.co:5432/postgres
+   ```
+
+**Exemplo de `.env` completo:**
 ```bash
-# Verifique se o arquivo .env existe
-ls -la .env
-
-# Se não existir, copie do exemplo
-cp .env.example .env
-
-# Edite e adicione suas credenciais
-nano .env
+SUPABASE_URL=https://aclyrcuahiujgtjuimoh.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=sua-service-role-key
+SUPABASE_ANON_KEY=sua-anon-key
+DATABASE_URL=postgresql://postgres:password@db.aclyrcuahiujgtjuimoh.supabase.co:5432/postgres
 ```
 
 ### Erro: "Cannot connect to database"

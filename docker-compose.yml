@@ -24,6 +24,9 @@ services:
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      # DATABASE_URL é opcional - só necessário para código legacy
+      # Use a connection string do Supabase se precisar do código legacy
+      # Exemplo: postgresql://postgres:password@db.project.supabase.co:5432/postgres
       DATABASE_URL: ${DATABASE_URL:-}
     ports:
       - "8000:8000"
