@@ -1860,7 +1860,10 @@ const App: React.FC = () => {
         setView('home');
         return true;
       } catch (error) {
-        console.error('Falha ao autenticar via backend', error);
+        console.error('❌ Falha ao autenticar via backend:', error);
+        if (error instanceof Error) {
+          console.error('📝 Mensagem de erro:', error.message);
+        }
         return false;
       }
     }

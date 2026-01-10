@@ -274,6 +274,7 @@ jobs:
             GIT_REF=${{ github.ref }}
             VITE_SUPABASE_URL=${{ matrix.component == 'frontend' && secrets.VITE_SUPABASE_URL || '' }}
             VITE_SUPABASE_ANON_KEY=${{ matrix.component == 'frontend' && secrets.VITE_SUPABASE_ANON_KEY || '' }}
+            VITE_API_BASE_URL=${{ matrix.component == 'frontend' && (secrets.VITE_API_BASE_URL || 'https://credgestor.app.br/api') || '' }}
             VITE_N8N_BASE_URL=${{ matrix.component == 'frontend' && secrets.VITE_N8N_BASE_URL || '' }}
 
       - name: 📋 List pushed tags

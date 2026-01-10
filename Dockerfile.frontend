@@ -16,6 +16,7 @@ COPY . .
 # Variáveis do Vite (opcionais - podem ser vazias)
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
+ARG VITE_API_BASE_URL
 ARG VITE_N8N_BASE_URL
 # Metadata de build (opcionais)
 ARG BUILD_DATE
@@ -26,6 +27,7 @@ ARG GIT_REF
 # Usa valor padrão vazio se não fornecido
 ENV VITE_SUPABASE_URL=${VITE_SUPABASE_URL:-}
 ENV VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY:-}
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL:-}
 ENV VITE_N8N_BASE_URL=${VITE_N8N_BASE_URL:-}
 # Metadata (não usado no build, apenas para labels)
 ENV BUILD_DATE=${BUILD_DATE:-}
@@ -52,6 +54,9 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Copiar configuração customizada do nginx
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+
+# Instalar wget para healthcheck (nginx:alpine não inclui wget por padrão)
+RUN apk add --no-cache wget
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

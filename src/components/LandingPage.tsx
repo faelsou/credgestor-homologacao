@@ -29,6 +29,8 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
     e.preventDefault();
     setError('');
     setIsSubmitting(true);
+    
+    try {
     const success = await login(email, password);
     setIsSubmitting(false);
     if (success) {
@@ -37,6 +39,12 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
       return;
     }
     setError('Credenciais inválidas ou problema ao conectar ao backend.');
+    } catch (error) {
+      setIsSubmitting(false);
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao fazer login';
+      console.error('❌ Erro no login:', error);
+      setError(errorMessage);
+    }
   };
 
   const fillCredentials = (type: 'ADMIN' | 'COLLECTION') => {
