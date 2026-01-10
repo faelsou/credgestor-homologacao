@@ -4,7 +4,7 @@ services:
   # API FastAPI (Backend)
   api:
     # Usar imagem do Docker Hub (recomendado para produção)
-    image: faelsouz/credgestor-homologacao-backend:v1.0.0
+    image: faelsouz/credgestor-homologacao-backend:latest
     # container_name não é suportado em Docker Swarm (docker stack deploy)
     # container_name: credgestor-api
     # env_file não é suportado em Docker Swarm - use secrets/configs ou variáveis de ambiente
@@ -42,6 +42,34 @@ services:
         parallelism: 1
         delay: 10s
         failure_action: rollback
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=network_public
+        
+        # Roteamento da API via Traefik
+        # HTTP -> HTTPS redirect para API
+        - traefik.http.routers.credgestor-api-web.rule=Host(`credgestor.app.br`,`www.credgestor.app.br`) && PathPrefix(`/api`)
+        - traefik.http.routers.credgestor-api-web.entrypoints=web
+        - traefik.http.routers.credgestor-api-web.middlewares=credgestor-api-https-redirect
+        - traefik.http.middlewares.credgestor-api-https-redirect.redirectscheme.scheme=https
+        - traefik.http.middlewares.credgestor-api-https-redirect.redirectscheme.permanent=true
+        - traefik.http.routers.credgestor-api-web.service=credgestor-api
+        
+        # HTTPS para API
+        - traefik.http.routers.credgestor-api-secure.rule=Host(`credgestor.app.br`,`www.credgestor.app.br`) && PathPrefix(`/api`)
+        - traefik.http.routers.credgestor-api-secure.entrypoints=websecure
+        - traefik.http.routers.credgestor-api-secure.tls=true
+        - traefik.http.routers.credgestor-api-secure.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.credgestor-api-secure.service=credgestor-api
+        - traefik.http.routers.credgestor-api-secure.tls.domains[0].main=credgestor.app.br
+        - traefik.http.routers.credgestor-api-secure.tls.domains[0].sans=www.credgestor.app.br
+        
+        # Middleware para remover o prefixo /api antes de encaminhar para o backend
+        - traefik.http.middlewares.credgestor-api-stripprefix.stripprefix.prefixes=/api
+        - traefik.http.routers.credgestor-api-secure.middlewares=credgestor-api-stripprefix
+        
+        # Serviço da API
+        - traefik.http.services.credgestor-api.loadbalancer.server.port=8000
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -53,7 +81,7 @@ services:
   # Frontend React + Vite (Site)
   site:
     # Manter imagem de homologação
-    image: faelsouz/credgestor-homologacao-frontend:v1.0.0
+    image: faelsouz/credgestor-homologacao-frontend:latest
     # container_name não é suportado em Docker Swarm (docker stack deploy)
     # container_name: credgestor-frontend
     deploy:
