@@ -25,6 +25,8 @@ app.add_middleware(
 
 TENANT_TABLES: Dict[str, str] = {
     "clients": "tenant_id",
+    "loans": "tenant_id",
+    "installments": "tenant_id",
     "experiences": "tenant_id",
     "historic_scores": "tenant_id",
     "login_audit": "tenant_id",
@@ -84,8 +86,9 @@ def _apply_filters(table: str, filters: List[Tuple[str, Any]] | None = None):
         for column, value in filters or []:
             query = query.eq(column, value)
         response = query.execute()
-        if response.error:
-            raise HTTPException(status_code=500, detail=_format_error(response.error))
+        error = getattr(response, "error", None)
+        if error:
+            raise HTTPException(status_code=500, detail=_format_error(error))
         return response.data or []
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
@@ -99,14 +102,44 @@ def _insert_row(table: str, payload: Dict[str, Any]):
     try:
         supabase = get_supabase_admin_client()
         response = supabase.table(table).insert(payload).execute()
-        if response.error:
-            raise HTTPException(status_code=400, detail=_format_error(response.error))
+        error = getattr(response, "error", None)
+        if error:
+            raise HTTPException(status_code=400, detail=_format_error(error))
         return response.data or []
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Erro ao inserir no banco de dados: {str(e)}"
+        )
+
+
+def _update_row(
+    table: str,
+    record_id: str,
+    payload: Dict[str, Any],
+    tenant_filter: Tuple[str, Any] | None = None,
+):
+    try:
+        supabase = get_supabase_admin_client()
+        query = supabase.table(table).update(payload).eq("id", record_id)
+
+        if tenant_filter:
+            column, value = tenant_filter
+            query = query.eq(column, value)
+
+        response = query.execute()
+
+        error = getattr(response, "error", None)
+        if error:
+            raise HTTPException(status_code=400, detail=_format_error(error))
+
+        return response.data or []
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao atualizar no banco de dados: {str(e)}"
         )
 
 
@@ -123,8 +156,9 @@ def _delete_row(
 
         response = query.execute()
 
-        if response.error:
-            raise HTTPException(status_code=400, detail=_format_error(response.error))
+        error = getattr(response, "error", None)
+        if error:
+            raise HTTPException(status_code=400, detail=_format_error(error))
 
         return response.data or []
     except RuntimeError as e:
@@ -152,8 +186,9 @@ def _get_single_record(table: str, filters: List[Tuple[str, Any]]):
         query = query.eq(column, value)
 
     response = query.execute()
-    if response.error:
-        raise HTTPException(status_code=500, detail=_format_error(response.error))
+    error = getattr(response, "error", None)
+    if error:
+        raise HTTPException(status_code=500, detail=_format_error(error))
 
     records = response.data or []
     return records[0] if records else None
@@ -178,9 +213,10 @@ def _store_user_session(
         payload[TENANT_TABLES["user_sessions"]] = tenant_id
 
     response = supabase.table("user_sessions").insert(payload).execute()
-    if response.error:
+    error = getattr(response, "error", None)
+    if error:
         # Registro de sessão é auxiliar; não deve impedir o login.
-        print("Falha ao registrar sessão do usuário", _format_error(response.error))
+        print("Falha ao registrar sessão do usuário", _format_error(error))
 
 
 def _log_login_event(tenant_id: str | None, user_id: str, email: str):
@@ -188,17 +224,22 @@ def _log_login_event(tenant_id: str | None, user_id: str, email: str):
         return
     if "login_audit" not in TENANT_TABLES:
         return
-    supabase = get_supabase_admin_client()
-    payload = {
-        "tenant_id": tenant_id,
-        "user_id": user_id,
-        "email": email,
-        "event_type": "login",
-        "logged_at": datetime.now(timezone.utc).isoformat(),
-    }
-    response = supabase.table("login_audit").insert(payload).execute()
-    if response.error:
-        print("Falha ao registrar auditoria de login", _format_error(response.error))
+    try:
+        supabase = get_supabase_admin_client()
+        payload = {
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "email": email,
+            "success": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        response = supabase.table("login_audit").insert(payload).execute()
+        error = getattr(response, "error", None)
+        if error:
+            print("Falha ao registrar auditoria de login", _format_error(error))
+    except Exception as e:
+        # Log de auditoria é auxiliar; não deve impedir o login
+        print(f"Falha ao registrar auditoria de login: {e}")
 
 
 def _get_user_metadata(user: Any) -> Dict[str, Any]:
@@ -236,8 +277,9 @@ def _tenant_ids_for_email(email: str) -> List[str]:
     response = (
         supabase.table("tenant_users").select("tenant_id").eq("email", email).execute()
     )
-    if response.error:
-        raise HTTPException(status_code=500, detail=_format_error(response.error))
+    error = getattr(response, "error", None)
+    if error:
+        raise HTTPException(status_code=500, detail=_format_error(error))
     return [row.get("tenant_id") for row in response.data or [] if row.get("tenant_id")]
 
 
@@ -255,8 +297,9 @@ def _assert_user_in_tenant(email: str | None, tenant_id: str):
         .limit(1)
         .execute()
     )
-    if response.error:
-        raise HTTPException(status_code=500, detail=_format_error(response.error))
+    error = getattr(response, "error", None)
+    if error:
+        raise HTTPException(status_code=500, detail=_format_error(error))
     if not response.data:
         raise HTTPException(
             status_code=403, detail="Usuário não autorizado para o tenant informado."
@@ -477,6 +520,59 @@ def get_tenant(tenant_id: str, context: AuthContext = Depends(require_auth)):
     return tenants[0]
 
 
+# NOTA: Rotas específicas devem vir ANTES das rotas genéricas
+# para evitar que o FastAPI tente fazer match com a rota genérica primeiro
+
+
+@app.get("/tenants/{tenant_id}/installments")
+def list_installments(
+    tenant_id: str,
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    return _apply_filters("installments", [("tenant_id", tenant_id)])
+
+
+@app.post("/tenants/{tenant_id}/installments/batch")
+def create_installments_batch(
+    tenant_id: str,
+    payload: List[Dict[str, Any]] = Body(...),
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    supabase = get_supabase_admin_client()
+
+    print(f"📦 Recebendo {len(payload)} parcelas para inserção no tenant {tenant_id}")
+
+    # Adicionar tenant_id a todas as parcelas
+    installments = [{**inst, "tenant_id": tenant_id} for inst in payload]
+
+    print(
+        f"📋 Primeira parcela (exemplo): {installments[0] if installments else 'Nenhuma'}"
+    )
+
+    response = supabase.table("installments").insert(installments).execute()
+    error = getattr(response, "error", None)
+    if error:
+        print(f"❌ Erro ao inserir parcelas: {error}")
+        raise HTTPException(status_code=400, detail=_format_error(error))
+
+    print(f"✅ {len(response.data or [])} parcelas inseridas com sucesso")
+    return response.data or []
+
+
+@app.post("/tenants/{tenant_id}/installments")
+def create_installment(
+    tenant_id: str,
+    payload: Dict[str, Any] = Body(...),
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    body = {**payload}
+    body.setdefault("tenant_id", tenant_id)
+    return _insert_row("installments", body)
+
+
 @app.get("/tenants/{tenant_id}/{resource}")
 def list_tenant_resource(
     tenant_id: str,
@@ -536,3 +632,111 @@ def create_user(
 @app.post("/auth/login")
 def login(payload: LoginRequest):
     return _authenticate_user(payload)
+
+
+@app.get("/tenants/{tenant_id}/loans")
+def list_loans(
+    tenant_id: str,
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    return _apply_filters("loans", [("tenant_id", tenant_id)])
+
+
+@app.post("/tenants/{tenant_id}/loans")
+def create_loan(
+    tenant_id: str,
+    payload: Dict[str, Any] = Body(...),
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    body = {**payload}
+    body.setdefault("tenant_id", tenant_id)
+    # Normalizar nomes de campos
+    if "client_id" in body:
+        body["client_id"] = body["client_id"]
+    if "interest_rate" in body:
+        body["interest_rate"] = body["interest_rate"]
+    if "total_amount" in body:
+        body["total_amount"] = body["total_amount"]
+    if "start_date" in body:
+        body["start_date"] = body["start_date"]
+    if "installments_count" in body:
+        body["installments_count"] = body["installments_count"]
+    if "promissory_note" in body:
+        body["promissory_note"] = body["promissory_note"]
+    return _insert_row("loans", body)
+
+
+@app.put("/tenants/{tenant_id}/loans/{loan_id}")
+def update_loan(
+    tenant_id: str,
+    loan_id: str,
+    payload: Dict[str, Any] = Body(...),
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    # Verificar se o empréstimo pertence ao tenant
+    existing = _get_single_record("loans", [("id", loan_id), ("tenant_id", tenant_id)])
+    if not existing:
+        raise HTTPException(status_code=404, detail="Empréstimo não encontrado.")
+    # Normalizar nomes de campos
+    body = {**payload}
+    if "client_id" in body:
+        body["client_id"] = body["client_id"]
+    if "interest_rate" in body:
+        body["interest_rate"] = body["interest_rate"]
+    if "total_amount" in body:
+        body["total_amount"] = body["total_amount"]
+    if "start_date" in body:
+        body["start_date"] = body["start_date"]
+    if "installments_count" in body:
+        body["installments_count"] = body["installments_count"]
+    if "promissory_note" in body:
+        body["promissory_note"] = body["promissory_note"]
+    # Atualizar
+    supabase = get_supabase_admin_client()
+    response = (
+        supabase.table("loans")
+        .update(body)
+        .eq("id", loan_id)
+        .eq("tenant_id", tenant_id)
+        .execute()
+    )
+    error = getattr(response, "error", None)
+    if error:
+        raise HTTPException(status_code=400, detail=_format_error(error))
+    return response.data[0] if response.data else existing
+
+
+@app.delete("/tenants/{tenant_id}/loans/{loan_id}")
+def delete_loan(
+    tenant_id: str,
+    loan_id: str,
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    return _delete_row("loans", loan_id, ("tenant_id", tenant_id))
+
+
+@app.put("/tenants/{tenant_id}/installments/{installment_id}")
+def update_installment(
+    tenant_id: str,
+    installment_id: str,
+    payload: Dict[str, Any] = Body(...),
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    return _update_row(
+        "installments", installment_id, payload, ("tenant_id", tenant_id)
+    )
+
+
+@app.delete("/tenants/{tenant_id}/installments/{installment_id}")
+def delete_installment(
+    tenant_id: str,
+    installment_id: str,
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    return _delete_row("installments", installment_id, ("tenant_id", tenant_id))
