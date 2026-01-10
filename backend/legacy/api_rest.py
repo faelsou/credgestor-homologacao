@@ -14,6 +14,7 @@ from pydantic import BaseModel, EmailStr, Field
 # Importação condicional do código legacy - só funciona se DATABASE_URL estiver configurada
 try:
     from .crud_operations import DatabaseConnection, obter_cruds
+
     LEGACY_AVAILABLE = True
 except (ValueError, ImportError) as e:
     # Se DATABASE_URL não estiver configurada, o código legacy não estará disponível
@@ -44,9 +45,9 @@ app.add_middleware(
 def get_db():
     if not LEGACY_AVAILABLE:
         raise HTTPException(
-            status_code=503, 
+            status_code=503,
             detail="Código legacy não disponível. DATABASE_URL não está configurada. "
-                   "Use as rotas do Supabase em /tenants/{tenant_id}/..."
+            "Use as rotas do Supabase em /tenants/{tenant_id}/...",
         )
     db = DatabaseConnection()
     if not db.connect():
