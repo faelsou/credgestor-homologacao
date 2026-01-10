@@ -38,8 +38,9 @@ O projeto utiliza uma arquitetura moderna com:
 ### Production
 - **Branch**: `main`
 - **Objetivo**: Ambiente de produção
-- **Deploy**: Manual ou via workflow_dispatch
-- **URL**: `https://credgestor.com`
+- **Deploy**: Automático via GitHub Actions (push para main) ou manual via workflow_dispatch
+- **URL**: `https://credgestor.app.br`
+- **VPS**: `167.235.76.26`
 
 ## 🔄 CI/CD Pipeline
 
@@ -184,10 +185,17 @@ services:
 
 | Variável | Obrigatória | Descrição |
 |----------|-------------|-----------|
+| `VITE_API_BASE_URL` | ⚠️ Opcional | URL base da API (padrão: `http://localhost:8000`). Em produção: `https://credgestor.app.br/api` |
+| `VITE_API_LOGIN_URL` | ⚠️ Opcional | URL específica para login (sobrescreve `VITE_API_BASE_URL/auth/login`) |
 | `VITE_SUPABASE_URL` | ⚠️ Opcional | URL do Supabase para frontend |
 | `VITE_SUPABASE_ANON_KEY` | ⚠️ Opcional | Anon Key para frontend |
 | `VITE_N8N_BASE_URL` | ⚠️ Opcional | URL do backend N8N |
 | `VITE_N8N_TENANT_ID` | ⚠️ Opcional | Tenant ID para N8N |
+
+**Nota para Produção:**
+- Em produção, configure `VITE_API_BASE_URL=https://credgestor.app.br/api` ou deixe vazio para usar o mesmo domínio do frontend
+- O frontend está disponível em: `https://credgestor.app.br`
+- A API está disponível em: `https://credgestor.app.br/api` (via Traefik) ou `http://167.235.76.26:8000` (acesso direto)
 
 ### Configuração no GitHub
 
@@ -213,17 +221,70 @@ Adicione os secrets no GitHub:
 4. Copie o token e adicione como `DOCKERHUB_TOKEN` no GitHub
 
 **Como configurar SSH para Deploy na VPS:**
-1. Gere uma chave SSH (se ainda não tiver):
+
+⚠️ **IMPORTANTE**: Estes secrets são obrigatórios para o deploy funcionar!
+
+1. **Gere uma chave SSH** (se ainda não tiver):
    ```bash
    ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/vps_deploy_key
    ```
-2. Copie a chave pública para a VPS:
+   - Pressione Enter para aceitar o local padrão
+   - **NÃO** defina uma senha (deixe vazio) para facilitar o uso no CI/CD
+
+2. **Copie a chave pública para a VPS**:
    ```bash
    ssh-copy-id -i ~/.ssh/vps_deploy_key.pub usuario@167.235.76.26
    ```
-3. Copie o conteúdo da chave privada (`~/.ssh/vps_deploy_key`) e adicione como `VPS_SSH_KEY` no GitHub Secrets
-4. Adicione `VPS_USER` com o usuário SSH (ex: `root`, `ubuntu`, etc.)
-5. (Opcional) Adicione `VPS_PORT` se usar porta diferente de 22
+   - Substitua `usuario` pelo seu usuário SSH (ex: `root`, `ubuntu`, etc.)
+   - Você precisará da senha do usuário SSH na primeira vez
+
+3. **Teste a conexão SSH**:
+   ```bash
+   ssh -i ~/.ssh/vps_deploy_key usuario@167.235.76.26
+   ```
+   - Se conectar sem pedir senha, está funcionando corretamente
+
+4. **Configure os Secrets no GitHub**:
+   - Vá em: **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
+   
+   ⚠️ **IMPORTANTE - Regras de Nomenclatura dos Secrets:**
+   - ✅ Use apenas letras (a-z, A-Z), números (0-9) e underscores (_)
+   - ✅ Deve começar com letra ou underscore
+   - ❌ **NÃO** use espaços, hífens (-) ou outros caracteres especiais
+   - ✅ Use o nome **EXATO** como mostrado abaixo (case-sensitive)
+   
+   Adicione os seguintes secrets com os nomes **EXATOS**:
+     
+     **VPS_USER** (obrigatório):
+     - Name: `VPS_USER` (exatamente assim, sem espaços)
+     - Value: seu usuário SSH (ex: `root`, `ubuntu`)
+     
+     **VPS_SSH_KEY** (obrigatório):
+     - Name: `VPS_SSH_KEY` (exatamente assim, sem espaços)
+     - Value: copie o conteúdo completo do arquivo `~/.ssh/vps_deploy_key`:
+       ```bash
+       cat ~/.ssh/vps_deploy_key
+       ```
+       - Copie **TUDO**, incluindo as linhas `-----BEGIN OPENSSH PRIVATE KEY-----` e `-----END OPENSSH PRIVATE KEY-----`
+     
+     **VPS_HOST** (opcional, padrão: 167.235.76.26):
+     - Name: `VPS_HOST` (exatamente assim, sem espaços)
+     - Value: `167.235.76.26` (ou outro IP/hostname se diferente)
+     
+     **VPS_PORT** (opcional, padrão: 22):
+     - Name: `VPS_PORT` (exatamente assim, sem espaços)
+     - Value: `22` (ou outra porta se diferente)
+
+5. **Verifique se os secrets estão configurados**:
+   - Vá em: **Settings** → **Secrets and variables** → **Actions**
+   - Você deve ver: `VPS_USER`, `VPS_SSH_KEY`, e opcionalmente `VPS_HOST` e `VPS_PORT`
+
+**Troubleshooting:**
+- Se o deploy falhar com "can't connect without a private SSH key", verifique se:
+  - O secret `VPS_SSH_KEY` está configurado e contém a chave privada completa
+  - O secret `VPS_USER` está configurado
+  - A chave pública foi adicionada corretamente na VPS (`~/.ssh/authorized_keys`)
+  - O usuário SSH tem permissões adequadas na VPS
 
 ## 🚀 Deploy Manual
 
@@ -275,6 +336,11 @@ docker stack deploy -c docker-compose.yml credgestor
 # Verifique o status
 docker stack services credgestor
 docker stack ps credgestor
+
+# Acesse a aplicação
+# Frontend: https://credgestor.app.br
+# API: https://credgestor.app.br/api ou http://167.235.76.26:8000
+# API Docs: https://credgestor.app.br/api/docs ou http://167.235.76.26:8000/docs
 ```
 
 ## 🧪 Testes
@@ -335,12 +401,37 @@ docker-compose up -d postgres
 psql $DATABASE_URL -c "SELECT 1"
 ```
 
-### Erro no CI/CD: "Secrets not found"
+### Erro no CI/CD: "Secrets not found" ou "can't connect without a private SSH key"
 
 **Solução:**
 1. Vá em **Settings** → **Secrets and variables** → **Actions**
-2. Adicione os secrets necessários
-3. Re-execute o workflow
+2. Verifique se os seguintes secrets estão configurados com os nomes **EXATOS** (sem espaços, sem hífens):
+   - ✅ `VPS_USER` - Usuário SSH (ex: `root`, `ubuntu`)
+   - ✅ `VPS_SSH_KEY` - Chave privada SSH completa
+   - ⚠️ `VPS_HOST` - (opcional) IP da VPS (padrão: `167.235.76.26`)
+   - ⚠️ `VPS_PORT` - (opcional) Porta SSH (padrão: `22`)
+
+### Erro: "Secret names can only contain alphanumeric characters"
+
+**Causa:** O nome do secret contém caracteres inválidos (espaços, hífens, etc.)
+
+**Solução:**
+- ✅ Use apenas letras, números e underscores: `VPS_USER`, `VPS_SSH_KEY`
+- ❌ **NÃO** use: `VPS-USER`, `VPS USER`, `vps.user`, etc.
+- ✅ Os nomes corretos são: `VPS_USER`, `VPS_SSH_KEY`, `VPS_HOST`, `VPS_PORT`
+3. Se `VPS_SSH_KEY` não estiver configurado:
+   ```bash
+   # Gere a chave SSH
+   ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/vps_deploy_key
+   
+   # Copie a chave pública para a VPS
+   ssh-copy-id -i ~/.ssh/vps_deploy_key.pub usuario@167.235.76.26
+   
+   # Copie o conteúdo da chave privada
+   cat ~/.ssh/vps_deploy_key
+   # Cole o conteúdo completo no secret VPS_SSH_KEY no GitHub
+   ```
+4. Re-execute o workflow após configurar os secrets
 
 ### Build do Docker falha
 
@@ -354,6 +445,14 @@ docker build --no-cache -f Dockerfile.backend -t credgestor-backend .
 ```
 
 ## 📊 Monitoramento
+
+### URLs de Produção
+
+- **Frontend**: [https://credgestor.app.br](https://credgestor.app.br)
+- **API**: [https://credgestor.app.br/api](https://credgestor.app.br/api) (via Traefik)
+- **API Direta**: [http://167.235.76.26:8000](http://167.235.76.26:8000)
+- **API Docs**: [https://credgestor.app.br/api/docs](https://credgestor.app.br/api/docs) ou [http://167.235.76.26:8000/docs](http://167.235.76.26:8000/docs)
+- **Health Check**: [https://credgestor.app.br/api/health](https://credgestor.app.br/api/health) ou [http://167.235.76.26:8000/health](http://167.235.76.26:8000/health)
 
 ### Health Checks
 
