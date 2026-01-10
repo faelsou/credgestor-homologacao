@@ -13,16 +13,23 @@ from psycopg2.extras import RealDictCursor
 
 # Carrega DATABASE_URL das variáveis de ambiente
 # Fallback para compatibilidade (NÃO RECOMENDADO em produção)
+# NOTA: Esta variável é opcional quando usando Supabase como banco principal
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     os.getenv("POSTGRES_URL", None),  # Não usar valor padrão hardcoded por segurança
 )
 
+# Tornar DATABASE_URL opcional - não lançar erro se não estiver configurada
+# O código legacy só será usado se DATABASE_URL estiver disponível
+# Em produção com Supabase, esta variável não é necessária
 if not DATABASE_URL:
-    raise ValueError(
+    # Apenas avisar, não bloquear - permite que a aplicação rode com Supabase
+    import warnings
+    warnings.warn(
         "DATABASE_URL não está configurada. "
-        "Defina a variável de ambiente DATABASE_URL ou POSTGRES_URL. "
-        "Exemplo: export DATABASE_URL='postgresql://user:pass@host:5432/db'"
+        "O código legacy não estará disponível. "
+        "Se estiver usando Supabase, isso é esperado e pode ser ignorado. "
+        "Para usar o código legacy, defina DATABASE_URL ou POSTGRES_URL."
     )
 
 
