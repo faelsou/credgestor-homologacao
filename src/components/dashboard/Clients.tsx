@@ -856,12 +856,12 @@
 import React, { useContext, useState } from 'react';
 import { Search, Plus, Phone, Mail, User, Pencil, Trash2, MapPin, Loader2 } from 'lucide-react';
 import { AppContext } from '@/pages/App';
-import { createN8NClient } from '@/services/n8nApi';
+import { createClient, updateClient as updateClientApi, deleteClient as deleteClientApi } from '@/services/api';
 import { Client, UserRole } from '@/types';
 import { formatCep, formatCpf, formatPhone } from '@/utils';
 
 export const ClientsView: React.FC = () => {
-  const { clients, addClient, updateClient, deleteClient, user, loans, n8nSession, usingN8NBackend } = useContext(AppContext);
+  const { clients, addClient, updateClient, deleteClient, user, loans, session, isBackendConfigured } = useContext(AppContext);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
@@ -943,20 +943,23 @@ export const ClientsView: React.FC = () => {
 
   // Função para salvar no banco via webhook n8n
   const saveToDatabase = async (client: Client, action: 'create' | 'update'): Promise<Client | null> => {
-    if (!usingN8NBackend || !n8nSession?.accessToken) {
-      console.warn('Sincronização com n8n desabilitada ou sem sessão válida. Salvando apenas localmente.');
-      return null;
+    // Tenta salvar via backend FastAPI se configurado
+    if (isBackendConfigured && session?.accessToken) {
+      try {
+        console.log(`📤 Sincronizando cliente via backend (${action})`);
+        const syncedClient = action === 'create'
+          ? await createClient(session.accessToken, session.tenantId, client)
+          : await updateClientApi(session.accessToken, session.tenantId, client.id, client);
+        console.log('✅ Cliente salvo no banco de dados:', syncedClient);
+        return syncedClient;
+      } catch (error) {
+        console.error('❌ Erro ao salvar no banco de dados:', error);
+        throw error;
+      }
     }
 
-    try {
-      console.log(`📤 Sincronizando cliente via n8n (${action})`);
-      const syncedClient = await createN8NClient(n8nSession.accessToken, n8nSession.tenantId, client);
-      console.log('✅ Cliente salvo no banco de dados:', syncedClient);
-      return syncedClient;
-    } catch (error) {
-      console.error('❌ Erro ao salvar no banco de dados:', error);
-      throw error;
-    }
+    console.warn('⚠️ Sincronização desabilitada ou sem sessão válida. Salvando apenas localmente.');
+    return null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

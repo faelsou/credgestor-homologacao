@@ -183,7 +183,31 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
 
     const loanId = editingLoan?.id || Math.random().toString(36).substr(2, 9);
     
-      const generatedInstallments: Installment[] = schedulePreview.map(scheduleItem => ({
+    // Para INTEREST_ONLY, criar apenas 1 parcela inicial (somente juros)
+    let generatedInstallments: Installment[];
+    if (loanModel === LoanModel.INTEREST_ONLY) {
+      const firstScheduleItem = schedulePreview[0];
+      if (!firstScheduleItem) {
+        alert('Erro ao gerar parcela inicial.');
+        return;
+      }
+      // Criar apenas a primeira parcela com somente juros
+      // O principalAmount representa o capital total em aberto
+      generatedInstallments = [{
+        id: `inst_${loanId}_1`,
+        loanId: loanId,
+        clientId: selectedClientId,
+        number: 1,
+        dueDate: firstScheduleItem.dueDate,
+        amount: firstScheduleItem.interest, // Apenas juros para pagar agora
+        interestAmount: firstScheduleItem.interest,
+        principalAmount: amount, // Capital total em aberto (será reduzido conforme pagamentos)
+        amountPaid: 0,
+        status: InstallmentStatus.PENDING
+      }];
+    } else {
+      // Para outros modelos, criar todas as parcelas normalmente
+      generatedInstallments = schedulePreview.map(scheduleItem => ({
         id: `inst_${loanId}_${scheduleItem.number}`,
         loanId: loanId,
         clientId: selectedClientId,
@@ -195,6 +219,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
         amountPaid: 0,
         status: InstallmentStatus.PENDING
       }));
+    }
 
     const lastDueDate = generatedInstallments[generatedInstallments.length - 1]?.dueDate || startDate;
     const promissoryToSave: PromissoryNote = {

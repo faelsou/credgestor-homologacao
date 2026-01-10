@@ -10,7 +10,7 @@
 //import { User, UserRole, Client, Loan, Installment, LoanStatus, InstallmentStatus, LoanModel } from './types';
 //import { getTodayDateString, isLate } from './utils';
 //import { isSupabaseConfigured, supabase } from './supabaseClient';
-//import { createN8NClient, fetchN8NClients, isN8NBackendConfigured, loginWithN8N } from './n8nApi';
+//import { createClient, fetchClients, isN8NBackendConfigured, loginWithBackend } from './n8nApi';
 //
 //// --- MOCK DATA INITIALIZATION ---
 //const CLIENTS_STORAGE_KEY = 'credgestor:clients';
@@ -117,7 +117,7 @@
 //  tenantName?: string;
 //};
 //
-//const N8N_SESSION_STORAGE_KEY = 'credgestor:n8n-session';
+//const BACKEND_SESSION_STORAGE_KEY = 'credgestor:n8n-session';
 //
 //export type ThemeOption = 'light' | 'dark-emerald' | 'dark-graphite';
 //
@@ -127,8 +127,8 @@
 //  clients: Client[];
 //  loans: Loan[];
 //  installments: Installment[];
-//  n8nSession: N8NSession | null;
-//  usingN8NBackend: boolean;
+//  session: N8NSession | null;
+//  isBackendConfiguredValue: boolean;
 //  login: (email: string, password?: string, provider?: 'google') => Promise<boolean>;
 //  logout: () => Promise<void>;
 //  addClient: (client: Client) => Promise<Client | null>;
@@ -173,9 +173,9 @@
 //  const [usersList, setUsersList] = useState<User[]>([]);
 //  const [theme, setTheme] = useState<ThemeOption>('light');
 //  const [loanToEditId, setLoanToEditId] = useState<string | null>(null);
-//  const [n8nSession, setN8nSession] = useState<N8NSession | null>(null);
+//  const [session, setSession] = useState<N8NSession | null>(null);
 //
-//  const usingN8NBackend = isN8NBackendConfigured;
+//  const isBackendConfiguredValue = isN8NBackendConfigured;
 //
 //  const mapDbUserToUser = useCallback((record: any): User => ({
 //    id: record.id,
@@ -187,43 +187,43 @@
 //  }), []);
 //
 //  useEffect(() => {
-//    if (!usingN8NBackend) return;
-//    const stored = localStorage.getItem(N8N_SESSION_STORAGE_KEY);
+//    if (!isBackendConfiguredValue) return;
+//    const stored = localStorage.getItem(BACKEND_SESSION_STORAGE_KEY);
 //    if (!stored) return;
 //
 //    try {
 //      const parsed = JSON.parse(stored) as { session: N8NSession; user: User };
-//      setN8nSession(parsed.session);
+//      setSession(parsed.session);
 //      setUser(parsed.user);
 //      setUsersList([parsed.user]);
 //    } catch (error) {
 //      console.error('Não foi possível restaurar a sessão do n8n', error);
-//      localStorage.removeItem(N8N_SESSION_STORAGE_KEY);
+//      localStorage.removeItem(BACKEND_SESSION_STORAGE_KEY);
 //    }
-//  }, [usingN8NBackend]);
+//  }, [isBackendConfiguredValue]);
 //
 //  useEffect(() => {
-//    if (!usingN8NBackend) return;
+//    if (!isBackendConfiguredValue) return;
 //
-//    if (n8nSession && user) {
-//      localStorage.setItem(N8N_SESSION_STORAGE_KEY, JSON.stringify({ session: n8nSession, user }));
+//    if (session && user) {
+//      localStorage.setItem(BACKEND_SESSION_STORAGE_KEY, JSON.stringify({ session: session, user }));
 //    } else {
-//      localStorage.removeItem(N8N_SESSION_STORAGE_KEY);
+//      localStorage.removeItem(BACKEND_SESSION_STORAGE_KEY);
 //    }
-//  }, [n8nSession, user, usingN8NBackend]);
+//  }, [session, user, isBackendConfiguredValue]);
 //
 //  useEffect(() => {
-//    if (usingN8NBackend) return;
+//    if (isBackendConfiguredValue) return;
 //
 //    localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(clients));
-//  }, [clients, usingN8NBackend]);
+//  }, [clients, isBackendConfiguredValue]);
 //
 //  useEffect(() => {
-//    if (!usingN8NBackend || !n8nSession?.accessToken) return;
+//    if (!isBackendConfiguredValue || !session?.accessToken) return;
 //
 //    const loadClients = async () => {
 //      try {
-//        const remoteClients = await fetchN8NClients(n8nSession.accessToken, n8nSession.tenantId);
+//        const remoteClients = await fetchClients(session.accessToken, session.tenantId);
 //        setClients(remoteClients);
 //      } catch (error) {
 //        console.error('Erro ao buscar clientes no backend n8n', error);
@@ -231,7 +231,7 @@
 //    };
 //
 //    loadClients();
-//  }, [n8nSession, usingN8NBackend]);
+//  }, [session, isBackendConfiguredValue]);
 //
 //  const fetchUserProfile = useCallback(async (authUserId: string, fallbackEmail?: string): Promise<User | null> => {
 //    if (!supabase) return null;
@@ -305,7 +305,7 @@
 //  }, []);
 //
 //  useEffect(() => {
-//    if (usingN8NBackend) return;
+//    if (isBackendConfiguredValue) return;
 //
 //    if (!isSupabaseConfigured || !supabase) {
 //      setUsersList(MOCK_USERS);
@@ -336,10 +336,10 @@
 //  }, [fetchUserProfile, loadUsers]);
 //
 //  const login = useCallback(async (email: string, password?: string, provider?: 'google') => {
-//    if (usingN8NBackend) {
+//    if (isBackendConfiguredValue) {
 //      if (!password) return false;
 //      try {
-//        const result = await loginWithN8N(email, password);
+//        const result = await loginWithBackend(email, password);
 //        const sessionInfo: N8NSession = {
 //          accessToken: result.accessToken,
 //          refreshToken: result.refreshToken,
@@ -351,7 +351,7 @@
 //
 //        setUser(result.user);
 //        setUsersList([result.user]);
-//        setN8nSession(sessionInfo);
+//        setSession(sessionInfo);
 //        setView('home');
 //        return true;
 //      } catch (error) {
@@ -408,11 +408,11 @@
 //    }
 //
 //    return false;
-//  }, [fetchUserProfile, usingN8NBackend]);
+//  }, [fetchUserProfile, isBackendConfiguredValue]);
 //
 //  const logout = useCallback(async () => {
-//    if (usingN8NBackend) {
-//      setN8nSession(null);
+//    if (isBackendConfiguredValue) {
+//      setSession(null);
 //      setUser(null);
 //      setClients(MOCK_CLIENTS);
 //      setLoans(MOCK_LOANS);
@@ -427,18 +427,18 @@
 //
 //    await supabase.auth.signOut();
 //    setUser(null);
-//  }, [usingN8NBackend]);
+//  }, [isBackendConfiguredValue]);
 //
 //  const addClient = useCallback(async (client: Client): Promise<Client | null> => {
-//    if (usingN8NBackend && n8nSession?.accessToken) {
-//      const created = await createN8NClient(n8nSession.accessToken, n8nSession.tenantId, client);
+//    if (isBackendConfiguredValue && session?.accessToken) {
+//      const created = await createClient(session.accessToken, session.tenantId, client);
 //      setClients(prev => [...prev, created]);
 //      return created;
 //    }
 //
 //    setClients(prev => [...prev, client]);
 //    return client;
-//  }, [n8nSession, usingN8NBackend]);
+//  }, [session, isBackendConfiguredValue]);
 //
 //  const updateClient = (client: Client) => {
 //    setClients(prev => prev.map(item => item.id === client.id ? client : item));
@@ -559,7 +559,7 @@
 //  };
 //
 //  const addUser = useCallback(async (newUser: User): Promise<User | null> => {
-//    if (usingN8NBackend || !supabase) {
+//    if (isBackendConfiguredValue || !supabase) {
 //      const fallbackUser = { ...newUser, id: newUser.id ?? `local-${Date.now()}` };
 //      setUsersList(prev => [...prev, fallbackUser]);
 //      return fallbackUser;
@@ -598,7 +598,7 @@
 //    const formatted = mapDbUserToUser(profile);
 //    setUsersList(prev => [...prev, formatted]);
 //    return formatted;
-//  }, [mapDbUserToUser, usingN8NBackend]);
+//  }, [mapDbUserToUser, isBackendConfiguredValue]);
 //
 //  const removeUser = useCallback(async (id: string) => {
 //    if (id === user?.id) {
@@ -606,7 +606,7 @@
 //      return;
 //    }
 //
-//    if (usingN8NBackend || !supabase) {
+//    if (isBackendConfiguredValue || !supabase) {
 //      setUsersList(prev => prev.filter(u => u.id !== id));
 //      return;
 //    }
@@ -618,7 +618,7 @@
 //    }
 //
 //    setUsersList(prev => prev.filter(u => u.id !== id));
-//  }, [user?.id, usingN8NBackend]);
+//  }, [user?.id, isBackendConfiguredValue]);
 //
 //  const value = useMemo(() => ({
 //    user,
@@ -626,8 +626,8 @@
 //    clients,
 //    loans,
 //    installments,
-//    n8nSession,
-//    usingN8NBackend,
+//    session,
+//    isBackendConfiguredValue,
 //    login,
 //    logout,
 //    addClient,
@@ -645,7 +645,7 @@
 //    setView,
 //    theme,
 //    setTheme
-//  }), [user, usersList, clients, loans, installments, n8nSession, usingN8NBackend, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setView]);
+//  }), [user, usersList, clients, loans, installments, session, isBackendConfiguredValue, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setView]);
 //
 //  useEffect(() => {
 //    const body = document.body;
@@ -696,7 +696,7 @@
 //import { User, UserRole, Client, Loan, Installment, LoanStatus, InstallmentStatus, LoanModel } from './types';
 //import { getTodayDateString, isLate } from './utils';
 //import { isSupabaseConfigured, supabase } from './supabaseClient';
-//import { createN8NClient, fetchN8NClients, isN8NBackendConfigured, loginWithN8N } from './n8nApi';
+//import { createClient, fetchClients, isN8NBackendConfigured, loginWithBackend } from './n8nApi';
 //
 //// --- MOCK DATA INITIALIZATION ---
 //const CLIENTS_STORAGE_KEY = 'credgestor:clients';
@@ -803,7 +803,7 @@
 //  tenantName?: string;
 //};
 //
-//const N8N_SESSION_STORAGE_KEY = 'credgestor:n8n-session';
+//const BACKEND_SESSION_STORAGE_KEY = 'credgestor:n8n-session';
 //
 //export type ThemeOption = 'light' | 'dark-emerald' | 'dark-graphite';
 //
@@ -813,8 +813,8 @@
 //  clients: Client[];
 //  loans: Loan[];
 //  installments: Installment[];
-//  n8nSession: N8NSession | null;
-//  usingN8NBackend: boolean;
+//  session: N8NSession | null;
+//  isBackendConfiguredValue: boolean;
 //  login: (email: string, password?: string, provider?: 'google') => Promise<boolean>;
 //  logout: () => Promise<void>;
 //  addClient: (client: Client) => Promise<Client | null>;
@@ -859,9 +859,9 @@
 //  const [usersList, setUsersList] = useState<User[]>([]);
 //  const [theme, setTheme] = useState<ThemeOption>('light');
 //  const [loanToEditId, setLoanToEditId] = useState<string | null>(null);
-//  const [n8nSession, setN8nSession] = useState<N8NSession | null>(null);
+//  const [session, setSession] = useState<N8NSession | null>(null);
 //
-//  const usingN8NBackend = isN8NBackendConfigured;
+//  const isBackendConfiguredValue = isN8NBackendConfigured;
 //
 //  const mapDbUserToUser = useCallback((record: any): User => ({
 //    id: record.id,
@@ -873,43 +873,43 @@
 //  }), []);
 //
 //  useEffect(() => {
-//    if (!usingN8NBackend) return;
-//    const stored = localStorage.getItem(N8N_SESSION_STORAGE_KEY);
+//    if (!isBackendConfiguredValue) return;
+//    const stored = localStorage.getItem(BACKEND_SESSION_STORAGE_KEY);
 //    if (!stored) return;
 //
 //    try {
 //      const parsed = JSON.parse(stored) as { session: N8NSession; user: User };
-//      setN8nSession(parsed.session);
+//      setSession(parsed.session);
 //      setUser(parsed.user);
 //      setUsersList([parsed.user]);
 //    } catch (error) {
 //      console.error('Não foi possível restaurar a sessão do n8n', error);
-//      localStorage.removeItem(N8N_SESSION_STORAGE_KEY);
+//      localStorage.removeItem(BACKEND_SESSION_STORAGE_KEY);
 //    }
-//  }, [usingN8NBackend]);
+//  }, [isBackendConfiguredValue]);
 //
 //  useEffect(() => {
-//    if (!usingN8NBackend) return;
+//    if (!isBackendConfiguredValue) return;
 //
-//    if (n8nSession && user) {
-//      localStorage.setItem(N8N_SESSION_STORAGE_KEY, JSON.stringify({ session: n8nSession, user }));
+//    if (session && user) {
+//      localStorage.setItem(BACKEND_SESSION_STORAGE_KEY, JSON.stringify({ session: session, user }));
 //    } else {
-//      localStorage.removeItem(N8N_SESSION_STORAGE_KEY);
+//      localStorage.removeItem(BACKEND_SESSION_STORAGE_KEY);
 //    }
-//  }, [n8nSession, user, usingN8NBackend]);
+//  }, [session, user, isBackendConfiguredValue]);
 //
 //  useEffect(() => {
-//    if (usingN8NBackend) return;
+//    if (isBackendConfiguredValue) return;
 //
 //    localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(clients));
-//  }, [clients, usingN8NBackend]);
+//  }, [clients, isBackendConfiguredValue]);
 //
 //  useEffect(() => {
-//    if (!usingN8NBackend || !n8nSession?.accessToken) return;
+//    if (!isBackendConfiguredValue || !session?.accessToken) return;
 //
 //    const loadClients = async () => {
 //      try {
-//        const remoteClients = await fetchN8NClients(n8nSession.accessToken, n8nSession.tenantId);
+//        const remoteClients = await fetchClients(session.accessToken, session.tenantId);
 //        setClients(remoteClients);
 //      } catch (error) {
 //        console.error('Erro ao buscar clientes no backend n8n', error);
@@ -917,7 +917,7 @@
 //    };
 //
 //    loadClients();
-//  }, [n8nSession, usingN8NBackend]);
+//  }, [session, isBackendConfiguredValue]);
 //
 //  const fetchUserProfile = useCallback(async (authUserId: string, fallbackEmail?: string): Promise<User | null> => {
 //    if (!supabase) return null;
@@ -990,7 +990,7 @@
 //  }, []);
 //
 //  useEffect(() => {
-//    if (usingN8NBackend) return;
+//    if (isBackendConfiguredValue) return;
 //
 //    if (!isSupabaseConfigured || !supabase) {
 //      setUsersList(MOCK_USERS);
@@ -1018,13 +1018,13 @@
 //    return () => {
 //      authListener?.subscription.unsubscribe();
 //    };
-//  }, [fetchUserProfile, loadUsers, usingN8NBackend]);
+//  }, [fetchUserProfile, loadUsers, isBackendConfiguredValue]);
 //
 //  const login = useCallback(async (email: string, password?: string, provider?: 'google') => {
-//    if (usingN8NBackend) {
+//    if (isBackendConfiguredValue) {
 //      if (!password) return false;
 //      try {
-//        const result = await loginWithN8N(email, password);
+//        const result = await loginWithBackend(email, password);
 //        const sessionInfo: N8NSession = {
 //          accessToken: result.accessToken,
 //          refreshToken: result.refreshToken,
@@ -1036,7 +1036,7 @@
 //
 //        setUser(result.user);
 //        setUsersList([result.user]);
-//        setN8nSession(sessionInfo);
+//        setSession(sessionInfo);
 //        setView('home');
 //        return true;
 //      } catch (error) {
@@ -1092,11 +1092,11 @@
 //    }
 //
 //    return false;
-//  }, [fetchUserProfile, usingN8NBackend]);
+//  }, [fetchUserProfile, isBackendConfiguredValue]);
 //
 //  const logout = useCallback(async () => {
-//    if (usingN8NBackend) {
-//      setN8nSession(null);
+//    if (isBackendConfiguredValue) {
+//      setSession(null);
 //      setUser(null);
 //      setClients(MOCK_CLIENTS);
 //      setLoans(MOCK_LOANS);
@@ -1111,13 +1111,13 @@
 //
 //    await supabase.auth.signOut();
 //    setUser(null);
-//  }, [usingN8NBackend]);
+//  }, [isBackendConfiguredValue]);
 //
 //  // ⭐ FUNÇÃO CORRIGIDA - SEM WEBHOOK, APENAS SALVAMENTO LOCAL
 //  const addClient = useCallback(async (client: Client): Promise<Client | null> => {
-//    if (usingN8NBackend && n8nSession?.accessToken) {
+//    if (isBackendConfiguredValue && session?.accessToken) {
 //      try {
-//        const created = await createN8NClient(n8nSession.accessToken, n8nSession.tenantId, client);
+//        const created = await createClient(session.accessToken, session.tenantId, client);
 //        setClients(prev => [...prev, created]);
 //        return created;
 //      } catch (error) {
@@ -1131,7 +1131,7 @@
 //    setClients(prev => [...prev, client]);
 //    console.log('✅ addClient: cliente salvo com sucesso');
 //    return client;
-//  }, [n8nSession, usingN8NBackend]);
+//  }, [session, isBackendConfiguredValue]);
 //
 //  const updateClient = (client: Client) => {
 //    setClients(prev => prev.map(item => item.id === client.id ? client : item));
@@ -1252,7 +1252,7 @@
 //  };
 //
 //  const addUser = useCallback(async (newUser: User): Promise<User | null> => {
-//    if (usingN8NBackend || !supabase) {
+//    if (isBackendConfiguredValue || !supabase) {
 //      const fallbackUser = { ...newUser, id: newUser.id ?? `local-${Date.now()}` };
 //      setUsersList(prev => [...prev, fallbackUser]);
 //      return fallbackUser;
@@ -1291,7 +1291,7 @@
 //    const formatted = mapDbUserToUser(profile);
 //    setUsersList(prev => [...prev, formatted]);
 //    return formatted;
-//  }, [mapDbUserToUser, usingN8NBackend]);
+//  }, [mapDbUserToUser, isBackendConfiguredValue]);
 //
 //  const removeUser = useCallback(async (id: string) => {
 //    if (id === user?.id) {
@@ -1299,7 +1299,7 @@
 //      return;
 //    }
 //
-//    if (usingN8NBackend || !supabase) {
+//    if (isBackendConfiguredValue || !supabase) {
 //      setUsersList(prev => prev.filter(u => u.id !== id));
 //      return;
 //    }
@@ -1311,7 +1311,7 @@
 //    }
 //
 //    setUsersList(prev => prev.filter(u => u.id !== id));
-//  }, [user?.id, usingN8NBackend]);
+//  }, [user?.id, isBackendConfiguredValue]);
 //
 //  const value = useMemo(() => ({
 //    user,
@@ -1319,8 +1319,8 @@
 //    clients,
 //    loans,
 //    installments,
-//    n8nSession,
-//    usingN8NBackend,
+//    session,
+//    isBackendConfiguredValue,
 //    login,
 //    logout,
 //    addClient,
@@ -1338,7 +1338,7 @@
 //    setView,
 //    theme,
 //    setTheme
-//  }), [user, usersList, clients, loans, installments, n8nSession, usingN8NBackend, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setView]);
+//  }), [user, usersList, clients, loans, installments, session, isBackendConfiguredValue, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setView]);
 //
 //  useEffect(() => {
 //    const body = document.body;
@@ -1388,7 +1388,7 @@ import { LoanHistoryView } from '@/components/dashboard/LoanHistory';
 import { User, UserRole, Client, Loan, Installment, LoanStatus, InstallmentStatus, LoanModel } from '@/types';
 import { getTodayDateString, isLate, normalizeUserRole } from '@/utils';
 import { isSupabaseConfigured, supabase } from '@/services/supabaseClient';
-import { createN8NClient, deleteN8NClient, fetchN8NClients, isN8NBackendConfigured, loginWithN8N } from '@/services/n8nApi';
+import { createClient, deleteClient as deleteClientApi, fetchClients, isBackendConfigured, loginWithBackend, LoginResult } from '@/services/api';
 
 // --- MOCK DATA INITIALIZATION ---
 const CLIENTS_STORAGE_KEY = 'credgestor:clients';
@@ -1497,7 +1497,7 @@ const MOCK_INSTALLMENTS: Installment[] = [
   { id: 'i2', loanId: 'l1', clientId: '1', number: 2, dueDate: TODAY, amount: 550, amountPaid: 0, status: InstallmentStatus.PENDING },
 ];
 
-type N8NSession = {
+type BackendSession = {
   accessToken: string;
   refreshToken: string;
   accessExpiresAt?: string;
@@ -1506,8 +1506,8 @@ type N8NSession = {
   tenantName?: string;
 };
 
-const N8N_SESSION_STORAGE_KEY = 'credgestor:n8n-session';
-const DEFAULT_N8N_TENANT_ID = import.meta.env.VITE_N8N_TENANT_ID as string | undefined;
+const BACKEND_SESSION_STORAGE_KEY = 'credgestor:backend-session';
+const DEFAULT_TENANT_ID = import.meta.env.VITE_API_TENANT_ID as string | undefined || '00000000-0000-0000-0000-000000000001';
 
 export type ThemeOption = 'light' | 'dark-emerald' | 'dark-graphite';
 
@@ -1542,8 +1542,8 @@ export const AppContext = React.createContext<{
   clients: Client[];
   loans: Loan[];
   installments: Installment[];
-  n8nSession: N8NSession | null;
-  usingN8NBackend: boolean;
+  session: BackendSession | null;
+  isBackendConfigured: boolean;
   login: (email: string, password?: string, provider?: 'google') => Promise<boolean>;
   logout: () => Promise<void>;
   addClient: (client: Client) => Promise<Client | null>;
@@ -1553,7 +1553,7 @@ export const AppContext = React.createContext<{
   updateLoan: (loan: Loan, generatedInstallments: Installment[]) => void;
   deleteLoan: (id: string) => void;
   payInstallment: (id: string, amount?: number) => void;
-  scheduleFuturePayment: (id: string, reason: string, amount: number, date?: string) => void;
+  scheduleFuturePayment: (id: string, reason: string, amount: number, date?: string) => Promise<void>;
   startEditingLoan: (loanId: string) => void;
   addUser: (newUser: User) => Promise<User | null>;
   removeUser: (id: string) => Promise<void>;
@@ -1564,8 +1564,8 @@ export const AppContext = React.createContext<{
 }>({} as any);
 
 const App: React.FC = () => {
-  const usingN8NBackend = isN8NBackendConfigured;
-  const shouldUseLocalPersistence = !usingN8NBackend && !isSupabaseConfigured;
+  const isBackendConfiguredValue = isBackendConfigured;
+  const shouldUseLocalPersistence = !isBackendConfiguredValue && !isSupabaseConfigured;
   const [storedState] = useState<LocalAppState>(() => shouldUseLocalPersistence ? loadStoredAppState() : {});
 
   const [user, setUser] = useState<User | null>(() => shouldUseLocalPersistence ? storedState.user ?? null : null);
@@ -1596,7 +1596,7 @@ const App: React.FC = () => {
   const [usersList, setUsersList] = useState<User[]>(() => shouldUseLocalPersistence && storedState.usersList ? storedState.usersList : []);
   const [theme, setTheme] = useState<ThemeOption>(storedState.theme ?? 'light');
   const [loanToEditId, setLoanToEditId] = useState<string | null>(null);
-  const [n8nSession, setN8nSession] = useState<N8NSession | null>(null);
+  const [session, setSession] = useState<BackendSession | null>(null);
 
   const mapDbUserToUser = useCallback((record: any): User => ({
     id: record.id,
@@ -1622,42 +1622,42 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!usingN8NBackend) return;
-    const stored = localStorage.getItem(N8N_SESSION_STORAGE_KEY);
+    if (!isBackendConfiguredValue) return;
+    const stored = localStorage.getItem(BACKEND_SESSION_STORAGE_KEY);
     if (!stored) return;
 
     try {
-      const parsed = JSON.parse(stored) as { session: N8NSession; user: User };
-      const session = { ...parsed.session, tenantId: parsed.session.tenantId ?? DEFAULT_N8N_TENANT_ID };
+      const parsed = JSON.parse(stored) as { session: BackendSession; user: User };
+      const restoredSession = { ...parsed.session, tenantId: parsed.session.tenantId ?? DEFAULT_TENANT_ID };
       const storedUser = {
         ...parsed.user,
-        tenantId: parsed.user.tenantId ?? DEFAULT_N8N_TENANT_ID,
+        tenantId: parsed.user.tenantId ?? DEFAULT_TENANT_ID,
         role: normalizeUserRole(parsed.user.role),
       };
-      setN8nSession(session);
+      setSession(restoredSession);
       setUser(storedUser);
       setUsersList([storedUser]);
     } catch (error) {
-      console.error('Não foi possível restaurar a sessão do n8n', error);
-      localStorage.removeItem(N8N_SESSION_STORAGE_KEY);
+      console.error('Não foi possível restaurar a sessão do backend', error);
+      localStorage.removeItem(BACKEND_SESSION_STORAGE_KEY);
     }
-  }, [usingN8NBackend]);
+  }, [isBackendConfiguredValue]);
 
   useEffect(() => {
-    if (!usingN8NBackend) return;
+    if (!isBackendConfiguredValue) return;
 
-    if (n8nSession && user) {
-      localStorage.setItem(N8N_SESSION_STORAGE_KEY, JSON.stringify({ session: n8nSession, user }));
+    if (session && user) {
+      localStorage.setItem(BACKEND_SESSION_STORAGE_KEY, JSON.stringify({ session, user }));
     } else {
-      localStorage.removeItem(N8N_SESSION_STORAGE_KEY);
+      localStorage.removeItem(BACKEND_SESSION_STORAGE_KEY);
     }
-  }, [n8nSession, user, usingN8NBackend]);
+  }, [session, user, isBackendConfiguredValue]);
 
   useEffect(() => {
-    if (usingN8NBackend) return;
+    if (isBackendConfiguredValue) return;
 
     localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(clients));
-  }, [clients, usingN8NBackend]);
+  }, [clients, isBackendConfiguredValue]);
 
   useEffect(() => {
     if (!shouldUseLocalPersistence) return;
@@ -1676,19 +1676,40 @@ const App: React.FC = () => {
   }, [clients, installments, loans, shouldUseLocalPersistence, theme, user, usersList, view]);
 
   useEffect(() => {
-    if (!usingN8NBackend || !n8nSession?.accessToken) return;
+    if (!isBackendConfiguredValue || !session?.accessToken) return;
 
-    const loadClients = async () => {
+    const loadData = async () => {
       try {
-        const remoteClients = await fetchN8NClients(n8nSession.accessToken, n8nSession.tenantId);
+        // Carregar clientes
+        const remoteClients = await fetchClients(session.accessToken, session.tenantId);
         setClients(remoteClients);
+        
+        // Carregar empréstimos
+        try {
+          const { fetchBackendLoans } = await import('@/services/backendApi');
+          const remoteLoans = await fetchBackendLoans(session.accessToken, session.tenantId || '');
+          setLoans(remoteLoans);
+        } catch (loanError) {
+          console.error('Erro ao buscar empréstimos no backend', loanError);
+          // Continua mesmo se falhar ao carregar empréstimos
+        }
+        
+        // Carregar parcelas
+        try {
+          const { fetchBackendInstallments } = await import('@/services/backendApi');
+          const remoteInstallments = await fetchBackendInstallments(session.accessToken, session.tenantId || '');
+          setInstallments(remoteInstallments);
+        } catch (installmentError) {
+          console.error('Erro ao buscar parcelas no backend', installmentError);
+          // Continua mesmo se falhar ao carregar parcelas
+        }
       } catch (error) {
-        console.error('Erro ao buscar clientes no backend n8n', error);
+        console.error('Erro ao buscar dados no backend', error);
       }
     };
 
-    loadClients();
-  }, [n8nSession, usingN8NBackend]);
+    loadData();
+  }, [session, isBackendConfiguredValue]);
 
   const fetchUserProfile = useCallback(async (authUserId: string, fallbackEmail?: string): Promise<User | null> => {
     if (!supabase) return null;
@@ -1761,7 +1782,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (usingN8NBackend) return;
+    if (isBackendConfiguredValue) return;
 
     if (!isSupabaseConfigured || !supabase) {
       if (!shouldUseLocalPersistence || !storedState.usersList || storedState.usersList.length === 0) {
@@ -1811,20 +1832,20 @@ const App: React.FC = () => {
     mapAuthUserToLocalUser,
     shouldUseLocalPersistence,
     storedState.usersList,
-    usingN8NBackend,
+    isBackendConfiguredValue,
   ]);
 
   const login = useCallback(async (email: string, password?: string, provider?: 'google') => {
-    if (usingN8NBackend) {
+    if (isBackendConfiguredValue) {
       if (!password) return false;
       try {
-        const result = await loginWithN8N(email, password);
+        const result = await loginWithBackend(email, password);
         const normalizedUser = {
           ...result.user,
-          tenantId: result.user.tenantId ?? DEFAULT_N8N_TENANT_ID,
+          tenantId: result.user.tenantId ?? DEFAULT_TENANT_ID,
           role: normalizeUserRole(result.user.role),
         };
-        const sessionInfo: N8NSession = {
+        const sessionInfo: BackendSession = {
           accessToken: result.accessToken,
           refreshToken: result.refreshToken,
           accessExpiresAt: result.accessExpiresAt,
@@ -1835,11 +1856,11 @@ const App: React.FC = () => {
 
         setUser(normalizedUser);
         setUsersList([normalizedUser]);
-        setN8nSession(sessionInfo);
+        setSession(sessionInfo);
         setView('home');
         return true;
       } catch (error) {
-        console.error('Falha ao autenticar via backend n8n', error);
+        console.error('Falha ao autenticar via backend', error);
         return false;
       }
     }
@@ -1929,11 +1950,11 @@ const App: React.FC = () => {
     }
 
     return false;
-  }, [fetchUserProfile, mapAuthUserToLocalUser, usingN8NBackend]);
+  }, [fetchUserProfile, mapAuthUserToLocalUser, isBackendConfiguredValue]);
 
   const logout = useCallback(async () => {
-    if (usingN8NBackend) {
-      setN8nSession(null);
+    if (isBackendConfiguredValue) {
+      setSession(null);
       setUser(null);
       setClients(MOCK_CLIENTS);
       setLoans(MOCK_LOANS);
@@ -1948,84 +1969,160 @@ const App: React.FC = () => {
 
     await supabase.auth.signOut();
     setUser(null);
-  }, [usingN8NBackend]);
+  }, [isBackendConfiguredValue]);
 
-  // ⭐ FUNÇÃO CORRIGIDA - SEM WEBHOOK, APENAS SALVAMENTO LOCAL
+  // ⭐ FUNÇÃO CORRIGIDA - Salva no backend FastAPI quando autenticado
   const addClient = useCallback(async (client: Client): Promise<Client | null> => {
-    if (usingN8NBackend && n8nSession?.accessToken) {
+    if (isBackendConfiguredValue && session?.accessToken) {
       try {
-        const created = await createN8NClient(n8nSession.accessToken, n8nSession.tenantId, client);
+        const created = await createClient(session.accessToken, session.tenantId, client);
         setClients(prev => [...prev, created]);
         return created;
       } catch (error) {
-        console.error('Erro ao criar cliente via n8n API', error);
-        throw error;
+        console.error('Erro ao criar cliente via backend API', error);
+        // Fallback: salva localmente se falhar
+        setClients(prev => [...prev, client]);
+        return client;
       }
     }
 
-    // ✅ SOLUÇÃO: Apenas salva localmente, SEM chamar webhook
-    console.log('📝 addClient: salvando cliente localmente');
+    // Fallback: salva localmente se não estiver configurado
+    console.log('📝 addClient: salvando cliente localmente (backend não configurado)');
     setClients(prev => [...prev, client]);
-    console.log('✅ addClient: cliente salvo com sucesso');
     return client;
-  }, [n8nSession, usingN8NBackend]);
+  }, [session, isBackendConfiguredValue]);
 
   const updateClient = (client: Client) => {
     setClients(prev => prev.map(item => item.id === client.id ? client : item));
   };
 
   const deleteClient = useCallback(async (id: string) => {
-    if (usingN8NBackend && n8nSession?.accessToken) {
+    if (isBackendConfiguredValue && session?.accessToken) {
       try {
-        await deleteN8NClient(n8nSession.accessToken, n8nSession.tenantId, id);
+        await deleteClientApi(session.accessToken, session.tenantId, id);
       } catch (error) {
-        console.error('Erro ao excluir cliente no backend n8n', error);
+        console.error('Erro ao excluir cliente no backend', error);
       }
     }
 
     setClients(prev => prev.filter(client => client.id !== id));
     setLoans(prev => prev.filter(loan => loan.clientId !== id));
     setInstallments(prev => prev.filter(inst => inst.clientId !== id));
-  }, [n8nSession, usingN8NBackend]);
+  }, [session, isBackendConfiguredValue]);
 
-  const addLoan = (loan: Loan, generatedInstallments: Installment[]) => {
-    setLoans([...loans, loan]);
-    setInstallments([...installments, ...generatedInstallments]);
-  };
+  const addLoan = useCallback(async (loan: Loan, generatedInstallments: Installment[]) => {
+    if (isBackendConfiguredValue && session?.accessToken) {
+      try {
+        const { createBackendLoan, createBackendInstallmentsBatch } = await import('@/services/backendApi');
+        console.log('📝 Criando empréstimo no backend...', { loan, installmentsCount: generatedInstallments.length });
+        
+        // Criar empréstimo primeiro
+        const created = await createBackendLoan(session.accessToken, session.tenantId || '', loan);
+        console.log('✅ Empréstimo criado:', created.id);
+        
+        // Atualizar os IDs das parcelas com o ID do empréstimo criado
+        const installmentsWithLoanId = generatedInstallments.map(inst => ({
+          ...inst,
+          loanId: created.id,
+        }));
+        console.log('📦 Preparando parcelas para inserção:', installmentsWithLoanId.length, 'parcelas');
+        
+        // Criar parcelas em lote
+        const createdInstallments = await createBackendInstallmentsBatch(
+          session.accessToken,
+          session.tenantId || '',
+          installmentsWithLoanId
+        );
+        console.log('✅ Parcelas criadas no backend:', createdInstallments.length, 'parcelas');
+        
+        setLoans(prev => [...prev, created]);
+        setInstallments(prev => [...prev, ...createdInstallments]);
+        return;
+      } catch (error) {
+        console.error('❌ Erro ao criar empréstimo via backend API', error);
+        console.error('Detalhes do erro:', error instanceof Error ? error.message : error);
+        // Fallback: salva localmente se falhar
+        console.warn('⚠️ Salvando localmente como fallback');
+      }
+    }
+    setLoans(prev => [...prev, loan]);
+    setInstallments(prev => [...prev, ...generatedInstallments]);
+  }, [session, isBackendConfiguredValue]);
 
-  const updateLoan = (loan: Loan, generatedInstallments: Installment[]) => {
+  const updateLoan = useCallback(async (loan: Loan, generatedInstallments: Installment[]) => {
+    if (isBackendConfiguredValue && session?.accessToken) {
+      try {
+        const { updateBackendLoan } = await import('@/services/backendApi');
+        await updateBackendLoan(session.accessToken, session.tenantId || '', loan.id, loan);
+        setLoans(prev => prev.map(item => item.id === loan.id ? loan : item));
+        setInstallments(prev => prev.filter(inst => inst.loanId !== loan.id).concat(generatedInstallments));
+        return;
+      } catch (error) {
+        console.error('Erro ao atualizar empréstimo via backend API', error);
+        // Fallback: atualiza localmente se falhar
+      }
+    }
     setLoans(prev => prev.map(item => item.id === loan.id ? loan : item));
     setInstallments(prev => prev.filter(inst => inst.loanId !== loan.id).concat(generatedInstallments));
-  };
+  }, [session, isBackendConfiguredValue]);
 
-  const deleteLoan = (id: string) => {
+  const deleteLoan = useCallback(async (id: string) => {
+    if (isBackendConfiguredValue && session?.accessToken) {
+      try {
+        const { deleteBackendLoan } = await import('@/services/backendApi');
+        await deleteBackendLoan(session.accessToken, session.tenantId || '', id);
+      } catch (error) {
+        console.error('Erro ao excluir empréstimo no backend', error);
+      }
+    }
     setLoans(prev => prev.filter(loan => loan.id !== id));
     setInstallments(prev => prev.filter(inst => inst.loanId !== id));
-  };
+  }, [session, isBackendConfiguredValue]);
 
-  const scheduleFuturePayment = (id: string, reason: string, amount: number, date?: string) => {
+  const scheduleFuturePayment = useCallback(async (id: string, reason: string, amount: number, date?: string) => {
     const createdAt = new Date().toISOString();
+    const installment = installments.find(inst => inst.id === id);
+    if (!installment) return;
+
+    const entry = {
+      reason,
+      amount,
+      date: date || getTodayDateString(),
+      createdAt
+    };
+
+    const promisedPaymentHistory = [...(installment.promisedPaymentHistory ?? []), entry];
+
+    const updatedInstallment = {
+      ...installment,
+      promisedPaymentReason: entry.reason,
+      promisedPaymentAmount: entry.amount,
+      promisedPaymentDate: entry.date,
+      promisedPaymentHistory
+    };
+
+    // Salvar no backend se estiver configurado
+    if (isBackendConfiguredValue && session?.accessToken) {
+      try {
+        const { updateBackendInstallment } = await import('@/services/backendApi');
+        await updateBackendInstallment(
+          session.accessToken,
+          session.tenantId || '',
+          id,
+          updatedInstallment
+        );
+      } catch (error) {
+        console.error('Erro ao salvar agendamento no backend', error);
+        // Continua com atualização local mesmo se falhar
+      }
+    }
+
+    // Atualizar estado local
     setInstallments(prev => prev.map(inst => {
       if (inst.id !== id) return inst;
-
-      const entry = {
-        reason,
-        amount,
-        date: date || getTodayDateString(),
-        createdAt
-      };
-
-      const promisedPaymentHistory = [...(inst.promisedPaymentHistory ?? []), entry];
-
-      return {
-        ...inst,
-        promisedPaymentReason: entry.reason,
-        promisedPaymentAmount: entry.amount,
-        promisedPaymentDate: entry.date,
-        promisedPaymentHistory
-      };
+      return updatedInstallment;
     }));
-  };
+  }, [installments, session, isBackendConfiguredValue]);
 
   const startEditingLoan = (loanId: string) => {
     if (user?.role !== UserRole.ADMIN) return;
@@ -2033,71 +2130,160 @@ const App: React.FC = () => {
     setView('loans');
   };
 
-  const payInstallment = (id: string, amount?: number) => {
+  const payInstallment = useCallback(async (id: string, amount?: number) => {
     if (user?.role === UserRole.COLLECTION) {
       alert("Acesso restrito: Cobradores não podem baixar pagamentos, apenas visualizar.");
       return;
     }
 
-    setInstallments(prev => {
-      const updatedInstallments = prev.map(inst => {
-        if (inst.id !== id) return inst;
+    const installment = installments.find(inst => inst.id === id);
+    if (!installment) return;
 
-        const paymentValue = inst.status === InstallmentStatus.PAID ? 0 : (amount ?? inst.amount);
-        const loan = loans.find(l => l.id === inst.loanId);
+    const paymentValue = installment.status === InstallmentStatus.PAID ? 0 : (amount ?? installment.amount);
+    const loan = loans.find(l => l.id === installment.loanId);
+    if (!loan) return;
 
-        if (loan?.model === LoanModel.INTEREST_ONLY) {
-          const interestDue = Math.max(0, inst.interestAmount ?? Math.max(0, inst.amount - (inst.principalAmount ?? 0)));
-          const principalDue = Math.max(0, inst.principalAmount ?? Math.max(0, inst.amount - interestDue));
-          const totalDue = Math.max(0, interestDue + principalDue);
+    // Função auxiliar para adicionar meses a uma data
+    const addMonths = (dateString: string, months: number) => {
+      const baseDate = new Date(dateString);
+      const newDate = new Date(baseDate.setMonth(baseDate.getMonth() + months));
+      return newDate.toISOString().split('T')[0];
+    };
 
-          const appliedPayment = Math.min(paymentValue, totalDue);
-          let remainingPayment = appliedPayment;
+    if (loan.model === LoanModel.INTEREST_ONLY) {
+      const interestDue = Math.max(0, installment.interestAmount ?? Math.max(0, installment.amount - (installment.principalAmount ?? 0)));
+      const principalDue = Math.max(0, installment.principalAmount ?? Math.max(0, installment.amount - interestDue));
+      const totalDue = Math.max(0, interestDue + principalDue);
 
-          const interestPayment = Math.min(remainingPayment, interestDue);
-          remainingPayment -= interestPayment;
-          const updatedInterest = Number((interestDue - interestPayment).toFixed(2));
+      const appliedPayment = Math.min(paymentValue, totalDue);
+      let remainingPayment = appliedPayment;
 
-          const principalPayment = Math.min(remainingPayment, principalDue);
-          const updatedPrincipal = Number((principalDue - principalPayment).toFixed(2));
+      const interestPayment = Math.min(remainingPayment, interestDue);
+      remainingPayment -= interestPayment;
+      const updatedInterest = Number((interestDue - interestPayment).toFixed(2));
 
-          const remainingBalance = Number((updatedInterest + updatedPrincipal).toFixed(2));
-          const newStatus = remainingBalance <= 0 ? InstallmentStatus.PAID : InstallmentStatus.PARTIAL;
+      const principalPayment = Math.min(remainingPayment, principalDue);
+      const updatedPrincipal = Number((principalDue - principalPayment).toFixed(2));
 
-          return {
-            ...inst,
-            amount: remainingBalance,
-            interestAmount: updatedInterest,
-            principalAmount: updatedPrincipal,
-            amountPaid: Number(((inst.amountPaid || 0) + appliedPayment).toFixed(2)),
-            status: newStatus,
-            paidDate: newStatus === InstallmentStatus.PAID ? new Date().toISOString() : inst.paidDate
-          };
+      const remainingBalance = Number((updatedInterest + updatedPrincipal).toFixed(2));
+      const newStatus = remainingBalance <= 0 ? InstallmentStatus.PAID : InstallmentStatus.PARTIAL;
+
+      const updatedInstallment = {
+        ...installment,
+        amount: remainingBalance,
+        interestAmount: updatedInterest,
+        principalAmount: updatedPrincipal,
+        amountPaid: Number(((installment.amountPaid || 0) + appliedPayment).toFixed(2)),
+        status: newStatus,
+        paidDate: newStatus === InstallmentStatus.PAID ? new Date().toISOString() : installment.paidDate
+      };
+
+      // Atualizar parcela no backend se configurado
+      if (isBackendConfiguredValue && session?.accessToken) {
+        try {
+          const { updateBackendInstallment } = await import('@/services/backendApi');
+          await updateBackendInstallment(
+            session.accessToken,
+            session.tenantId || '',
+            id,
+            updatedInstallment
+          );
+        } catch (error) {
+          console.error('Erro ao atualizar parcela no backend', error);
+        }
+      }
+
+      // Se ainda houver valor em aberto (capital não quitado), criar nova parcela
+      // O principalAmount representa o capital em aberto nesta parcela
+      // Se ainda há capital em aberto (updatedPrincipal > 0), criar nova parcela
+      const remainingCapital = updatedPrincipal;
+      
+      // Encontrar o próximo número de parcela
+      const loanInstallments = installments.filter(inst => inst.loanId === loan.id);
+      const maxNumber = Math.max(...loanInstallments.map(inst => inst.number), 0);
+      const nextNumber = maxNumber + 1;
+
+      // Se ainda há capital em aberto, criar nova parcela
+      if (remainingCapital > 0) {
+        const rateDecimal = loan.interestRate / 100;
+        const nextInterestAmount = Number((remainingCapital * rateDecimal).toFixed(2));
+        const nextDueDate = addMonths(getTodayDateString(), 1); // Próximo mês
+
+        const newInstallment: Installment = {
+          id: `inst_${loan.id}_${nextNumber}_${Date.now()}`,
+          loanId: loan.id,
+          clientId: installment.clientId,
+          number: nextNumber,
+          dueDate: nextDueDate,
+          amount: nextInterestAmount, // Apenas juros
+          interestAmount: nextInterestAmount,
+          principalAmount: remainingCapital, // Capital em aberto
+          amountPaid: 0,
+          status: InstallmentStatus.PENDING
+        };
+
+        // Criar nova parcela no backend se configurado
+        if (isBackendConfiguredValue && session?.accessToken) {
+          try {
+            const { createBackendInstallment } = await import('@/services/backendApi');
+            const created = await createBackendInstallment(
+              session.accessToken,
+              session.tenantId || '',
+              newInstallment
+            );
+            newInstallment.id = created.id;
+          } catch (error) {
+            console.error('Erro ao criar nova parcela no backend', error);
+          }
         }
 
-        const paidAmount = Math.min(inst.amount, (inst.amountPaid || 0) + paymentValue);
-        const isPaid = paidAmount >= inst.amount;
+        setInstallments(prev => {
+          const updated = prev.map(inst => inst.id === id ? updatedInstallment : inst);
+          return [...updated, newInstallment];
+        });
+      } else {
+        setInstallments(prev => prev.map(inst => inst.id === id ? updatedInstallment : inst));
+      }
+    } else {
+      // Lógica para outros modelos de empréstimo
+      const paidAmount = Math.min(installment.amount, (installment.amountPaid || 0) + paymentValue);
+      const isPaid = paidAmount >= installment.amount;
 
-        return {
-          ...inst,
-          status: isPaid ? InstallmentStatus.PAID : InstallmentStatus.PARTIAL,
-          amountPaid: Number(paidAmount.toFixed(2)),
-          paidDate: new Date().toISOString()
-        };
-      });
+      const updatedInstallment = {
+        ...installment,
+        status: isPaid ? InstallmentStatus.PAID : InstallmentStatus.PARTIAL,
+        amountPaid: Number(paidAmount.toFixed(2)),
+        paidDate: new Date().toISOString()
+      };
 
-      setLoans(prevLoans => prevLoans.map(loan => {
-        const related = updatedInstallments.filter(inst => inst.loanId === loan.id);
-        const isLoanPaid = related.length > 0 && related.every(inst => inst.status === InstallmentStatus.PAID || inst.amount <= 0);
-        return { ...loan, status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE };
-      }));
+      // Atualizar no backend se configurado
+      if (isBackendConfiguredValue && session?.accessToken) {
+        try {
+          const { updateBackendInstallment } = await import('@/services/backendApi');
+          await updateBackendInstallment(
+            session.accessToken,
+            session.tenantId || '',
+            id,
+            updatedInstallment
+          );
+        } catch (error) {
+          console.error('Erro ao atualizar parcela no backend', error);
+        }
+      }
 
-      return updatedInstallments;
-    });
-  };
+      setInstallments(prev => prev.map(inst => inst.id === id ? updatedInstallment : inst));
+    }
+
+    // Atualizar status do empréstimo
+    setLoans(prevLoans => prevLoans.map(l => {
+      const related = installments.filter(inst => inst.loanId === l.id);
+      const isLoanPaid = related.length > 0 && related.every(inst => inst.status === InstallmentStatus.PAID || inst.amount <= 0);
+      return { ...l, status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE };
+    }));
+  }, [installments, loans, user?.role, isBackendConfiguredValue, session]);
 
   const addUser = useCallback(async (newUser: User): Promise<User | null> => {
-    if (usingN8NBackend || !supabase) {
+    if (isBackendConfiguredValue || !supabase) {
       const fallbackUser = { ...newUser, id: newUser.id ?? `local-${Date.now()}` };
       setUsersList(prev => [...prev, fallbackUser]);
       return fallbackUser;
@@ -2136,7 +2322,7 @@ const App: React.FC = () => {
     const formatted = mapDbUserToUser(profile);
     setUsersList(prev => [...prev, formatted]);
     return formatted;
-  }, [mapDbUserToUser, usingN8NBackend]);
+  }, [mapDbUserToUser, isBackendConfiguredValue]);
 
   const removeUser = useCallback(async (id: string) => {
     if (id === user?.id) {
@@ -2144,7 +2330,7 @@ const App: React.FC = () => {
       return;
     }
 
-    if (usingN8NBackend || !supabase) {
+    if (isBackendConfiguredValue || !supabase) {
       setUsersList(prev => prev.filter(u => u.id !== id));
       return;
     }
@@ -2156,7 +2342,7 @@ const App: React.FC = () => {
     }
 
     setUsersList(prev => prev.filter(u => u.id !== id));
-  }, [user?.id, usingN8NBackend]);
+  }, [user?.id, isBackendConfiguredValue]);
 
   const value = useMemo(() => ({
     user,
@@ -2164,8 +2350,8 @@ const App: React.FC = () => {
     clients,
     loans,
     installments,
-    n8nSession,
-    usingN8NBackend,
+    session,
+    isBackendConfigured: isBackendConfiguredValue,
     login,
     logout,
     addClient,
@@ -2183,7 +2369,7 @@ const App: React.FC = () => {
     setView,
     theme,
     setTheme
-  }), [user, usersList, clients, loans, installments, n8nSession, usingN8NBackend, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setView]);
+  }), [user, usersList, clients, loans, installments, session, isBackendConfiguredValue, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setView]);
 
   useEffect(() => {
     const body = document.body;
