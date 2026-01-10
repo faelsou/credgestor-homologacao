@@ -8,8 +8,7 @@ export const InstallmentsView: React.FC = () => {
   const { installments, clients, payInstallment, scheduleFuturePayment, user } = useContext(AppContext);
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'LATE' | 'PAID'>('ALL');
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
-  const [paymentMode, setPaymentMode] = useState<'INTEREST' | 'CUSTOM'>('INTEREST');
-  const [customAmount, setCustomAmount] = useState(0);
+  const [paymentAmount, setPaymentAmount] = useState(0);
   const [promiseModal, setPromiseModal] = useState<Installment | null>(null);
   const [promiseReason, setPromiseReason] = useState('');
   const [promiseAmount, setPromiseAmount] = useState(0);
@@ -38,8 +37,11 @@ export const InstallmentsView: React.FC = () => {
     if (!installment) return;
 
     setSelectedInstallment(installment);
-    setPaymentMode('INTEREST');
-    setCustomAmount(installment.amount);
+    // Inicializar com o valor mínimo (juros) ou o valor pendente, o que for menor
+    const interestAmount = installment.interestAmount ?? 0;
+    const pendingAmount = installment.amount - (installment.amountPaid || 0);
+    const minAmount = interestAmount > 0 ? interestAmount : pendingAmount;
+    setPaymentAmount(minAmount > 0 ? minAmount : installment.amount);
   };
 
   const getInterestAmount = (inst: Installment) => {
@@ -101,17 +103,28 @@ export const InstallmentsView: React.FC = () => {
   const handleConfirmPayment = () => {
     if (!selectedInstallment) return;
 
-    const amountToPay = paymentMode === 'INTEREST'
-      ? getInterestAmount(selectedInstallment)
-      : customAmount;
-
-    if (!amountToPay || amountToPay <= 0) {
+    if (!paymentAmount || paymentAmount <= 0) {
       alert('Informe um valor válido para receber.');
       return;
     }
 
-    payInstallment(selectedInstallment.id, amountToPay);
+    // Validar se o valor não excede o valor pendente
+    const pendingAmount = selectedInstallment.amount - (selectedInstallment.amountPaid || 0);
+    if (paymentAmount > pendingAmount) {
+      alert(`O valor informado (${formatCurrency(paymentAmount)}) excede o valor pendente (${formatCurrency(pendingAmount)}).`);
+      return;
+    }
+
+    // Validar valor mínimo (pelo menos o valor dos juros, se disponível)
+    const interestAmount = selectedInstallment.interestAmount ?? 0;
+    if (interestAmount > 0 && paymentAmount < interestAmount) {
+      alert(`O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros).`);
+      return;
+    }
+
+    payInstallment(selectedInstallment.id, paymentAmount);
     setSelectedInstallment(null);
+    setPaymentAmount(0);
   };
 
   const openPromiseModal = (inst: Installment) => {
@@ -122,7 +135,7 @@ export const InstallmentsView: React.FC = () => {
     setPromiseDate(defaults.date);
   };
 
-  const handleSavePromise = () => {
+  const handleSavePromise = async () => {
     if (!promiseModal) return;
     if (!promiseReason.trim()) {
       alert('Informe o motivo do atraso.');
@@ -146,8 +159,13 @@ export const InstallmentsView: React.FC = () => {
       return;
     }
 
-    scheduleFuturePayment(promiseModal.id, promiseReason.trim(), promiseAmount, promiseDate);
-    setPromiseModal(null);
+    try {
+      await scheduleFuturePayment(promiseModal.id, promiseReason.trim(), promiseAmount, promiseDate);
+      setPromiseModal(null);
+    } catch (error) {
+      console.error('Erro ao agendar recebimento', error);
+      alert('Erro ao salvar agendamento. Tente novamente.');
+    }
   };
 
   const renderStatus = (inst: Installment, late: boolean) => {
@@ -227,11 +245,12 @@ export const InstallmentsView: React.FC = () => {
                                 Receber
                              </button>
                         )}
-                        {late && inst.status !== InstallmentStatus.PAID && user?.role === UserRole.ADMIN && (
+                        {inst.status !== InstallmentStatus.PAID && user?.role === UserRole.ADMIN && (
                           <button
                             onClick={() => openPromiseModal(inst)}
-                            className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-bold rounded hover:bg-purple-200"
+                            className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-bold rounded hover:bg-purple-200 flex items-center gap-1"
                           >
+                            <Clock size={14} />
                             Agendar recebimento
                           </button>
                         )}
@@ -276,8 +295,9 @@ export const InstallmentsView: React.FC = () => {
                             Baixar Pagamento
                          </button>
                      )}
-                     {late && inst.status !== InstallmentStatus.PAID && user?.role === UserRole.ADMIN && (
-                        <button onClick={() => openPromiseModal(inst)} className="w-full mt-2 py-2 bg-purple-100 text-purple-700 font-semibold rounded-lg text-sm">
+                     {inst.status !== InstallmentStatus.PAID && user?.role === UserRole.ADMIN && (
+                        <button onClick={() => openPromiseModal(inst)} className="w-full mt-2 py-2 bg-purple-100 text-purple-700 font-semibold rounded-lg text-sm flex items-center justify-center gap-2">
+                          <Clock size={16} />
                           Agendar recebimento
                         </button>
                      )}
@@ -291,47 +311,77 @@ export const InstallmentsView: React.FC = () => {
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
             <div className="mb-4">
               <h3 className="text-xl font-bold text-slate-900">Receber parcela {selectedInstallment.number}</h3>
-              <p className="text-sm text-slate-600">Escolha como deseja registrar este recebimento.</p>
+              <p className="text-sm text-slate-600">Informe o valor a receber.</p>
             </div>
 
-            <div className="space-y-3">
-              <label className={`block border rounded-xl p-3 cursor-pointer ${paymentMode === 'INTEREST' ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'}`}>
-                <input
-                  type="radio"
-                  name="paymentMode"
-                  className="mr-2"
-                  checked={paymentMode === 'INTEREST'}
-                  onChange={() => setPaymentMode('INTEREST')}
-                />
-                Receber apenas juros ({formatCurrency(getInterestAmount(selectedInstallment))})
-              </label>
-
-              <label className={`block border rounded-xl p-3 cursor-pointer ${paymentMode === 'CUSTOM' ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'}`}>
-                <input
-                  type="radio"
-                  name="paymentMode"
-                  className="mr-2"
-                  checked={paymentMode === 'CUSTOM'}
-                  onChange={() => setPaymentMode('CUSTOM')}
-                />
-                Receber juros + capital (total ou parcial)
-                {paymentMode === 'CUSTOM' && (
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={customAmount}
-                    onChange={e => setCustomAmount(parseFloat(e.target.value))}
-                    className="mt-2 w-full border border-slate-300 rounded-lg p-2"
-                    placeholder="Valor a receber"
-                  />
+            <div className="space-y-4">
+              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                <div className="text-sm text-slate-600 mb-1">Valor da parcela</div>
+                <div className="text-lg font-bold text-slate-900">{formatCurrency(selectedInstallment.amount)}</div>
+                {selectedInstallment.amountPaid > 0 && (
+                  <div className="mt-2 text-sm">
+                    <span className="text-slate-600">Já recebido: </span>
+                    <span className="font-semibold text-emerald-600">{formatCurrency(selectedInstallment.amountPaid)}</span>
+                  </div>
                 )}
-              </label>
+                <div className="mt-2 text-sm">
+                  <span className="text-slate-600">Valor pendente: </span>
+                  <span className="font-semibold text-slate-900">
+                    {formatCurrency(selectedInstallment.amount - (selectedInstallment.amountPaid || 0))}
+                  </span>
+                </div>
+                {selectedInstallment.interestAmount !== undefined && selectedInstallment.principalAmount !== undefined && (
+                  <div className="mt-2 text-xs text-slate-500">
+                    Juros: {formatCurrency(selectedInstallment.interestAmount)} • 
+                    Capital: {formatCurrency(selectedInstallment.principalAmount)}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Valor a receber <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={paymentAmount || ''}
+                  onChange={e => setPaymentAmount(parseFloat(e.target.value) || 0)}
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  placeholder="0,00"
+                  autoFocus
+                />
+                {(() => {
+                  const interestAmount = selectedInstallment.interestAmount ?? 0;
+                  if (interestAmount > 0) {
+                    return (
+                      <p className="mt-1 text-xs text-slate-600">
+                        <span className="font-semibold">Mínimo:</span> {formatCurrency(interestAmount)}
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
             </div>
 
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setSelectedInstallment(null)} className="flex-1 py-2 rounded-lg border hover:bg-slate-50">Cancelar</button>
-              <button onClick={handleConfirmPayment} className="flex-1 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700">Confirmar</button>
+              <button 
+                onClick={() => {
+                  setSelectedInstallment(null);
+                  setPaymentAmount(0);
+                }} 
+                className="flex-1 py-2 rounded-lg border hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={handleConfirmPayment} 
+                className="flex-1 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700"
+              >
+                Confirmar Recebimento
+              </button>
             </div>
           </div>
         </div>
