@@ -5,7 +5,7 @@ import { formatCurrency, formatDate, getTodayDateString, isLate } from '@/utils'
 import { InstallmentStatus, Installment, UserRole } from '@/types';
 
 export const InstallmentsView: React.FC = () => {
-  const { installments, clients, payInstallment, scheduleFuturePayment, user } = useContext(AppContext);
+  const { installments, clients, loans, payInstallment, scheduleFuturePayment, user } = useContext(AppContext);
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'LATE' | 'PAID'>('ALL');
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
   const [paymentAmount, setPaymentAmount] = useState(0);
@@ -36,9 +36,17 @@ export const InstallmentsView: React.FC = () => {
     const installment = installments.find(item => item.id === id);
     if (!installment) return;
 
+    const loan = loans.find(l => l.id === installment.loanId);
+    
     setSelectedInstallment(installment);
-    // Inicializar com o valor mínimo (juros) ou o valor pendente, o que for menor
-    const interestAmount = installment.interestAmount ?? 0;
+    // Inicializar com o valor mínimo (juros) baseado na taxa do empréstimo
+    // Se não houver interestAmount, calcular baseado na taxa do empréstimo
+    let interestAmount = installment.interestAmount ?? 0;
+    if (interestAmount === 0 && loan) {
+      // Calcular juros mínimo baseado na taxa do empréstimo e no principal
+      const principal = installment.principalAmount ?? installment.amount;
+      interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
+    }
     const pendingAmount = installment.amount - (installment.amountPaid || 0);
     const minAmount = interestAmount > 0 ? interestAmount : pendingAmount;
     setPaymentAmount(minAmount > 0 ? minAmount : installment.amount);
@@ -108,10 +116,19 @@ export const InstallmentsView: React.FC = () => {
       return;
     }
 
-    // Validar valor mínimo (pelo menos o valor dos juros, se disponível)
-    const interestAmount = selectedInstallment.interestAmount ?? 0;
+    // Validar valor mínimo (pelo menos o valor dos juros baseado na taxa do empréstimo)
+    const loan = loans.find(l => l.id === selectedInstallment.loanId);
+    let interestAmount = selectedInstallment.interestAmount ?? 0;
+    
+    // Se não houver interestAmount, calcular baseado na taxa do empréstimo
+    if (interestAmount === 0 && loan) {
+      const principal = selectedInstallment.principalAmount ?? selectedInstallment.amount;
+      interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
+    }
+    
+    // Sempre validar que o pagamento seja pelo menos o valor dos juros
     if (interestAmount > 0 && paymentAmount < interestAmount) {
-      alert(`O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros).`);
+      alert(`O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${loan?.interestRate ?? 0}% do empréstimo).`);
       return;
     }
 
@@ -178,9 +195,78 @@ export const InstallmentsView: React.FC = () => {
     return <span className="flex items-center gap-1 text-blue-600 font-bold"><Clock size={14}/> A Vencer</span>;
   };
 
+  // Agrupar histórico de pagamentos por cliente
+  const getPaymentHistoryByClient = () => {
+    const historyByClient: Record<string, Array<{ installment: Installment; entry: any }>> = {};
+    
+    installments.forEach(inst => {
+      if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+        const clientId = inst.clientId;
+        if (!historyByClient[clientId]) {
+          historyByClient[clientId] = [];
+        }
+        inst.paymentHistory.forEach(entry => {
+          historyByClient[clientId].push({ installment: inst, entry });
+        });
+      }
+    });
+    
+    // Ordenar por data de pagamento (mais recente primeiro)
+    Object.keys(historyByClient).forEach(clientId => {
+      historyByClient[clientId].sort((a, b) => 
+        new Date(b.entry.paymentDate).getTime() - new Date(a.entry.paymentDate).getTime()
+      );
+    });
+    
+    return historyByClient;
+  };
+
+  const paymentHistoryByClient = getPaymentHistoryByClient();
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-slate-800">Controle de Parcelas</h2>
+
+      {/* Histórico por Cliente */}
+      {Object.keys(paymentHistoryByClient).length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <h3 className="text-lg font-bold text-slate-800 mb-4">Histórico de Pagamentos por Cliente</h3>
+          <div className="space-y-4">
+            {Object.entries(paymentHistoryByClient).map(([clientId, entries]) => {
+              const client = getClient(clientId);
+              if (!client) return null;
+              
+              return (
+                <div key={clientId} className="border border-slate-200 rounded-lg p-4">
+                  <h4 className="font-bold text-slate-800 mb-3">{client.name}</h4>
+                  <div className="space-y-2">
+                    {entries.map(({ installment, entry }, idx) => (
+                      <div key={`${entry.createdAt}-${idx}`} className="flex flex-col rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className="text-sm text-emerald-700 font-semibold">
+                              Parcela {installment.number} • {formatDate(entry.paymentDate)}
+                            </span>
+                            <span className="block text-sm text-emerald-600 font-bold">
+                              {formatCurrency(entry.amount)}
+                            </span>
+                            <span className="text-xs text-emerald-600">
+                              Juros: {formatCurrency(entry.interestPaid)} • Capital: {formatCurrency(entry.principalPaid)}
+                            </span>
+                          </div>
+                          <span className="text-xs text-emerald-400">
+                            {formatDate(entry.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex space-x-2 overflow-x-auto pb-2">
@@ -225,6 +311,22 @@ export const InstallmentsView: React.FC = () => {
                       {renderPromiseInfo(inst)}
                       {inst.amountPaid > 0 && inst.amountPaid < inst.amount && (
                         <span className="block text-xs text-amber-600 font-semibold">Recebido: {formatCurrency(inst.amountPaid)}</span>
+                      )}
+                      {inst.paymentHistory && inst.paymentHistory.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-wide">Histórico de Pagamentos</p>
+                          {inst.paymentHistory.slice().reverse().map((entry, idx) => (
+                            <div key={`${entry.createdAt}-${idx}`} className="flex flex-col rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1">
+                              <span className="text-[11px] text-emerald-700 font-semibold">
+                                {formatDate(entry.paymentDate)} • {formatCurrency(entry.amount)}
+                              </span>
+                              <span className="text-[11px] text-emerald-600">
+                                Juros: {formatCurrency(entry.interestPaid)} • Capital: {formatCurrency(entry.principalPaid)}
+                              </span>
+                              <span className="text-[10px] text-emerald-400">Registrado em {formatDate(entry.createdAt)}</span>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </td>
                     <td className="p-4">{renderStatus(inst, late)}</td>
@@ -274,6 +376,22 @@ export const InstallmentsView: React.FC = () => {
                             <div className="text-xs text-slate-500">Capital: {formatCurrency(getPrincipalAmount(inst))} • Juros: {formatCurrency(getInterestAmount(inst))}</div>
                             {inst.amountPaid > 0 && inst.amountPaid < inst.amount && (
                               <div className="text-xs text-amber-600 font-semibold">Recebido: {formatCurrency(inst.amountPaid)}</div>
+                            )}
+                            {inst.paymentHistory && inst.paymentHistory.length > 0 && (
+                              <div className="mt-2 space-y-1">
+                                <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-wide">Histórico de Pagamentos</p>
+                                {inst.paymentHistory.slice().reverse().map((entry, idx) => (
+                                  <div key={`${entry.createdAt}-${idx}`} className="flex flex-col rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1">
+                                    <span className="text-[11px] text-emerald-700 font-semibold">
+                                      {formatDate(entry.paymentDate)} • {formatCurrency(entry.amount)}
+                                    </span>
+                                    <span className="text-[11px] text-emerald-600">
+                                      Juros: {formatCurrency(entry.interestPaid)} • Capital: {formatCurrency(entry.principalPaid)}
+                                    </span>
+                                    <span className="text-[10px] text-emerald-400">Registrado em {formatDate(entry.createdAt)}</span>
+                                  </div>
+                                ))}
+                              </div>
                             )}
                             {renderPromiseInfo(inst)}
                              {renderStatus(inst, late)}
@@ -347,11 +465,20 @@ export const InstallmentsView: React.FC = () => {
                   autoFocus
                 />
                 {(() => {
-                  const interestAmount = selectedInstallment.interestAmount ?? 0;
+                  const loan = loans.find(l => l.id === selectedInstallment.loanId);
+                  let interestAmount = selectedInstallment.interestAmount ?? 0;
+                  
+                  // Se não houver interestAmount, calcular baseado na taxa do empréstimo
+                  if (interestAmount === 0 && loan) {
+                    const principal = selectedInstallment.principalAmount ?? selectedInstallment.amount;
+                    interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
+                  }
+                  
                   if (interestAmount > 0) {
                     return (
                       <p className="mt-1 text-xs text-slate-600">
-                        <span className="font-semibold">Mínimo:</span> {formatCurrency(interestAmount)}
+                        <span className="font-semibold">Mínimo (juros):</span> {formatCurrency(interestAmount)}
+                        {loan && <span className="text-slate-500"> ({loan.interestRate}% do capital)</span>}
                       </p>
                     );
                   }

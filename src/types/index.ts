@@ -74,6 +74,14 @@ export interface PromisedPaymentHistoryEntry {
   createdAt: string;
 }
 
+export interface PaymentHistoryEntry {
+  amount: number;
+  interestPaid: number;
+  principalPaid: number;
+  paymentDate: string;
+  createdAt: string;
+}
+
 export interface Installment {
   id: string;
   loanId: string;
@@ -88,6 +96,7 @@ export interface Installment {
   promisedPaymentAmount?: number;
   promisedPaymentDate?: string;
   promisedPaymentHistory?: PromisedPaymentHistoryEntry[];
+  paymentHistory?: PaymentHistoryEntry[];
   status: InstallmentStatus;
   paidDate?: string;
 }
