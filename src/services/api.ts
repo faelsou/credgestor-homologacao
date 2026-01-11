@@ -121,7 +121,15 @@ export async function loginWithBackend(email: string, password: string): Promise
       body: JSON.stringify({ email, senha: password, tenant_id: tenantId }),
     });
 
-    const body = await toJson(response);
+    let body;
+    try {
+      body = await toJson(response);
+    } catch (parseError) {
+      console.error('❌ Erro ao parsear resposta do servidor:', parseError);
+      const text = await response.text().catch(() => 'Resposta não disponível');
+      console.error('📄 Resposta do servidor (texto):', text);
+      throw new Error(`Erro ${response.status}: ${response.statusText || 'Resposta inválida do servidor'}`);
+    }
     
     if (!response.ok) {
       const errorMessage = body?.detail || body?.error || body?.message || `Erro ${response.status}: ${response.statusText}`;

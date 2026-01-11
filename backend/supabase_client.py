@@ -41,7 +41,7 @@ def get_supabase_anon_client() -> Client:
             raise RuntimeError(
                 "SUPABASE_URL não está configurada. Defina a variável de ambiente."
             )
-        if not settings.supabase_anon_key:
+        if not settings.supabase_anon_key or settings.supabase_anon_key.strip() == "":
             raise RuntimeError(
                 "SUPABASE_ANON_KEY é obrigatória para operações de autenticação. Defina a variável de ambiente."
             )
