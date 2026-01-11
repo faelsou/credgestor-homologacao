@@ -13,7 +13,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 # Importação condicional do código legacy - só funciona se DATABASE_URL estiver configurada
 try:
-from .crud_operations import DatabaseConnection, obter_cruds
+    from .crud_operations import DatabaseConnection, obter_cruds
 
     LEGACY_AVAILABLE = True
 except (ValueError, ImportError) as e:
