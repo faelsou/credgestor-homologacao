@@ -861,7 +861,7 @@ import { Client, UserRole } from '@/types';
 import { formatCep, formatCpf, formatPhone } from '@/utils';
 
 export const ClientsView: React.FC = () => {
-  const { clients, addClient, updateClient, deleteClient, user, loans, session, isBackendConfigured } = useContext(AppContext);
+  const { clients, addClient, updateClient, deleteClient, user, loans, session, isBackendConfigured, setSession } = useContext(AppContext);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
@@ -947,9 +947,47 @@ export const ClientsView: React.FC = () => {
     if (isBackendConfigured && session?.accessToken) {
       try {
         console.log(`📤 Sincronizando cliente via backend (${action})`);
+        
+        // Callback para atualizar sessão quando token for renovado
+        const handleTokenRefresh = (newToken: string, newRefreshToken: string) => {
+          if (setSession && session) {
+            setSession({
+              ...session,
+              accessToken: newToken,
+              refreshToken: newRefreshToken,
+            });
+            // Salvar no localStorage também (usar a mesma chave do App.tsx)
+            const BACKEND_SESSION_KEY = 'credgestor:backend-session';
+            const stored = localStorage.getItem(BACKEND_SESSION_KEY);
+            if (stored) {
+              try {
+                const parsed = JSON.parse(stored);
+                parsed.session.accessToken = newToken;
+                parsed.session.refreshToken = newRefreshToken;
+                localStorage.setItem(BACKEND_SESSION_KEY, JSON.stringify(parsed));
+              } catch (e) {
+                console.error('Erro ao salvar sessão atualizada', e);
+              }
+            }
+          }
+        };
+        
         const syncedClient = action === 'create'
-          ? await createClient(session.accessToken, session.tenantId, client)
-          : await updateClientApi(session.accessToken, session.tenantId, client.id, client);
+          ? await createClient(
+              session.accessToken, 
+              session.tenantId, 
+              client,
+              session.refreshToken,
+              handleTokenRefresh
+            )
+          : await updateClientApi(
+              session.accessToken, 
+              session.tenantId, 
+              client.id, 
+              client,
+              session.refreshToken,
+              handleTokenRefresh
+            );
         console.log('✅ Cliente salvo no banco de dados:', syncedClient);
         return syncedClient;
       } catch (error) {

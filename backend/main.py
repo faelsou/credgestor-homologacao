@@ -47,6 +47,10 @@ class LoginRequest(BaseModel):
     tenant_id: str | None = None
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
 @dataclass
 class AuthContext:
     user_id: str
@@ -632,6 +636,110 @@ def create_user(
 @app.post("/auth/login")
 def login(payload: LoginRequest):
     return _authenticate_user(payload)
+
+
+@app.post("/auth/refresh")
+def refresh_token(payload: RefreshTokenRequest):
+    """Renova o access token usando o refresh token."""
+    import requests
+    
+    settings = get_settings()
+    
+    if not settings.supabase_anon_key:
+        raise HTTPException(
+            status_code=500, detail="SUPABASE_ANON_KEY não configurada."
+        )
+    
+    if not settings.supabase_url:
+        raise HTTPException(
+            status_code=500, detail="SUPABASE_URL não configurada."
+        )
+    
+    try:
+        # Fazer refresh diretamente via API HTTP do Supabase
+        refresh_url = f"{settings.supabase_url}/auth/v1/token?grant_type=refresh_token"
+        
+        response = requests.post(
+            refresh_url,
+            headers={
+                "apikey": settings.supabase_anon_key,
+                "Content-Type": "application/json",
+            },
+            json={"refresh_token": payload.refresh_token},
+            timeout=10,
+        )
+        
+        if response.status_code != 200:
+            error_data = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
+            error_msg = error_data.get("error_description") or error_data.get("error") or "Falha ao renovar token"
+            raise HTTPException(status_code=401, detail=error_msg)
+        
+        token_data = response.json()
+        access_token = token_data.get("access_token")
+        refresh_token_new = token_data.get("refresh_token") or payload.refresh_token
+        expires_in = token_data.get("expires_in", 3600)
+        
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Token de acesso não retornado.")
+        
+        # Obter informações do usuário usando o novo access_token
+        supabase = get_supabase_anon_client()
+        user_response = supabase.auth.get_user(access_token)
+        error = getattr(user_response, "error", None)
+        user = (
+            getattr(user_response, "user", None) 
+            or getattr(user_response, "data", None) 
+            or user_response
+        )
+        
+        if error or not user:
+            raise HTTPException(status_code=401, detail="Falha ao obter informações do usuário.")
+        
+        user_id = _get_user_id(user)
+        email = _get_user_email(user)
+        if not user_id or not email:
+            raise HTTPException(status_code=401, detail="Usuário inválido.")
+        
+        resolved_tenant_id = _resolve_tenant_id(user, None)
+        if not resolved_tenant_id:
+            raise HTTPException(
+                status_code=400,
+                detail="tenant_id não identificado para o usuário.",
+            )
+        
+        access_expires_at = datetime.now(timezone.utc) + timedelta(
+            seconds=expires_in or 3600
+        )
+        refresh_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+        
+        _store_user_session(user_id, resolved_tenant_id, refresh_token_new, refresh_expires_at)
+        
+        tenant_name = _get_tenant_name(resolved_tenant_id)
+        user_payload = {
+            "id": user_id,
+            "email": email,
+            "tenant_id": resolved_tenant_id,
+            "tenant_nome": tenant_name,
+            "name": _get_user_metadata(user).get("name")
+            or _get_user_metadata(user).get("nome")
+            or email.split("@")[0],
+        }
+        
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token_new,
+            "token_type": "bearer",
+            "expires_in": int(expires_in or 0),
+            "access_expires_at": access_expires_at.isoformat(),
+            "refresh_expires_at": refresh_expires_at.isoformat(),
+            "usuario": user_payload,
+        }
+    except HTTPException:
+        raise
+    except requests.RequestException as e:
+        raise HTTPException(status_code=401, detail=f"Erro ao conectar ao Supabase: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Erro ao renovar token: {str(e)}")
 
 
 @app.get("/tenants/{tenant_id}/loans")
