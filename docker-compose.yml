@@ -3,8 +3,9 @@ version: '3.9'
 services:
   # API FastAPI (Backend)
   api:
-    # Usar imagem do Docker Hub (recomendado para produção)
-    image: faelsouz/credgestor-homologacao-backend:latest
+    # Usar imagem do Docker Hub com versão específica
+    # Versão atual: v1.0.6 (atualizar VERSION ao fazer mudanças)
+    image: faelsouz/credgestor-homologacao-backend:${DOCKER_VERSION:-v1.0.6}
     # container_name não é suportado em Docker Swarm (docker stack deploy)
     # container_name: credgestor-api
     # env_file funciona com docker-compose, mas não com docker stack deploy
@@ -81,8 +82,9 @@ services:
 
   # Frontend React + Vite (Site)
   site:
-    # Manter imagem de homologação
-    image: faelsouz/credgestor-homologacao-frontend:latest
+    # Usar imagem do Docker Hub com versão específica
+    # Versão atual: v1.0.6 (atualizar VERSION ao fazer mudanças)
+    image: faelsouz/credgestor-homologacao-frontend:${DOCKER_VERSION:-v1.0.6}
     # container_name não é suportado em Docker Swarm (docker stack deploy)
     # container_name: credgestor-frontend
     deploy:

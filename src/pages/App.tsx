@@ -2240,17 +2240,47 @@ const App: React.FC = () => {
         }
       }
 
-      // Se ainda houver valor em aberto na parcela atual (capital não quitado), criar nova parcela
-      const remainingCapital = updatedPrincipal;
+      // Calcular capital total restante do empréstimo após o pagamento
+      // Primeiro, atualizar a lista de parcelas com as modificadas
+      const allUpdatedInstallments = [...updatedInstallments];
+      
+      // Calcular capital total restante: soma de todos os principalAmount das parcelas pendentes
+      let totalRemainingCapital = 0;
+      
+      // Capital da parcela atual atualizada
+      totalRemainingCapital += updatedPrincipal;
+      
+      // Capital das outras parcelas atualizadas
+      for (const inst of updatedInstallments) {
+        if (inst.id !== id && inst.principalAmount && inst.status !== InstallmentStatus.PAID) {
+          totalRemainingCapital += inst.principalAmount;
+        }
+      }
+      
+      // Capital das parcelas que não foram atualizadas (ainda pendentes)
+      const otherPendingInstallments = loanInstallments.filter(
+        inst => inst.status !== InstallmentStatus.PAID && 
+                !updatedInstallments.some(updated => updated.id === inst.id)
+      );
+      for (const inst of otherPendingInstallments) {
+        if (inst.principalAmount) {
+          totalRemainingCapital += inst.principalAmount;
+        }
+      }
+      
+      totalRemainingCapital = Number(totalRemainingCapital.toFixed(2));
       
       // Encontrar o próximo número de parcela
-      const maxNumber = Math.max(...loanInstallments.map(inst => inst.number), 0);
+      const allLoanInstallments = installments.filter(inst => inst.loanId === loan.id);
+      const maxNumber = Math.max(...allLoanInstallments.map(inst => inst.number), 0);
       const nextNumber = maxNumber + 1;
 
-      // Se ainda há capital em aberto, criar nova parcela
-      if (remainingCapital > 0) {
+      // Se ainda há capital total em aberto, criar nova parcela com juros recalculados
+      // A nova parcela representa o capital restante total do empréstimo
+      if (totalRemainingCapital > 0) {
         const rateDecimal = loan.interestRate / 100;
-        const nextInterestAmount = Number((remainingCapital * rateDecimal).toFixed(2));
+        // Calcular juros sobre o capital total restante (ex: R$ 900 * 20% = R$ 180)
+        const nextInterestAmount = Number((totalRemainingCapital * rateDecimal).toFixed(2));
         const nextDueDate = addMonths(getTodayDateString(), 1); // Próximo mês
 
         const newInstallment: Installment = {
@@ -2259,9 +2289,9 @@ const App: React.FC = () => {
           clientId: installment.clientId,
           number: nextNumber,
           dueDate: nextDueDate,
-          amount: nextInterestAmount, // Apenas juros
-          interestAmount: nextInterestAmount,
-          principalAmount: remainingCapital, // Capital em aberto
+          amount: nextInterestAmount, // Juros calculados sobre o capital restante (R$ 180)
+          interestAmount: nextInterestAmount, // R$ 180
+          principalAmount: totalRemainingCapital, // Capital total em aberto (R$ 900)
           amountPaid: 0,
           status: InstallmentStatus.PENDING
         };
@@ -2281,8 +2311,12 @@ const App: React.FC = () => {
           }
         }
 
-        updatedInstallments.push(newInstallment);
+        allUpdatedInstallments.push(newInstallment);
       }
+      
+      // Atualizar referência para usar a lista completa
+      updatedInstallments.length = 0;
+      updatedInstallments.push(...allUpdatedInstallments);
 
       // Atualizar todas as parcelas modificadas
       setInstallments(prev => {
