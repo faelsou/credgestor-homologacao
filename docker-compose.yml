@@ -7,9 +7,10 @@ services:
     image: faelsouz/credgestor-homologacao-backend:latest
     # container_name não é suportado em Docker Swarm (docker stack deploy)
     # container_name: credgestor-api
-    # env_file não é suportado em Docker Swarm - use secrets/configs ou variáveis de ambiente
-    # env_file:
-    #   - .env  # Carrega variáveis de ambiente do arquivo .env
+    # env_file funciona com docker-compose, mas não com docker stack deploy
+    # Para docker stack deploy, use: source .env && docker stack deploy -c docker-compose.yml credgestor
+    env_file:
+      - .env  # Carrega variáveis de ambiente do arquivo .env (docker-compose apenas)
     environment:
       # ⚠️  NÃO coloque credenciais aqui! Use secrets do Docker Swarm ou arquivo .env
       # As variáveis serão carregadas do arquivo .env na VPS antes do deploy
@@ -81,7 +82,7 @@ services:
   # Frontend React + Vite (Site)
   site:
     # Manter imagem de homologação
-    image: faelsouz/credgestor-homologacao-frontend:v1.0.3
+    image: faelsouz/credgestor-homologacao-frontend:latest
     # container_name não é suportado em Docker Swarm (docker stack deploy)
     # container_name: credgestor-frontend
     deploy:

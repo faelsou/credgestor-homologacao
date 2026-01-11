@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -15,7 +16,9 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=ROOT_DIR / ".env",
+        # Tenta carregar do .env se existir (desenvolvimento local)
+        # Em produção, as variáveis vêm do ambiente do container Docker
+        env_file=ROOT_DIR / ".env" if (ROOT_DIR / ".env").exists() else None,
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",  # Ignora variáveis de ambiente extras (ex: VITE_* para frontend)
@@ -25,6 +28,14 @@ class Settings(BaseSettings):
     supabase_service_role_key: str
     supabase_anon_key: str | None = None
     default_tenant_id: str | None = None
+    
+    @field_validator('supabase_anon_key', 'default_tenant_id', mode='before')
+    @classmethod
+    def empty_str_to_none(cls, v):
+        """Converte strings vazias em None."""
+        if v == "":
+            return None
+        return v
 
 
 @lru_cache

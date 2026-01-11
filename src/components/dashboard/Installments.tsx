@@ -108,13 +108,6 @@ export const InstallmentsView: React.FC = () => {
       return;
     }
 
-    // Validar se o valor não excede o valor pendente
-    const pendingAmount = selectedInstallment.amount - (selectedInstallment.amountPaid || 0);
-    if (paymentAmount > pendingAmount) {
-      alert(`O valor informado (${formatCurrency(paymentAmount)}) excede o valor pendente (${formatCurrency(pendingAmount)}).`);
-      return;
-    }
-
     // Validar valor mínimo (pelo menos o valor dos juros, se disponível)
     const interestAmount = selectedInstallment.interestAmount ?? 0;
     if (interestAmount > 0 && paymentAmount < interestAmount) {
@@ -122,6 +115,7 @@ export const InstallmentsView: React.FC = () => {
       return;
     }
 
+    // Permitir pagamentos maiores que o valor pendente - o excedente abaterá o capital
     payInstallment(selectedInstallment.id, paymentAmount);
     setSelectedInstallment(null);
     setPaymentAmount(0);

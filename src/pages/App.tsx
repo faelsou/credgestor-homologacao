@@ -2158,51 +2158,92 @@ const App: React.FC = () => {
       const principalDue = Math.max(0, installment.principalAmount ?? Math.max(0, installment.amount - interestDue));
       const totalDue = Math.max(0, interestDue + principalDue);
 
-      const appliedPayment = Math.min(paymentValue, totalDue);
-      let remainingPayment = appliedPayment;
+      // Permitir pagamentos maiores que o valor devido - o excedente abaterá o capital
+      let remainingPayment = paymentValue;
 
+      // 1. Abater primeiro os juros da parcela atual
       const interestPayment = Math.min(remainingPayment, interestDue);
       remainingPayment -= interestPayment;
       const updatedInterest = Number((interestDue - interestPayment).toFixed(2));
 
+      // 2. Abater o principal (capital) da parcela atual
       const principalPayment = Math.min(remainingPayment, principalDue);
+      remainingPayment -= principalPayment;
       const updatedPrincipal = Number((principalDue - principalPayment).toFixed(2));
 
-      const remainingBalance = Number((updatedInterest + updatedPrincipal).toFixed(2));
-      const newStatus = remainingBalance <= 0 ? InstallmentStatus.PAID : InstallmentStatus.PARTIAL;
+      // Para empréstimos "somente juros", o amount é apenas os juros, não juros + principal
+      // O status é PAID quando não há mais juros nem principal pendentes
+      const remainingBalance = Number(updatedInterest.toFixed(2));
+      const newStatus = (updatedInterest <= 0 && updatedPrincipal <= 0) ? InstallmentStatus.PAID : 
+                       (updatedInterest <= 0) ? InstallmentStatus.PARTIAL : InstallmentStatus.PARTIAL;
+      
+      // Valor total aplicado nesta parcela (juros + principal)
+      const appliedToThisInstallment = interestPayment + principalPayment;
 
       const updatedInstallment = {
         ...installment,
-        amount: remainingBalance,
+        amount: remainingBalance, // Apenas juros restantes
         interestAmount: updatedInterest,
         principalAmount: updatedPrincipal,
-        amountPaid: Number(((installment.amountPaid || 0) + appliedPayment).toFixed(2)),
+        amountPaid: Number(((installment.amountPaid || 0) + appliedToThisInstallment).toFixed(2)),
         status: newStatus,
         paidDate: newStatus === InstallmentStatus.PAID ? new Date().toISOString() : installment.paidDate
       };
 
-      // Atualizar parcela no backend se configurado
+      // 3. Se ainda sobrar valor, abater o capital das próximas parcelas pendentes
+      const loanInstallments = installments.filter(inst => inst.loanId === loan.id && inst.id !== id);
+      const pendingInstallments = loanInstallments
+        .filter(inst => inst.status !== InstallmentStatus.PAID)
+        .sort((a, b) => a.number - b.number);
+
+      const updatedInstallments: Installment[] = [updatedInstallment];
+      let excessPayment = remainingPayment;
+
+      // Abater o capital excedente nas próximas parcelas
+      for (const nextInst of pendingInstallments) {
+        if (excessPayment <= 0) break;
+
+        const nextPrincipal = nextInst.principalAmount ?? 0;
+        const capitalReduction = Math.min(excessPayment, nextPrincipal);
+        excessPayment -= capitalReduction;
+
+        const newPrincipal = Number((nextPrincipal - capitalReduction).toFixed(2));
+        const rateDecimal = loan.interestRate / 100;
+        const newInterest = Number((newPrincipal * rateDecimal).toFixed(2));
+        // Para empréstimos "somente juros", o amount é apenas os juros, não juros + principal
+        const newAmount = Number(newInterest.toFixed(2));
+
+        const updatedNextInst: Installment = {
+          ...nextInst,
+          principalAmount: newPrincipal,
+          interestAmount: newInterest,
+          amount: newAmount
+        };
+
+        updatedInstallments.push(updatedNextInst);
+      }
+
+      // Atualizar parcelas no backend se configurado
       if (isBackendConfiguredValue && session?.accessToken) {
         try {
           const { updateBackendInstallment } = await import('@/services/backendApi');
-          await updateBackendInstallment(
-            session.accessToken,
-            session.tenantId || '',
-            id,
-            updatedInstallment
-          );
+          for (const inst of updatedInstallments) {
+            await updateBackendInstallment(
+              session.accessToken,
+              session.tenantId || '',
+              inst.id,
+              inst
+            );
+          }
         } catch (error) {
-          console.error('Erro ao atualizar parcela no backend', error);
+          console.error('Erro ao atualizar parcelas no backend', error);
         }
       }
 
-      // Se ainda houver valor em aberto (capital não quitado), criar nova parcela
-      // O principalAmount representa o capital em aberto nesta parcela
-      // Se ainda há capital em aberto (updatedPrincipal > 0), criar nova parcela
+      // Se ainda houver valor em aberto na parcela atual (capital não quitado), criar nova parcela
       const remainingCapital = updatedPrincipal;
       
       // Encontrar o próximo número de parcela
-      const loanInstallments = installments.filter(inst => inst.loanId === loan.id);
       const maxNumber = Math.max(...loanInstallments.map(inst => inst.number), 0);
       const nextNumber = maxNumber + 1;
 
@@ -2240,13 +2281,14 @@ const App: React.FC = () => {
           }
         }
 
-        setInstallments(prev => {
-          const updated = prev.map(inst => inst.id === id ? updatedInstallment : inst);
-          return [...updated, newInstallment];
-        });
-      } else {
-        setInstallments(prev => prev.map(inst => inst.id === id ? updatedInstallment : inst));
+        updatedInstallments.push(newInstallment);
       }
+
+      // Atualizar todas as parcelas modificadas
+      setInstallments(prev => {
+        const updatedMap = new Map(updatedInstallments.map(inst => [inst.id, inst]));
+        return prev.map(inst => updatedMap.get(inst.id) || inst);
+      });
     } else {
       // Lógica para outros modelos de empréstimo
       const paidAmount = Math.min(installment.amount, (installment.amountPaid || 0) + paymentValue);

@@ -403,7 +403,7 @@ def _authenticate_user(payload: LoginRequest):
     settings = get_settings()
     tenant_id = payload.tenant_id or settings.default_tenant_id
 
-    if not settings.supabase_anon_key:
+    if not settings.supabase_anon_key or settings.supabase_anon_key.strip() == "":
         raise HTTPException(
             status_code=500, detail="SUPABASE_ANON_KEY não configurada."
         )
