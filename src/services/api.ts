@@ -49,7 +49,7 @@ const resolveLoginUrl = () => {
 const CONFIGURED_LOGIN_URL = resolveLoginUrl();
 
 const DEFAULT_TENANT_ID =
-  (import.meta.env.VITE_API_TENANT_ID as string | undefined);
+  (import.meta.env.VITE_API_TENANT_ID as string | undefined) || '00000000-0000-0000-0000-000000000001';
 
 // Verifica se o backend está configurado
 export const isBackendConfigured = Boolean(NORMALIZED_BASE_URL || CONFIGURED_LOGIN_URL);
@@ -115,13 +115,13 @@ export async function loginWithBackend(email: string, password: string): Promise
   console.log('🏢 Tenant ID:', tenantId || 'não informado');
 
   try {
-  const response = await fetch(CONFIGURED_LOGIN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, senha: password, tenant_id: tenantId }),
-  });
+    const response = await fetch(CONFIGURED_LOGIN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, senha: password, tenant_id: tenantId }),
+    });
 
-  const body = await toJson(response);
+    const body = await toJson(response);
     
     if (!response.ok) {
       const errorMessage = body?.detail || body?.error || body?.message || `Erro ${response.status}: ${response.statusText}`;
@@ -134,8 +134,25 @@ export async function loginWithBackend(email: string, password: string): Promise
       throw new Error(errorMessage);
     }
     
-  assertOk(response, body);
     console.log('✅ Login bem-sucedido');
+    
+    const user = mapApiUserToUser(body?.usuario || body?.user || {});
+    const accessToken = sanitizeToken(body?.access_token);
+    const refreshToken = sanitizeToken(body?.refresh_token);
+
+    if (!accessToken) {
+      throw new Error('Token de acesso não retornado pelo servidor.');
+    }
+
+    return {
+      accessToken,
+      refreshToken: refreshToken || '',
+      tokenType: body?.token_type || 'bearer',
+      expiresIn: body?.expires_in || 3600,
+      accessExpiresAt: body?.access_expires_at,
+      refreshExpiresAt: body?.refresh_expires_at,
+      user,
+    };
   } catch (error) {
     if (error instanceof TypeError && error.message.includes('fetch')) {
       console.error('❌ Erro de rede ao fazer login:', error.message);
@@ -148,24 +165,6 @@ export async function loginWithBackend(email: string, password: string): Promise
     console.error('❌ Erro desconhecido no login:', error);
     throw new Error('Erro ao fazer login. Tente novamente.');
   }
-
-  const user = mapApiUserToUser(body.usuario || {});
-  const accessToken = sanitizeToken(body.access_token);
-  const refreshToken = sanitizeToken(body.refresh_token);
-
-  if (!accessToken) {
-    throw new Error('Token de acesso não retornado pelo servidor.');
-  }
-
-  return {
-    accessToken,
-    refreshToken: refreshToken || '',
-    tokenType: body.token_type || 'bearer',
-    expiresIn: body.expires_in || 3600,
-    accessExpiresAt: body.access_expires_at,
-    refreshExpiresAt: body.refresh_expires_at,
-    user,
-  };
 }
 
 const normalizeApiClient = (apiClient: any): Client => {
