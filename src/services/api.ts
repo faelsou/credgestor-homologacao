@@ -103,6 +103,57 @@ export interface LoginResult {
   user: User;
 }
 
+export async function refreshAccessToken(refreshToken: string): Promise<LoginResult> {
+  const refreshUrl = `${NORMALIZED_BASE_URL}/auth/refresh`;
+  
+  try {
+    const response = await fetch(refreshUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+
+    let body;
+    try {
+      body = await toJson(response);
+    } catch (parseError) {
+      console.error('❌ Erro ao parsear resposta do refresh:', parseError);
+      throw new Error(`Erro ${response.status}: ${response.statusText || 'Resposta inválida do servidor'}`);
+    }
+    
+    if (!response.ok) {
+      const errorMessage = body?.detail || body?.error || body?.message || `Erro ${response.status}: ${response.statusText}`;
+      throw new Error(errorMessage);
+    }
+    
+    const user = mapApiUserToUser(body?.usuario || body?.user || {});
+    const accessToken = sanitizeToken(body?.access_token);
+    const newRefreshToken = sanitizeToken(body?.refresh_token);
+
+    if (!accessToken) {
+      throw new Error('Token de acesso não retornado pelo servidor.');
+    }
+
+    return {
+      accessToken,
+      refreshToken: newRefreshToken || refreshToken,
+      tokenType: body?.token_type || 'bearer',
+      expiresIn: body?.expires_in || 3600,
+      accessExpiresAt: body?.access_expires_at,
+      refreshExpiresAt: body?.refresh_expires_at,
+      user,
+    };
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error(`Não foi possível conectar ao servidor para renovar token.`);
+    }
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('Erro ao renovar token. Tente novamente.');
+  }
+}
+
 export async function loginWithBackend(email: string, password: string): Promise<LoginResult> {
   if (!CONFIGURED_LOGIN_URL) {
     throw new Error('Backend não configurado. Configure VITE_API_BASE_URL ou VITE_API_LOGIN_URL.');
@@ -226,6 +277,8 @@ export async function createClient(
   token: string,
   tenantId: string | undefined,
   client: Client,
+  refreshToken?: string,
+  onTokenRefreshed?: (newToken: string, newRefreshToken: string) => void,
 ): Promise<Client> {
   const bearerToken = sanitizeToken(token);
   if (!bearerToken) {
@@ -256,15 +309,40 @@ export async function createClient(
   };
 
   const endpoint = `tenants/${effectiveTenantId}/clients`;
+  let currentToken = bearerToken;
 
-  const response = await fetch(buildUrl(endpoint), {
+  // Primeira tentativa
+  let response = await fetch(buildUrl(endpoint), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${bearerToken}`,
+      Authorization: `Bearer ${currentToken}`,
     },
     body: JSON.stringify(payload),
   });
+
+  // Se token expirado e temos refresh token, tenta renovar
+  if (response.status === 401 && refreshToken && onTokenRefreshed) {
+    try {
+      console.log('🔄 Token expirado, renovando...');
+      const newTokens = await refreshAccessToken(refreshToken);
+      currentToken = newTokens.accessToken;
+      onTokenRefreshed(newTokens.accessToken, newTokens.refreshToken);
+      
+      // Tenta novamente com novo token
+      response = await fetch(buildUrl(endpoint), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${currentToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (refreshError) {
+      console.error('❌ Erro ao renovar token:', refreshError);
+      // Continua com a resposta original (401)
+    }
+  }
 
   const body = await toJson(response);
   assertOk(response, body);
@@ -279,6 +357,8 @@ export async function updateClient(
   tenantId: string | undefined,
   clientId: string,
   client: Client,
+  refreshToken?: string,
+  onTokenRefreshed?: (newToken: string, newRefreshToken: string) => void,
 ): Promise<Client> {
   const bearerToken = sanitizeToken(token);
   if (!bearerToken) {
@@ -308,15 +388,40 @@ export async function updateClient(
   };
 
   const endpoint = `tenants/${effectiveTenantId}/clients/${clientId}`;
+  let currentToken = bearerToken;
 
-  const response = await fetch(buildUrl(endpoint), {
+  // Primeira tentativa
+  let response = await fetch(buildUrl(endpoint), {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${bearerToken}`,
+      Authorization: `Bearer ${currentToken}`,
     },
     body: JSON.stringify(payload),
   });
+
+  // Se token expirado e temos refresh token, tenta renovar
+  if (response.status === 401 && refreshToken && onTokenRefreshed) {
+    try {
+      console.log('🔄 Token expirado, renovando...');
+      const newTokens = await refreshAccessToken(refreshToken);
+      currentToken = newTokens.accessToken;
+      onTokenRefreshed(newTokens.accessToken, newTokens.refreshToken);
+      
+      // Tenta novamente com novo token
+      response = await fetch(buildUrl(endpoint), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${currentToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (refreshError) {
+      console.error('❌ Erro ao renovar token:', refreshError);
+      // Continua com a resposta original (401)
+    }
+  }
 
   const body = await toJson(response);
   assertOk(response, body);

@@ -1543,6 +1543,7 @@ export const AppContext = React.createContext<{
   loans: Loan[];
   installments: Installment[];
   session: BackendSession | null;
+  setSession: (session: BackendSession | null) => void;
   isBackendConfigured: boolean;
   login: (email: string, password?: string, provider?: 'google') => Promise<boolean>;
   logout: () => Promise<void>;
@@ -2430,6 +2431,7 @@ const App: React.FC = () => {
     loans,
     installments,
     session,
+    setSession,
     isBackendConfigured: isBackendConfiguredValue,
     login,
     logout,
@@ -2448,7 +2450,7 @@ const App: React.FC = () => {
     setView,
     theme,
     setTheme
-  }), [user, usersList, clients, loans, installments, session, isBackendConfiguredValue, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setView]);
+  }), [user, usersList, clients, loans, installments, session, setSession, isBackendConfiguredValue, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setView]);
 
   useEffect(() => {
     const body = document.body;
