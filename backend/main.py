@@ -370,15 +370,28 @@ def require_auth(
 
     token = credentials.credentials
     supabase = get_supabase_anon_client()
-    response = supabase.auth.get_user(token)
-    error = getattr(response, "error", None)
-    user = (
-        getattr(response, "user", None) or getattr(response, "data", None) or response
-    )
+    
+    try:
+        response = supabase.auth.get_user(token)
+        error = getattr(response, "error", None)
+        user = (
+            getattr(response, "user", None) or getattr(response, "data", None) or response
+        )
 
-    if error or not user:
+        if error or not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido."
+            )
+    except Exception as e:
+        # Captura exceções do Supabase (incluindo token expirado)
+        error_msg = str(e)
+        if "expired" in error_msg.lower() or "invalid" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expirado ou inválido."
+            )
+        # Para outros erros, também retorna 401 (não 500)
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido."
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Erro de autenticação: {error_msg}"
         )
 
     user_id = _get_user_id(user)

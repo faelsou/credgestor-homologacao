@@ -2,7 +2,7 @@ import React, { useContext, useMemo, useState } from 'react';
 import { Search, CalendarRange, Pencil, Clock8 } from 'lucide-react';
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, getTodayDateString } from '@/utils';
-import { Installment, InstallmentStatus, LoanStatus } from '@/types';
+import { Installment, InstallmentStatus, LoanStatus, LoanModel } from '@/types';
 
 export const LoanHistoryView: React.FC = () => {
   const { loans, clients, installments, scheduleFuturePayment, startEditingLoan } = useContext(AppContext);
@@ -13,6 +13,35 @@ export const LoanHistoryView: React.FC = () => {
   const [promiseReason, setPromiseReason] = useState('');
   const [promiseAmount, setPromiseAmount] = useState(0);
   const [promiseDate, setPromiseDate] = useState(getTodayDateString());
+
+  // Função para calcular o status correto do empréstimo baseado nas parcelas
+  const calculateLoanStatus = (loan: typeof loans[0]): LoanStatus => {
+    const related = installments.filter(inst => inst.loanId === loan.id);
+    
+    if (related.length === 0) {
+      return LoanStatus.ACTIVE;
+    }
+    
+    // Para empréstimos "somente juros", verificar se não há mais capital nem juros pendentes
+    if (loan.model === LoanModel.INTEREST_ONLY) {
+      const hasPendingCapital = related.some(inst => {
+        const principal = inst.principalAmount ?? 0;
+        return principal > 0;
+      });
+      
+      const hasPendingInterest = related.some(inst => {
+        const interest = inst.interestAmount ?? 0;
+        return interest > 0;
+      });
+      
+      // Empréstimo só está finalizado se não há capital nem juros pendentes
+      return (!hasPendingCapital && !hasPendingInterest) ? LoanStatus.PAID : LoanStatus.ACTIVE;
+    }
+    
+    // Para outros modelos, verificar se todas as parcelas estão pagas
+    const isLoanPaid = related.every(inst => inst.status === InstallmentStatus.PAID || inst.amount <= 0);
+    return isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE;
+  };
 
   const filteredLoans = useMemo(() => {
     return loans
@@ -188,6 +217,8 @@ export const LoanHistoryView: React.FC = () => {
                 const client = clients.find(c => c.id === loan.clientId);
                 const nextInstallment = findNextInstallment(loan.id);
                 const latestPromise = nextInstallment ? getLatestPromise(nextInstallment) : null;
+                // Calcular status correto baseado nas parcelas
+                const correctStatus = calculateLoanStatus(loan);
                 return (
                   <tr key={loan.id} className="hover:bg-slate-50 transition">
                     <td className="p-3">
@@ -205,10 +236,10 @@ export const LoanHistoryView: React.FC = () => {
                     </td>
                     <td className="p-3 font-medium">{formatCurrency(loan.amount)}</td>
                     <td className="p-3 font-semibold text-emerald-600">{formatCurrency(loan.totalAmount)}</td>
-                    <td className="p-3">{statusBadge(loan.status)}</td>
+                    <td className="p-3">{statusBadge(correctStatus)}</td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {loan.status !== LoanStatus.PAID && (
+                        {correctStatus !== LoanStatus.PAID && (
                           <button
                             onClick={() => openPromiseModal(loan.id)}
                             className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-100 rounded-lg hover:bg-purple-100"

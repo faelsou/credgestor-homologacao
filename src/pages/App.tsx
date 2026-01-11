@@ -2155,7 +2155,13 @@ const App: React.FC = () => {
     };
 
     if (loan.model === LoanModel.INTEREST_ONLY) {
-      const interestDue = Math.max(0, installment.interestAmount ?? Math.max(0, installment.amount - (installment.principalAmount ?? 0)));
+      // Calcular juros baseado na taxa do empréstimo se não estiver definido
+      let interestDue = installment.interestAmount ?? 0;
+      if (interestDue === 0) {
+        const principal = installment.principalAmount ?? installment.amount;
+        interestDue = Number((principal * (loan.interestRate / 100)).toFixed(2));
+      }
+      
       const principalDue = Math.max(0, installment.principalAmount ?? Math.max(0, installment.amount - interestDue));
       const totalDue = Math.max(0, interestDue + principalDue);
 
@@ -2181,12 +2187,24 @@ const App: React.FC = () => {
       // Valor total aplicado nesta parcela (juros + principal)
       const appliedToThisInstallment = interestPayment + principalPayment;
 
+      // Registrar pagamento no histórico
+      const paymentHistoryEntry = {
+        amount: appliedToThisInstallment,
+        interestPaid: interestPayment,
+        principalPaid: principalPayment,
+        paymentDate: getTodayDateString(),
+        createdAt: new Date().toISOString()
+      };
+      const existingHistory = installment.paymentHistory || [];
+      const updatedPaymentHistory = [...existingHistory, paymentHistoryEntry];
+
       const updatedInstallment = {
         ...installment,
         amount: remainingBalance, // Apenas juros restantes
         interestAmount: updatedInterest,
         principalAmount: updatedPrincipal,
         amountPaid: Number(((installment.amountPaid || 0) + appliedToThisInstallment).toFixed(2)),
+        paymentHistory: updatedPaymentHistory,
         status: newStatus,
         paidDate: newStatus === InstallmentStatus.PAID ? new Date().toISOString() : installment.paidDate
       };
@@ -2329,10 +2347,22 @@ const App: React.FC = () => {
       const paidAmount = Math.min(installment.amount, (installment.amountPaid || 0) + paymentValue);
       const isPaid = paidAmount >= installment.amount;
 
+      // Registrar pagamento no histórico
+      const paymentHistoryEntry = {
+        amount: paymentValue,
+        interestPaid: 0,
+        principalPaid: paymentValue,
+        paymentDate: getTodayDateString(),
+        createdAt: new Date().toISOString()
+      };
+      const existingHistory = installment.paymentHistory || [];
+      const updatedPaymentHistory = [...existingHistory, paymentHistoryEntry];
+
       const updatedInstallment = {
         ...installment,
         status: isPaid ? InstallmentStatus.PAID : InstallmentStatus.PARTIAL,
         amountPaid: Number(paidAmount.toFixed(2)),
+        paymentHistory: updatedPaymentHistory,
         paidDate: new Date().toISOString()
       };
 
@@ -2357,7 +2387,30 @@ const App: React.FC = () => {
     // Atualizar status do empréstimo
     setLoans(prevLoans => prevLoans.map(l => {
       const related = installments.filter(inst => inst.loanId === l.id);
-      const isLoanPaid = related.length > 0 && related.every(inst => inst.status === InstallmentStatus.PAID || inst.amount <= 0);
+      
+      if (related.length === 0) {
+        return { ...l, status: LoanStatus.ACTIVE };
+      }
+      
+      // Para empréstimos "somente juros", verificar se não há mais capital nem juros pendentes
+      if (l.model === LoanModel.INTEREST_ONLY) {
+        const hasPendingCapital = related.some(inst => {
+          const principal = inst.principalAmount ?? 0;
+          return principal > 0;
+        });
+        
+        const hasPendingInterest = related.some(inst => {
+          const interest = inst.interestAmount ?? 0;
+          return interest > 0;
+        });
+        
+        // Empréstimo só está finalizado se não há capital nem juros pendentes
+        const isLoanPaid = !hasPendingCapital && !hasPendingInterest;
+        return { ...l, status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE };
+      }
+      
+      // Para outros modelos, verificar se todas as parcelas estão pagas
+      const isLoanPaid = related.every(inst => inst.status === InstallmentStatus.PAID || inst.amount <= 0);
       return { ...l, status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE };
     }));
   }, [installments, loans, user?.role, isBackendConfiguredValue, session]);
