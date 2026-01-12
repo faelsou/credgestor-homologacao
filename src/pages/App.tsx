@@ -2020,8 +2020,11 @@ const App: React.FC = () => {
         const { createBackendLoan, createBackendInstallmentsBatch } = await import('@/services/backendApi');
         console.log('📝 Criando empréstimo no backend...', { loan, installmentsCount: generatedInstallments.length });
         
+        // Calcular valor em aberto inicial (igual ao total quando criado)
+        const loanWithOutstanding = { ...loan, outstandingAmount: loan.totalAmount };
+        
         // Criar empréstimo primeiro
-        const created = await createBackendLoan(session.accessToken, session.tenantId || '', loan);
+        const created = await createBackendLoan(session.accessToken, session.tenantId || '', loanWithOutstanding);
         console.log('✅ Empréstimo criado:', created.id);
         
         // Atualizar os IDs das parcelas com o ID do empréstimo criado
@@ -2384,13 +2387,51 @@ const App: React.FC = () => {
       setInstallments(prev => prev.map(inst => inst.id === id ? updatedInstallment : inst));
     }
 
-    // Atualizar status do empréstimo
+    // Função auxiliar para calcular valor em aberto
+    const calculateOutstandingAmount = (loan: Loan, relatedInstallments: Installment[]): number => {
+      if (relatedInstallments.length === 0) {
+        return loan.totalAmount;
+      }
+      
+      // Para empréstimos "somente juros", calcular capital + juros pendentes
+      if (loan.model === LoanModel.INTEREST_ONLY) {
+        let totalOutstanding = 0;
+        
+        // Soma todo o capital pendente
+        for (const inst of relatedInstallments) {
+          const principal = inst.principalAmount ?? 0;
+          if (principal > 0) {
+            totalOutstanding += principal;
+          }
+        }
+        
+        // Soma todos os juros pendentes
+        for (const inst of relatedInstallments) {
+          const interest = inst.interestAmount ?? 0;
+          if (interest > 0) {
+            totalOutstanding += interest;
+          }
+        }
+        
+        return Number(totalOutstanding.toFixed(2));
+      }
+      
+      // Para outros modelos, calcular valor total menos o que já foi pago
+      const totalPaid = relatedInstallments.reduce((sum, inst) => sum + (inst.amountPaid || 0), 0);
+      const outstanding = Math.max(0, loan.totalAmount - totalPaid);
+      return Number(outstanding.toFixed(2));
+    };
+
+    // Atualizar status do empréstimo e valor em aberto
     setLoans(prevLoans => prevLoans.map(l => {
       const related = installments.filter(inst => inst.loanId === l.id);
       
       if (related.length === 0) {
-        return { ...l, status: LoanStatus.ACTIVE };
+        return { ...l, status: LoanStatus.ACTIVE, outstandingAmount: l.totalAmount };
       }
+      
+      // Calcular valor em aberto
+      const outstandingAmount = calculateOutstandingAmount(l, related);
       
       // Para empréstimos "somente juros", verificar se não há mais capital nem juros pendentes
       if (l.model === LoanModel.INTEREST_ONLY) {
@@ -2406,12 +2447,40 @@ const App: React.FC = () => {
         
         // Empréstimo só está finalizado se não há capital nem juros pendentes
         const isLoanPaid = !hasPendingCapital && !hasPendingInterest;
-        return { ...l, status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE };
+        const updatedLoan = { ...l, status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE, outstandingAmount };
+        
+        // Atualizar no backend se configurado
+        if (isBackendConfiguredValue && session?.accessToken) {
+          (async () => {
+            try {
+              const { updateBackendLoan } = await import('@/services/backendApi');
+              await updateBackendLoan(session.accessToken, session.tenantId || '', l.id, updatedLoan);
+            } catch (error) {
+              console.error('Erro ao atualizar valor em aberto no backend', error);
+            }
+          })();
+        }
+        
+        return updatedLoan;
       }
       
       // Para outros modelos, verificar se todas as parcelas estão pagas
       const isLoanPaid = related.every(inst => inst.status === InstallmentStatus.PAID || inst.amount <= 0);
-      return { ...l, status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE };
+      const updatedLoan = { ...l, status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE, outstandingAmount };
+      
+      // Atualizar no backend se configurado
+      if (isBackendConfiguredValue && session?.accessToken) {
+        (async () => {
+          try {
+            const { updateBackendLoan } = await import('@/services/backendApi');
+            await updateBackendLoan(session.accessToken, session.tenantId || '', l.id, updatedLoan);
+          } catch (error) {
+            console.error('Erro ao atualizar valor em aberto no backend', error);
+          }
+        })();
+      }
+      
+      return updatedLoan;
     }));
   }, [installments, loans, user?.role, isBackendConfiguredValue, session]);
 

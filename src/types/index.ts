@@ -43,6 +43,7 @@ export interface Loan {
   amount: number; // Valor emprestado
   interestRate: number; // Porcentagem
   totalAmount: number; // Valor total com juros
+  outstandingAmount?: number; // Valor em aberto (calculado)
   startDate: string;
   installmentsCount: number;
   model: LoanModel;
