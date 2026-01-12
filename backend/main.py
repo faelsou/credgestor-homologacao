@@ -780,6 +780,11 @@ def create_loan(
         body["interest_rate"] = body["interest_rate"]
     if "total_amount" in body:
         body["total_amount"] = body["total_amount"]
+    if "outstanding_amount" in body:
+        body["outstanding_amount"] = body["outstanding_amount"]
+    elif "outstanding_amount" not in body:
+        # Se não fornecido, usar total_amount como padrão
+        body["outstanding_amount"] = body.get("total_amount", 0)
     if "start_date" in body:
         body["start_date"] = body["start_date"]
     if "installments_count" in body:
@@ -809,6 +814,8 @@ def update_loan(
         body["interest_rate"] = body["interest_rate"]
     if "total_amount" in body:
         body["total_amount"] = body["total_amount"]
+    if "outstanding_amount" in body:
+        body["outstanding_amount"] = body["outstanding_amount"]
     if "start_date" in body:
         body["start_date"] = body["start_date"]
     if "installments_count" in body:

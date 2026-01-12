@@ -43,6 +43,43 @@ export const LoanHistoryView: React.FC = () => {
     return isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE;
   };
 
+  // Função para calcular o valor em aberto do empréstimo
+  const calculateOutstandingAmount = (loan: typeof loans[0]): number => {
+    const related = installments.filter(inst => inst.loanId === loan.id);
+    
+    if (related.length === 0) {
+      return loan.totalAmount;
+    }
+    
+    // Para empréstimos "somente juros", calcular capital + juros pendentes
+    if (loan.model === LoanModel.INTEREST_ONLY) {
+      let totalOutstanding = 0;
+      
+      // Soma todo o capital pendente
+      for (const inst of related) {
+        const principal = inst.principalAmount ?? 0;
+        if (principal > 0) {
+          totalOutstanding += principal;
+        }
+      }
+      
+      // Soma todos os juros pendentes
+      for (const inst of related) {
+        const interest = inst.interestAmount ?? 0;
+        if (interest > 0) {
+          totalOutstanding += interest;
+        }
+      }
+      
+      return Number(totalOutstanding.toFixed(2));
+    }
+    
+    // Para outros modelos, calcular valor total menos o que já foi pago
+    const totalPaid = related.reduce((sum, inst) => sum + (inst.amountPaid || 0), 0);
+    const outstanding = Math.max(0, loan.totalAmount - totalPaid);
+    return Number(outstanding.toFixed(2));
+  };
+
   const filteredLoans = useMemo(() => {
     return loans
       .filter(loan => {
@@ -208,6 +245,7 @@ export const LoanHistoryView: React.FC = () => {
                 <th className="p-3">Data</th>
                 <th className="p-3">Principal</th>
                 <th className="p-3">Total</th>
+                <th className="p-3">Valor em Aberto</th>
                 <th className="p-3">Status</th>
                 <th className="p-3 text-right">Ações</th>
               </tr>
@@ -219,6 +257,8 @@ export const LoanHistoryView: React.FC = () => {
                 const latestPromise = nextInstallment ? getLatestPromise(nextInstallment) : null;
                 // Calcular status correto baseado nas parcelas
                 const correctStatus = calculateLoanStatus(loan);
+                // Calcular valor em aberto
+                const outstandingAmount = calculateOutstandingAmount(loan);
                 return (
                   <tr key={loan.id} className="hover:bg-slate-50 transition">
                     <td className="p-3">
@@ -236,6 +276,7 @@ export const LoanHistoryView: React.FC = () => {
                     </td>
                     <td className="p-3 font-medium">{formatCurrency(loan.amount)}</td>
                     <td className="p-3 font-semibold text-emerald-600">{formatCurrency(loan.totalAmount)}</td>
+                    <td className="p-3 font-bold text-amber-600">{formatCurrency(outstandingAmount)}</td>
                     <td className="p-3">{statusBadge(correctStatus)}</td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -260,7 +301,7 @@ export const LoanHistoryView: React.FC = () => {
               })}
               {filteredLoans.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-6 text-center text-slate-500">Nenhum empréstimo encontrado para os filtros informados.</td>
+                  <td colSpan={7} className="p-6 text-center text-slate-500">Nenhum empréstimo encontrado para os filtros informados.</td>
                 </tr>
               )}
             </tbody>

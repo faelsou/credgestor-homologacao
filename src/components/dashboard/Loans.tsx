@@ -329,6 +329,43 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
   };
 
+  // Função para calcular o valor em aberto do empréstimo
+  const calculateOutstandingAmount = (loan: Loan): number => {
+    const related = installments.filter(inst => inst.loanId === loan.id);
+    
+    if (related.length === 0) {
+      return loan.totalAmount;
+    }
+    
+    // Para empréstimos "somente juros", calcular capital + juros pendentes
+    if (loan.model === LoanModel.INTEREST_ONLY) {
+      let totalOutstanding = 0;
+      
+      // Soma todo o capital pendente
+      for (const inst of related) {
+        const principal = inst.principalAmount ?? 0;
+        if (principal > 0) {
+          totalOutstanding += principal;
+        }
+      }
+      
+      // Soma todos os juros pendentes
+      for (const inst of related) {
+        const interest = inst.interestAmount ?? 0;
+        if (interest > 0) {
+          totalOutstanding += interest;
+        }
+      }
+      
+      return Number(totalOutstanding.toFixed(2));
+    }
+    
+    // Para outros modelos, calcular valor total menos o que já foi pago
+    const totalPaid = related.reduce((sum, inst) => sum + (inst.amountPaid || 0), 0);
+    const outstanding = Math.max(0, loan.totalAmount - totalPaid);
+    return Number(outstanding.toFixed(2));
+  };
+
   const getPrincipalAmount = (inst: Installment) => {
     const interest = inst.interestAmount ?? 0;
     return inst.principalAmount ?? Math.max(0, inst.amount - interest);
@@ -491,6 +528,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
               <th className="p-4">Cliente</th>
               <th className="p-4">Valor Principal</th>
               <th className="p-4">Total (+Juros)</th>
+              <th className="p-4">Valor em Aberto</th>
               <th className="p-4">Modelo</th>
               <th className="p-4">Parcelas</th>
               <th className="p-4">Data</th>
@@ -515,6 +553,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 : loan.status === LoanStatus.PAID
                   ? 'Finalizado'
                   : 'Em Atraso';
+              // Calcular valor em aberto
+              const outstandingAmount = calculateOutstandingAmount(loan);
 
               return (
               <tr key={loan.id} className="hover:bg-slate-50 transition">
@@ -529,6 +569,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 </td>
                 <td className="p-4">{formatCurrency(loan.amount)}</td>
                 <td className="p-4 font-semibold text-emerald-600">{formatCurrency(loan.totalAmount)}</td>
+                <td className="p-4 font-bold text-amber-600">{formatCurrency(outstandingAmount)}</td>
                 <td className="p-4 text-slate-600">{loanModelLabel(loan.model)}</td>
                 <td className="p-4">{loan.installmentsCount}x</td>
                 <td className="p-4 text-slate-500">{formatDate(loan.startDate)}</td>
