@@ -992,6 +992,10 @@ export const ClientsView: React.FC = () => {
         return syncedClient;
       } catch (error) {
         console.error('❌ Erro ao salvar no banco de dados:', error);
+        // Se o erro for de sessão expirada, lança erro mais específico
+        if (error instanceof Error && error.message.includes('Sessão expirada')) {
+          throw new Error('Sua sessão expirou. Por favor, faça login novamente para continuar.');
+        }
         throw error;
       }
     }
@@ -1057,14 +1061,24 @@ export const ClientsView: React.FC = () => {
       console.log('✅ Cliente salvo com sucesso!');
 
       if (!savedRemotely && remoteError) {
-        alert('Cliente salvo localmente, mas não foi possível sincronizar com o banco de dados. Verifique a conexão e tente novamente.');
+        const errorMessage = remoteError instanceof Error ? remoteError.message : 'Erro desconhecido';
+        if (errorMessage.includes('Sessão expirada') || errorMessage.includes('faça login')) {
+          alert('Sua sessão expirou. Por favor, faça login novamente para sincronizar com o banco de dados.\n\nO cliente foi salvo localmente.');
+        } else {
+          alert('Cliente salvo localmente, mas não foi possível sincronizar com o banco de dados. Verifique a conexão e tente novamente.');
+        }
       }
 
       setIsModalOpen(false);
       resetForm();
     } catch (error) {
       console.error('❌ Erro ao salvar cliente:', error);
-      setSaveError('Não foi possível salvar o cliente no banco de dados. Verifique a conexão e tente novamente.');
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      if (errorMessage.includes('Sessão expirada') || errorMessage.includes('faça login')) {
+        setSaveError('Sua sessão expirou. Por favor, faça login novamente para continuar.');
+      } else {
+        setSaveError('Não foi possível salvar o cliente no banco de dados. Verifique a conexão e tente novamente.');
+      }
     } finally {
       setIsSavingClient(false);
     }
