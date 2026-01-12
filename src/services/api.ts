@@ -340,8 +340,15 @@ export async function createClient(
       });
     } catch (refreshError) {
       console.error('❌ Erro ao renovar token:', refreshError);
-      // Continua com a resposta original (401)
+      // Se o refresh também falhou, lança erro específico
+      const errorMessage = refreshError instanceof Error ? refreshError.message : 'Sessão expirada';
+      throw new Error(`Sessão expirada. Por favor, faça login novamente. (${errorMessage})`);
     }
+  }
+
+  // Se ainda retornar 401 após tentar refresh, lança erro específico
+  if (response.status === 401) {
+    throw new Error('Sessão expirada. Por favor, faça login novamente.');
   }
 
   const body = await toJson(response);
@@ -419,8 +426,20 @@ export async function updateClient(
       });
     } catch (refreshError) {
       console.error('❌ Erro ao renovar token:', refreshError);
-      // Continua com a resposta original (401)
+      // Se o refresh também falhou, lança erro específico
+      const errorMessage = refreshError instanceof Error ? refreshError.message : 'Sessão expirada';
+      throw new Error(`Sessão expirada. Por favor, faça login novamente. (${errorMessage})`);
     }
+  }
+
+  // Se ainda retornar 401 após tentar refresh, lança erro específico
+  if (response.status === 401) {
+    throw new Error('Sessão expirada. Por favor, faça login novamente.');
+  }
+
+  // Se ainda retornar 401 após tentar refresh, lança erro específico
+  if (response.status === 401) {
+    throw new Error('Sessão expirada. Por favor, faça login novamente.');
   }
 
   const body = await toJson(response);
