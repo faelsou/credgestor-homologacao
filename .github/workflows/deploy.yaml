@@ -442,6 +442,9 @@ jobs:
               set -a
               source .env
               set +a
+              # Exporta explicitamente as variáveis críticas para garantir que sejam passadas ao docker stack deploy
+              export SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SUPABASE_ANON_KEY DATABASE_URL API_HOST API_PORT
+              echo "✅ Variáveis de ambiente carregadas e exportadas"
             else
               echo "⚠️  Arquivo .env não encontrado. Certifique-se de que as variáveis de ambiente estão configuradas."
             fi
