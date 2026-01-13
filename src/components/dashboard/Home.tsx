@@ -1,102 +1,206 @@
 import React, { useContext, useMemo, useState } from 'react';
-import { TrendingUp, TrendingDown, Users, AlertTriangle, X, Calendar, DownloadCloud, Filter } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { TrendingUp, TrendingDown, Users, AlertTriangle, Calendar, DownloadCloud, FileSpreadsheet, DollarSign, Percent } from 'lucide-react';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, isLate } from '@/utils';
-import { InstallmentStatus, LoanStatus } from '@/types';
+import { InstallmentStatus, LoanStatus, LoanModel } from '@/types';
+
+type DateRange = '1D' | '7D' | '1M' | '3M' | 'ALL';
 
 export const DashboardHome: React.FC = () => {
-  const { clients, installments, loans, setView } = useContext(AppContext);
-  const [detailFilter, setDetailFilter] = useState<'PAID' | 'RECEIVABLE' | 'LATE' | null>(null);
-  const today = new Date().toISOString().split('T')[0];
-  const [reportStartDate, setReportStartDate] = useState(today);
-  const [reportEndDate, setReportEndDate] = useState(today);
-  const [rangeDetail, setRangeDetail] = useState<'capital' | 'interest' | null>(null);
+  const { clients, installments, loans } = useContext(AppContext);
+  
+  // Função para calcular datas baseado no range
+  const getDateRange = (range: DateRange): { start: string; end: string } => {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    const end = today.toISOString().split('T')[0];
+    
+    const start = new Date();
+    
+    switch (range) {
+      case '1D':
+        start.setHours(0, 0, 0, 0);
+        break;
+      case '7D':
+        start.setDate(start.getDate() - 7);
+        start.setHours(0, 0, 0, 0);
+        break;
+      case '1M':
+        start.setMonth(start.getMonth() - 1);
+        start.setHours(0, 0, 0, 0);
+        break;
+      case '3M':
+        start.setMonth(start.getMonth() - 3);
+        start.setHours(0, 0, 0, 0);
+        break;
+      case 'ALL':
+        start.setFullYear(2020, 0, 1);
+        start.setHours(0, 0, 0, 0);
+        break;
+    }
+    
+    return { start: start.toISOString().split('T')[0], end };
+  };
 
-  const stats = useMemo(() => {
-    const totalReceived = installments
-      .filter(i => i.status === InstallmentStatus.PAID)
-      .reduce((acc, curr) => acc + curr.amountPaid, 0);
+  // Inicializar datas para 7D
+  const initialDates = getDateRange('7D');
+  
+  // Estados para filtros de data - Dashboard Parcelados
+  const [parceladosDateRange, setParceladosDateRange] = useState<DateRange>('7D');
+  const [parceladosStartDate, setParceladosStartDate] = useState<string>(initialDates.start);
+  const [parceladosEndDate, setParceladosEndDate] = useState<string>(initialDates.end);
+  
+  // Estados para filtros de data - Dashboard Somente Juros
+  const [jurosDateRange, setJurosDateRange] = useState<DateRange>('7D');
+  const [jurosStartDate, setJurosStartDate] = useState<string>(initialDates.start);
+  const [jurosEndDate, setJurosEndDate] = useState<string>(initialDates.end);
 
-    const totalReceivable = installments
-      .filter(i => i.status !== InstallmentStatus.PAID)
-      .reduce((acc, curr) => acc + curr.amount, 0);
-      
-    const lateInstallments = installments.filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate));
-    const totalLate = lateInstallments.reduce((acc, curr) => acc + curr.amount, 0);
+  // Separar empréstimos parcelados e somente juros
+  const parceladosLoans = useMemo(() => 
+    loans.filter(l => l.model !== LoanModel.INTEREST_ONLY),
+    [loans]
+  );
 
-    const activeLoans = loans.filter(l => l.status === LoanStatus.ACTIVE).length;
+  const jurosLoans = useMemo(() => 
+    loans.filter(l => l.model === LoanModel.INTEREST_ONLY),
+    [loans]
+  );
 
-    return { totalReceived, totalReceivable, totalLate, activeLoans, lateCount: lateInstallments.length, lateInstallments };
-  }, [installments, loans]);
+  // Aplicar filtros de data para parcelados
+  const parceladosFilteredData = useMemo(() => {
+    const { start, end } = parceladosDateRange === 'ALL' && parceladosStartDate && parceladosEndDate
+      ? { start: parceladosStartDate, end: parceladosEndDate }
+      : getDateRange(parceladosDateRange);
+    
+    const startDate = new Date(start);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(end);
+    endDate.setHours(23, 59, 59, 999);
 
-  // Chart Data Preparation (Simple Forecast)
-  const chartData = [
-    { name: 'Recebido', value: stats.totalReceived, color: '#10b981' }, // Emerald-500
-    { name: 'A Vencer', value: stats.totalReceivable - stats.totalLate, color: '#3b82f6' }, // Blue-500
-    { name: 'Atrasado', value: stats.totalLate, color: '#ef4444' }, // Red-500
-  ];
-
-  const detailedInstallments = useMemo(() => {
-    if (!detailFilter) return [];
-
-    const base = installments.filter(inst => {
-      if (detailFilter === 'PAID') return inst.status === InstallmentStatus.PAID;
-      if (detailFilter === 'LATE') return inst.status !== InstallmentStatus.PAID && isLate(inst.dueDate);
-      return inst.status !== InstallmentStatus.PAID && !isLate(inst.dueDate);
-    });
-
-    return base.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
-  }, [detailFilter, installments]);
-
-  const detailTitle = detailFilter === 'PAID'
-    ? 'Parcelas Recebidas'
-    : detailFilter === 'RECEIVABLE'
-      ? 'Parcelas a Receber'
-      : 'Parcelas em Atraso';
-
-  const detailTotal = detailedInstallments.reduce((acc, inst) => acc + (inst.amountPaid || inst.amount), 0);
-
-  const installmentsInRange = useMemo(() => {
-    const start = new Date(reportStartDate);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(reportEndDate);
-    end.setHours(23, 59, 59, 999);
-
+    const parceladosLoanIds = new Set(parceladosLoans.map(l => l.id));
     return installments.filter(inst => {
       const due = new Date(inst.dueDate);
-      return due >= start && due <= end;
+      return parceladosLoanIds.has(inst.loanId) && due >= startDate && due <= endDate;
     });
-  }, [installments, reportEndDate, reportStartDate]);
+  }, [installments, parceladosLoans, parceladosDateRange, parceladosStartDate, parceladosEndDate]);
 
-  const rangeLoans = useMemo(() => {
-    const map = new Map<string, { loanId: string; capital: number; interest: number; earliestDue: string }>();
+  // Aplicar filtros de data para somente juros
+  const jurosFilteredData = useMemo(() => {
+    const { start, end } = jurosDateRange === 'ALL' && jurosStartDate && jurosEndDate
+      ? { start: jurosStartDate, end: jurosEndDate }
+      : getDateRange(jurosDateRange);
+    
+    const startDate = new Date(start);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(end);
+    endDate.setHours(23, 59, 59, 999);
 
-    installmentsInRange.forEach(inst => {
-      const interestPortion = inst.interestAmount ?? Math.max(0, inst.amount - (inst.principalAmount ?? inst.amount));
-      const principalPortion = inst.principalAmount ?? Math.max(0, inst.amount - interestPortion);
+    const jurosLoanIds = new Set(jurosLoans.map(l => l.id));
+    return installments.filter(inst => {
+      const due = new Date(inst.dueDate);
+      return jurosLoanIds.has(inst.loanId) && due >= startDate && due <= endDate;
+    });
+  }, [installments, jurosLoans, jurosDateRange, jurosStartDate, jurosEndDate]);
 
-      const existing = map.get(inst.loanId);
-      if (existing) {
-        existing.capital += principalPortion;
-        existing.interest += interestPortion;
-        existing.earliestDue = new Date(inst.dueDate) < new Date(existing.earliestDue) ? inst.dueDate : existing.earliestDue;
+  // Estatísticas para empréstimos parcelados
+  const parceladosStats = useMemo(() => {
+    const total = parceladosFilteredData.reduce((acc, curr) => acc + curr.amount, 0);
+    const received = parceladosFilteredData
+      .filter(i => i.status === InstallmentStatus.PAID)
+      .reduce((acc, curr) => acc + (curr.amountPaid || 0), 0);
+    const receivable = parceladosFilteredData
+      .filter(i => i.status !== InstallmentStatus.PAID)
+      .reduce((acc, curr) => acc + curr.amount, 0);
+    const late = parceladosFilteredData
+      .filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate))
+      .reduce((acc, curr) => acc + curr.amount, 0);
+    const lateCount = parceladosFilteredData.filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate)).length;
+    const activeCount = parceladosLoans.filter(l => l.status === LoanStatus.ACTIVE).length;
+    
+    const capital = parceladosFilteredData.reduce((acc, curr) => 
+      acc + (curr.principalAmount ?? Math.max(0, curr.amount - (curr.interestAmount ?? 0))), 0
+    );
+    const interest = parceladosFilteredData.reduce((acc, curr) => 
+      acc + (curr.interestAmount ?? Math.max(0, curr.amount - (curr.principalAmount ?? curr.amount))), 0
+    );
+
+    return { total, received, receivable, late, lateCount, activeCount, capital, interest };
+  }, [parceladosFilteredData, parceladosLoans]);
+
+  // Estatísticas para empréstimos somente juros
+  const jurosStats = useMemo(() => {
+    const total = jurosFilteredData.reduce((acc, curr) => acc + curr.amount, 0);
+    const received = jurosFilteredData
+      .filter(i => i.status === InstallmentStatus.PAID)
+      .reduce((acc, curr) => acc + (curr.amountPaid || 0), 0);
+    const receivable = jurosFilteredData
+      .filter(i => i.status !== InstallmentStatus.PAID)
+      .reduce((acc, curr) => acc + curr.amount, 0);
+    const late = jurosFilteredData
+      .filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate))
+      .reduce((acc, curr) => acc + curr.amount, 0);
+    const lateCount = jurosFilteredData.filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate)).length;
+    const activeCount = jurosLoans.filter(l => l.status === LoanStatus.ACTIVE).length;
+    
+    const interest = jurosFilteredData.reduce((acc, curr) => 
+      acc + (curr.interestAmount ?? curr.amount), 0
+    );
+    const capital = jurosFilteredData.reduce((acc, curr) => 
+      acc + (curr.principalAmount ?? 0), 0
+    );
+
+    return { total, received, receivable, late, lateCount, activeCount, capital, interest };
+  }, [jurosFilteredData, jurosLoans]);
+
+  // Dados para gráfico de linha - Parcelados
+  const parceladosChartData = useMemo(() => {
+    const grouped = new Map<string, { date: string; received: number; receivable: number }>();
+    
+    parceladosFilteredData.forEach(inst => {
+      const dateKey = inst.dueDate.split('T')[0];
+      const existing = grouped.get(dateKey) || { date: dateKey, received: 0, receivable: 0 };
+      
+      if (inst.status === InstallmentStatus.PAID) {
+        existing.received += inst.amountPaid || inst.amount;
       } else {
-        map.set(inst.loanId, { loanId: inst.loanId, capital: principalPortion, interest: interestPortion, earliestDue: inst.dueDate });
+        existing.receivable += inst.amount;
       }
+      
+      grouped.set(dateKey, existing);
     });
 
-    return Array.from(map.values()).sort((a, b) => new Date(a.earliestDue).getTime() - new Date(b.earliestDue).getTime());
-  }, [installmentsInRange]);
+    return Array.from(grouped.values())
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(-30); // Últimos 30 dias
+  }, [parceladosFilteredData]);
 
-  const dailyCapital = rangeLoans.reduce((acc, entry) => acc + entry.capital, 0);
-  const dailyInterest = rangeLoans.reduce((acc, entry) => acc + entry.interest, 0);
-  const rangeDetailTitle = rangeDetail === 'capital' ? 'Capital por cliente' : 'Juros por cliente';
-  const rangeDetailTotal = rangeDetail === 'capital' ? dailyCapital : dailyInterest;
+  // Dados para gráfico de linha - Somente Juros
+  const jurosChartData = useMemo(() => {
+    const grouped = new Map<string, { date: string; received: number; receivable: number }>();
+    
+    jurosFilteredData.forEach(inst => {
+      const dateKey = inst.dueDate.split('T')[0];
+      const existing = grouped.get(dateKey) || { date: dateKey, received: 0, receivable: 0 };
+      
+      if (inst.status === InstallmentStatus.PAID) {
+        existing.received += inst.amountPaid || inst.amount;
+      } else {
+        existing.receivable += inst.amount;
+      }
+      
+      grouped.set(dateKey, existing);
+    });
 
-  const exportExcelReport = () => {
-    const data = installmentsInRange.map(inst => {
-      const loan = loans.find(l => l.id === inst.loanId);
+    return Array.from(grouped.values())
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(-30); // Últimos 30 dias
+  }, [jurosFilteredData]);
+
+  // Função de exportação Excel - Parcelados
+  const exportParceladosExcel = () => {
+    const data = parceladosFilteredData.map(inst => {
+      const loan = parceladosLoans.find(l => l.id === inst.loanId);
       const client = clients.find(c => c.id === inst.clientId);
       const interestPortion = inst.interestAmount ?? Math.max(0, inst.amount - (inst.principalAmount ?? inst.amount));
       const principalPortion = inst.principalAmount ?? Math.max(0, inst.amount - interestPortion);
@@ -104,9 +208,11 @@ export const DashboardHome: React.FC = () => {
         Data: formatDate(inst.dueDate),
         Cliente: client?.name || 'Cliente não encontrado',
         CPF: client?.cpf || '',
+        Parcela: inst.number,
         Capital: principalPortion,
         Juros: interestPortion,
-        Total: loan ? loan.totalAmount : inst.amount
+        Total: inst.amount,
+        Status: inst.status === InstallmentStatus.PAID ? 'Pago' : isLate(inst.dueDate) ? 'Atrasado' : 'A Vencer'
       };
     });
 
@@ -115,8 +221,10 @@ export const DashboardHome: React.FC = () => {
       return;
     }
 
-    const header = ['Data', 'Cliente', 'CPF', 'Capital', 'Juros', 'Total'];
-    const rows = data.map(row => [row.Data, row.Cliente, row.CPF, row.Capital, row.Juros, row.Total]);
+    const header = ['Data', 'Cliente', 'CPF', 'Parcela', 'Capital', 'Juros', 'Total', 'Status'];
+    const rows = data.map(row => [
+      row.Data, row.Cliente, row.CPF, row.Parcela, row.Capital, row.Juros, row.Total, row.Status
+    ]);
     const csvContent = [header, ...rows]
       .map(line => line.map(value => typeof value === 'string' ? `"${value.replace(/"/g, '""')}"` : value).join(';'))
       .join('\n');
@@ -125,263 +233,409 @@ export const DashboardHome: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `relatorio_financeiro_${reportStartDate}_a_${reportEndDate}.csv`;
+    link.download = `emprestimos_parcelados_${parceladosDateRange}_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
+  // Função de exportação Excel - Somente Juros
+  const exportJurosExcel = () => {
+    const data = jurosFilteredData.map(inst => {
+      const loan = jurosLoans.find(l => l.id === inst.loanId);
+      const client = clients.find(c => c.id === inst.clientId);
+      const interestPortion = inst.interestAmount ?? inst.amount;
+      const principalPortion = inst.principalAmount ?? 0;
+      return {
+        Data: formatDate(inst.dueDate),
+        Cliente: client?.name || 'Cliente não encontrado',
+        CPF: client?.cpf || '',
+        Juros: interestPortion,
+        Capital_Em_Aberto: principalPortion,
+        Total: inst.amount,
+        Status: inst.status === InstallmentStatus.PAID ? 'Pago' : isLate(inst.dueDate) ? 'Atrasado' : 'A Vencer'
+      };
+    });
+
+    if (data.length === 0) {
+      alert('Nenhum registro no período selecionado. Ajuste as datas para exportar.');
+      return;
+    }
+
+    const header = ['Data', 'Cliente', 'CPF', 'Juros', 'Capital em Aberto', 'Total', 'Status'];
+    const rows = data.map(row => [
+      row.Data, row.Cliente, row.CPF, row.Juros, row.Capital_Em_Aberto, row.Total, row.Status
+    ]);
+    const csvContent = [header, ...rows]
+      .map(line => line.map(value => typeof value === 'string' ? `"${value.replace(/"/g, '""')}"` : value).join(';'))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `emprestimos_somente_juros_${jurosDateRange}_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Componente de filtro de data
+  const DateFilter = ({ 
+    dateRange, 
+    setDateRange, 
+    startDate, 
+    setStartDate, 
+    endDate, 
+    setEndDate 
+  }: {
+    dateRange: DateRange;
+    setDateRange: (range: DateRange) => void;
+    startDate: string;
+    setStartDate: (date: string) => void;
+    endDate: string;
+    setEndDate: (date: string) => void;
+  }) => (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        {(['1D', '7D', '1M', '3M', 'ALL'] as DateRange[]).map(range => (
+          <button
+            key={range}
+            onClick={() => {
+              setDateRange(range);
+              if (range !== 'ALL') {
+                const { start, end } = getDateRange(range);
+                setStartDate(start);
+                setEndDate(end);
+              }
+            }}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+              dateRange === range
+                ? 'bg-emerald-600 text-white shadow-md'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            {range === 'ALL' ? 'Tudo' : range}
+          </button>
+        ))}
+      </div>
+      {dateRange === 'ALL' && (
+        <div className="flex items-center gap-2">
+          <Calendar size={16} className="text-slate-500" />
+          <input
+            type="date"
+            value={startDate}
+            onChange={e => setStartDate(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+          />
+          <span className="text-slate-500">até</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={e => setEndDate(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h2 className="text-2xl font-bold text-slate-800">Visão Geral</h2>
-      </div>
-      
-      {/* KPI Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard
-          title="Total Recebido"
-          value={formatCurrency(stats.totalReceived)}
-          icon={<TrendingUp className="text-white" />}
-          bg="bg-emerald-500"
-          onClick={() => setDetailFilter('PAID')}
-          active={detailFilter === 'PAID'}
-        />
-        <KPICard
-          title="A Receber"
-          value={formatCurrency(stats.totalReceivable)}
-          icon={<TrendingDown className="text-white" />}
-          bg="bg-blue-500"
-          onClick={() => setDetailFilter('RECEIVABLE')}
-          active={detailFilter === 'RECEIVABLE'}
-        />
-        <KPICard
-          title="Em Atraso"
-          value={formatCurrency(stats.totalLate)}
-          subtext={`${stats.lateCount} parcelas`}
-          icon={<AlertTriangle className="text-white" />}
-          bg="bg-red-500"
-          onClick={() => setDetailFilter('LATE')}
-          active={detailFilter === 'LATE'}
-        />
-         <KPICard
-          title="Empréstimos Ativos"
-          value={stats.activeLoans.toString()}
-          icon={<Users className="text-emerald-600" />}
-          bg="bg-white border border-slate-200"
-          textColor="text-slate-800"
-          iconWrapper="bg-emerald-100"
-        />
+        <h2 className="text-3xl font-bold text-slate-800">Dashboard</h2>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="flex items-center gap-2 text-slate-700">
-            <Filter size={16} />
+      {/* Layout de Duas Colunas */}
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* Dashboard 1: Empréstimos Parcelados */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase font-semibold text-slate-500">Filtros do período</p>
-              <h3 className="text-lg font-bold text-slate-800">Capital e juros</h3>
+              <h3 className="text-xl font-bold text-slate-800">Empréstimos Parcelados</h3>
+              <p className="text-sm text-slate-500 mt-1">Empréstimos com várias parcelas</p>
+            </div>
+            <div className="p-3 bg-emerald-100 rounded-xl">
+              <DollarSign className="text-emerald-600" size={24} />
             </div>
           </div>
-          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-            <div className="flex items-center gap-2">
-              <Calendar size={16} className="text-slate-500" />
-              <div className="flex gap-2">
-                <input
-                  type="date"
-                  value={reportStartDate}
-                  onChange={e => setReportStartDate(e.target.value)}
-                  className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                />
-                <span className="text-slate-500">até</span>
-                <input
-                  type="date"
-                  value={reportEndDate}
-                  onChange={e => setReportEndDate(e.target.value)}
-                  className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-            </div>
-            <button
-              onClick={exportExcelReport}
-              className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold flex items-center gap-2 hover:bg-emerald-700 transition"
-            >
-              <DownloadCloud size={16} /> Exportar Excel
-            </button>
-          </div>
-        </div>
-        <div className="grid sm:grid-cols-3 gap-4">
-          <button
-            type="button"
-            onClick={() => setRangeDetail('capital')}
-            className={`text-left p-4 rounded-xl border ${rangeDetail === 'capital' ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-slate-50'} hover:border-emerald-300 transition`}
-          >
-            <p className="text-xs uppercase font-semibold text-slate-500">Capital do período</p>
-            <p className="text-2xl font-bold text-slate-800">{formatCurrency(dailyCapital)}</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setRangeDetail('interest')}
-            className={`text-left p-4 rounded-xl border ${rangeDetail === 'interest' ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-slate-50'} hover:border-emerald-300 transition`}
-          >
-            <p className="text-xs uppercase font-semibold text-slate-500">Juros do período</p>
-            <p className="text-2xl font-bold text-slate-800">{formatCurrency(dailyInterest)}</p>
-          </button>
-          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-            <p className="text-xs uppercase font-semibold text-slate-500">Registros filtrados</p>
-            <p className="text-2xl font-bold text-slate-800">{rangeLoans.length}</p>
-          </div>
-        </div>
-      </div>
 
-      {rangeDetail && (
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase font-semibold text-slate-500">{rangeDetailTitle}</p>
-              <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(rangeDetailTotal)}</h3>
-              <p className="text-sm text-slate-500">{rangeLoans.length} empréstimos encontrados</p>
-            </div>
-            <button
-              onClick={() => setRangeDetail(null)}
-              className="self-start md:self-auto px-3 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-200 flex items-center gap-2"
-            >
-              <X size={16} /> Fechar filtro
-            </button>
+          {/* Valor Principal */}
+          <div>
+            <p className="text-xs uppercase font-semibold text-slate-500 mb-1">Total do Período</p>
+            <p className="text-3xl font-bold text-slate-800">{formatCurrency(parceladosStats.total)}</p>
+            <p className="text-sm text-slate-500 mt-1">
+              {parceladosStats.received > 0 && (
+                <span className="text-emerald-600">+{formatCurrency(parceladosStats.received)} recebido</span>
+              )}
+            </p>
           </div>
 
-          {rangeLoans.length === 0 && (
-            <p className="text-sm text-slate-500">Nenhum empréstimo no período selecionado.</p>
-          )}
-
-          <div className="divide-y divide-slate-100">
-            {rangeLoans.map(rangeLoan => {
-              const loan = loans.find(l => l.id === rangeLoan.loanId);
-              const client = loan ? clients.find(c => c.id === loan.clientId) : undefined;
-              return (
-                <div key={rangeLoan.loanId} className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-slate-800">{client?.name || 'Cliente desconhecido'}</p>
-                    <p className="text-sm text-slate-500">Vencimento: {formatDate(rangeLoan.earliestDue)} • CPF: {client?.cpf || '---'}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-slate-500">{rangeDetail === 'capital' ? 'Capital do período' : 'Juros do período'}</p>
-                    <p className="text-lg font-bold text-slate-800">{formatCurrency(rangeDetail === 'capital' ? rangeLoan.capital : rangeLoan.interest)}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {detailFilter && (
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-            <div>
-              <p className="text-xs uppercase font-semibold text-slate-500">{detailTitle}</p>
-              <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(detailTotal)}</h3>
-              <p className="text-sm text-slate-500">{detailedInstallments.length} registros</p>
-            </div>
-            <button
-              onClick={() => setDetailFilter(null)}
-              className="self-start md:self-auto px-3 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-200 flex items-center gap-2"
-            >
-              <X size={16} /> Fechar lista
-            </button>
-          </div>
-
-          <div className="divide-y divide-slate-100">
-            {detailedInstallments.map(inst => {
-              const client = clients.find(c => c.id === inst.clientId);
-              const late = inst.status !== InstallmentStatus.PAID && isLate(inst.dueDate);
-              return (
-                <div key={inst.id} className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div>
-                    <p className="text-sm text-slate-500 flex items-center gap-1"><Calendar size={14} /> {formatDate(inst.dueDate)}</p>
-                    <p className="text-base font-semibold text-slate-800">{client?.name}</p>
-                    <p className="text-xs text-slate-400">Parcela {inst.number}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-slate-900">{formatCurrency(inst.amountPaid || inst.amount)}</p>
-                    {inst.status === InstallmentStatus.PAID && <span className="text-xs text-emerald-600 font-semibold">Pago</span>}
-                    {late && <span className="text-xs text-red-600 font-semibold">Atrasado</span>}
-                    {detailFilter === 'RECEIVABLE' && !late && inst.status !== InstallmentStatus.PAID && (
-                      <span className="text-xs text-blue-600 font-semibold">A Vencer</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-
-            {detailedInstallments.length === 0 && (
-              <div className="py-4 text-center text-slate-500 text-sm">Nenhum registro encontrado para este filtro.</div>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div className="grid lg:grid-cols-3 gap-6">
-        {/* Chart Section */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h3 className="font-bold text-slate-800 mb-6">Fluxo Financeiro</h3>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                <XAxis type="number" hide />
-                <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 12}} />
-                <Tooltip cursor={{fill: 'transparent'}} formatter={(value: number) => formatCurrency(value)} />
-                <Bar dataKey="value" barSize={30} radius={[0, 4, 4, 0]}>
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Recent Activity / Simple List */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h3 className="font-bold text-slate-800 mb-4">Acesso Rápido</h3>
+          {/* Filtros de Data */}
           <div className="space-y-3">
-             <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 text-sm text-blue-800 flex justify-between items-center">
-                <span>Novos Clientes (Mês)</span>
-                <span className="font-bold">{clients.length}</span>
-             </div>
-             <button
-               onClick={() => setView('loans')}
-               className="w-full py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition"
-             >
-                Novo Empréstimo
-             </button>
-             <button
-               onClick={() => setDetailFilter('LATE')}
-               className="w-full py-2 bg-white border border-slate-300 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition"
-             >
-                Ver Inadimplentes
-             </button>
+            <p className="text-xs uppercase font-semibold text-slate-500">Filtro por Período</p>
+            <DateFilter
+              dateRange={parceladosDateRange}
+              setDateRange={setParceladosDateRange}
+              startDate={parceladosStartDate}
+              setStartDate={setParceladosStartDate}
+              endDate={parceladosEndDate}
+              setEndDate={setParceladosEndDate}
+            />
           </div>
+
+          {/* Estatísticas */}
+          <div className="grid grid-cols-2 gap-3">
+            <StatCard
+              title="Recebido"
+              value={formatCurrency(parceladosStats.received)}
+              icon={<TrendingUp className="text-emerald-600" size={20} />}
+              bg="bg-emerald-50"
+            />
+            <StatCard
+              title="A Receber"
+              value={formatCurrency(parceladosStats.receivable)}
+              icon={<TrendingDown className="text-blue-600" size={20} />}
+              bg="bg-blue-50"
+            />
+            <StatCard
+              title="Em Atraso"
+              value={formatCurrency(parceladosStats.late)}
+              subtext={`${parceladosStats.lateCount} parcelas`}
+              icon={<AlertTriangle className="text-red-600" size={20} />}
+              bg="bg-red-50"
+            />
+            <StatCard
+              title="Ativos"
+              value={parceladosStats.activeCount.toString()}
+              icon={<Users className="text-slate-600" size={20} />}
+              bg="bg-slate-50"
+            />
+          </div>
+
+          {/* Capital e Juros */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
+              <div className="flex items-center gap-2 mb-2">
+                <DollarSign className="text-slate-600" size={16} />
+                <p className="text-xs uppercase font-semibold text-slate-500">Capital</p>
+              </div>
+              <p className="text-xl font-bold text-slate-800">{formatCurrency(parceladosStats.capital)}</p>
+            </div>
+            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
+              <div className="flex items-center gap-2 mb-2">
+                <Percent className="text-slate-600" size={16} />
+                <p className="text-xs uppercase font-semibold text-slate-500">Juros</p>
+              </div>
+              <p className="text-xl font-bold text-slate-800">{formatCurrency(parceladosStats.interest)}</p>
+            </div>
+          </div>
+
+          {/* Gráfico */}
+          <div className="space-y-3">
+            <p className="text-xs uppercase font-semibold text-slate-500">Evolução do Período</p>
+            <div className="h-48 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={parceladosChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis 
+                    dataKey="date" 
+                    tick={{ fontSize: 10 }}
+                    tickFormatter={(value) => {
+                      const date = new Date(value);
+                      return `${date.getDate()}/${date.getMonth() + 1}`;
+                    }}
+                  />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(value) => formatCurrency(value).replace('R$', 'R$').substring(0, 8)} />
+                  <Tooltip 
+                    formatter={(value: number) => formatCurrency(value)}
+                    labelFormatter={(label) => formatDate(label)}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="received" 
+                    stroke="#10b981" 
+                    strokeWidth={2}
+                    name="Recebido"
+                    dot={{ r: 3 }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="receivable" 
+                    stroke="#3b82f6" 
+                    strokeWidth={2}
+                    name="A Receber"
+                    dot={{ r: 3 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Botão Exportar */}
+          <button
+            onClick={exportParceladosExcel}
+            className="w-full px-4 py-3 bg-emerald-600 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 hover:bg-emerald-700 transition shadow-sm"
+          >
+            <FileSpreadsheet size={18} /> Exportar para Excel
+          </button>
+        </div>
+
+        {/* Dashboard 2: Empréstimos Somente Juros */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-xl font-bold text-slate-800">Empréstimos Somente Juros</h3>
+              <p className="text-sm text-slate-500 mt-1">Empréstimos com pagamento de juros</p>
+            </div>
+            <div className="p-3 bg-blue-100 rounded-xl">
+              <Percent className="text-blue-600" size={24} />
+            </div>
+          </div>
+
+          {/* Valor Principal */}
+          <div>
+            <p className="text-xs uppercase font-semibold text-slate-500 mb-1">Total do Período</p>
+            <p className="text-3xl font-bold text-slate-800">{formatCurrency(jurosStats.total)}</p>
+            <p className="text-sm text-slate-500 mt-1">
+              {jurosStats.received > 0 && (
+                <span className="text-emerald-600">+{formatCurrency(jurosStats.received)} recebido</span>
+              )}
+            </p>
+          </div>
+
+          {/* Filtros de Data */}
+          <div className="space-y-3">
+            <p className="text-xs uppercase font-semibold text-slate-500">Filtro por Período</p>
+            <DateFilter
+              dateRange={jurosDateRange}
+              setDateRange={setJurosDateRange}
+              startDate={jurosStartDate}
+              setStartDate={setJurosStartDate}
+              endDate={jurosEndDate}
+              setEndDate={setJurosEndDate}
+            />
+          </div>
+
+          {/* Estatísticas */}
+          <div className="grid grid-cols-2 gap-3">
+            <StatCard
+              title="Recebido"
+              value={formatCurrency(jurosStats.received)}
+              icon={<TrendingUp className="text-emerald-600" size={20} />}
+              bg="bg-emerald-50"
+            />
+            <StatCard
+              title="A Receber"
+              value={formatCurrency(jurosStats.receivable)}
+              icon={<TrendingDown className="text-blue-600" size={20} />}
+              bg="bg-blue-50"
+            />
+            <StatCard
+              title="Em Atraso"
+              value={formatCurrency(jurosStats.late)}
+              subtext={`${jurosStats.lateCount} parcelas`}
+              icon={<AlertTriangle className="text-red-600" size={20} />}
+              bg="bg-red-50"
+            />
+            <StatCard
+              title="Ativos"
+              value={jurosStats.activeCount.toString()}
+              icon={<Users className="text-slate-600" size={20} />}
+              bg="bg-slate-50"
+            />
+          </div>
+
+          {/* Capital e Juros */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
+              <div className="flex items-center gap-2 mb-2">
+                <DollarSign className="text-slate-600" size={16} />
+                <p className="text-xs uppercase font-semibold text-slate-500">Capital em Aberto</p>
+              </div>
+              <p className="text-xl font-bold text-slate-800">{formatCurrency(jurosStats.capital)}</p>
+            </div>
+            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
+              <div className="flex items-center gap-2 mb-2">
+                <Percent className="text-slate-600" size={16} />
+                <p className="text-xs uppercase font-semibold text-slate-500">Juros</p>
+              </div>
+              <p className="text-xl font-bold text-slate-800">{formatCurrency(jurosStats.interest)}</p>
+            </div>
+          </div>
+
+          {/* Gráfico */}
+          <div className="space-y-3">
+            <p className="text-xs uppercase font-semibold text-slate-500">Evolução do Período</p>
+            <div className="h-48 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={jurosChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis 
+                    dataKey="date" 
+                    tick={{ fontSize: 10 }}
+                    tickFormatter={(value) => {
+                      const date = new Date(value);
+                      return `${date.getDate()}/${date.getMonth() + 1}`;
+                    }}
+                  />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(value) => formatCurrency(value).replace('R$', 'R$').substring(0, 8)} />
+                  <Tooltip 
+                    formatter={(value: number) => formatCurrency(value)}
+                    labelFormatter={(label) => formatDate(label)}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="received" 
+                    stroke="#10b981" 
+                    strokeWidth={2}
+                    name="Recebido"
+                    dot={{ r: 3 }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="receivable" 
+                    stroke="#3b82f6" 
+                    strokeWidth={2}
+                    name="A Receber"
+                    dot={{ r: 3 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Botão Exportar */}
+          <button
+            onClick={exportJurosExcel}
+            className="w-full px-4 py-3 bg-blue-600 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 hover:bg-blue-700 transition shadow-sm"
+          >
+            <FileSpreadsheet size={18} /> Exportar para Excel
+          </button>
         </div>
       </div>
     </div>
   );
 };
 
-const KPICard = ({ title, value, icon, subtext, bg, textColor = "text-white", iconWrapper = "bg-white/20", onClick, active = false }: any) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className={`${bg} rounded-2xl p-6 shadow-sm transition hover:shadow-md text-left w-full ${onClick ? 'cursor-pointer' : 'cursor-default'} ${active ? 'ring-2 ring-offset-2 ring-slate-800' : ''}`}
-  >
-    <div className="flex justify-between items-start">
-      <div>
-        <p className={`text-sm font-medium ${textColor} opacity-90`}>{title}</p>
-        <h3 className={`text-2xl font-bold ${textColor} mt-1`}>{value}</h3>
-        {subtext && <p className={`text-xs ${textColor} mt-2 opacity-80`}>{subtext}</p>}
-      </div>
-      <div className={`p-3 rounded-xl ${iconWrapper} backdrop-blur-sm`}>
-        {icon}
-      </div>
+// Componente de Card de Estatística
+const StatCard = ({ 
+  title, 
+  value, 
+  subtext, 
+  icon, 
+  bg 
+}: { 
+  title: string; 
+  value: string; 
+  subtext?: string; 
+  icon: React.ReactNode; 
+  bg: string;
+}) => (
+  <div className={`p-4 rounded-xl border border-slate-200 ${bg}`}>
+    <div className="flex items-center justify-between mb-2">
+      <p className="text-xs uppercase font-semibold text-slate-500">{title}</p>
+      {icon}
     </div>
-  </button>
+    <p className="text-xl font-bold text-slate-800">{value}</p>
+    {subtext && <p className="text-xs text-slate-500 mt-1">{subtext}</p>}
+  </div>
 );
