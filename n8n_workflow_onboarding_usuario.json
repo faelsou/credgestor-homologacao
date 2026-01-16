@@ -1,0 +1,278 @@
+{
+  "name": "Onboarding - Novo Usuário CredGestor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/5 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Verificar Novos Usuários",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  tu.id,\n  tu.email,\n  tu.tenant_id,\n  tu.role,\n  tu.created_at,\n  t.name as tenant_name,\n  t.slug as tenant_slug\nFROM public.tenant_users tu\nLEFT JOIN public.tenants t ON tu.tenant_id = t.id\nWHERE tu.created_at >= NOW() - INTERVAL '10 minutes'\n  AND tu.ativo = true\nORDER BY tu.created_at DESC;",
+        "options": {}
+      },
+      "id": "postgres-query",
+      "name": "Buscar Novos Usuários",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        460,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar dados do novo usuário e preparar email de onboarding\nconst items = $input.all();\nconst processedItems = [];\n\nfor (const item of items) {\n  const usuario = item.json;\n  \n  // Verificar se o email é válido\n  if (!usuario.email || !usuario.email.includes('@')) {\n    continue;\n  }\n  \n  // Formatar data de criação\n  const dataCriacao = new Date(usuario.created_at);\n  const dataFormatada = dataCriacao.toLocaleDateString('pt-BR', {\n    day: '2-digit',\n    month: '2-digit',\n    year: 'numeric',\n    hour: '2-digit',\n    minute: '2-digit'\n  });\n  \n  // Nome do tenant ou padrão\n  const tenantName = usuario.tenant_name || 'CredGestor';\n  \n  // Extrair nome do email (parte antes do @)\n  const nomeUsuario = usuario.email.split('@')[0].split('.').map(\n    palavra => palavra.charAt(0).toUpperCase() + palavra.slice(1)\n  ).join(' ');\n  \n  // Montar conteúdo do email HTML\n  const emailHtml = `\n<!DOCTYPE html>\n<html lang=\"pt-BR\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Bem-vindo ao CredGestor</title>\n  <style>\n    body {\n      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;\n      line-height: 1.6;\n      color: #333;\n      max-width: 600px;\n      margin: 0 auto;\n      padding: 20px;\n      background-color: #f5f5f5;\n    }\n    .container {\n      background-color: #ffffff;\n      border-radius: 8px;\n      padding: 30px;\n      box-shadow: 0 2px 4px rgba(0,0,0,0.1);\n    }\n    .header {\n      text-align: center;\n      margin-bottom: 30px;\n    }\n    .logo {\n      background-color: #10b981;\n      color: white;\n      width: 60px;\n      height: 60px;\n      border-radius: 12px;\n      display: inline-flex;\n      align-items: center;\n      justify-content: center;\n      font-size: 24px;\n      font-weight: bold;\n      margin-bottom: 15px;\n    }\n    h1 {\n      color: #1f2937;\n      margin: 0;\n      font-size: 24px;\n    }\n    .content {\n      color: #4b5563;\n      margin-bottom: 30px;\n    }\n    .button {\n      display: inline-block;\n      background-color: #10b981;\n      color: white;\n      padding: 12px 30px;\n      text-decoration: none;\n      border-radius: 6px;\n      font-weight: 600;\n      text-align: center;\n      margin: 20px 0;\n    }\n    .button:hover {\n      background-color: #059669;\n    }\n    .features {\n      background-color: #f9fafb;\n      border-radius: 6px;\n      padding: 20px;\n      margin: 20px 0;\n    }\n    .feature-item {\n      margin: 10px 0;\n      padding-left: 25px;\n      position: relative;\n    }\n    .feature-item:before {\n      content: '✓';\n      position: absolute;\n      left: 0;\n      color: #10b981;\n      font-weight: bold;\n    }\n    .footer {\n      text-align: center;\n      color: #6b7280;\n      font-size: 14px;\n      margin-top: 30px;\n      padding-top: 20px;\n      border-top: 1px solid #e5e7eb;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"logo\">CG</div>\n      <h1>Bem-vindo ao CredGestor!</h1>\n    </div>\n    \n    <div class=\"content\">\n      <p>Olá <strong>${nomeUsuario}</strong>,</p>\n      \n      <p>É um prazer ter você conosco! Sua conta foi criada com sucesso em <strong>${tenantName}</strong>.</p>\n      \n      <p>O CredGestor é a solução completa para gerenciar seus empréstimos e parcelas de forma simples e eficiente.</p>\n      \n      <div class=\"features\">\n        <h3 style=\"margin-top: 0; color: #1f2937;\">O que você pode fazer:</h3>\n        <div class=\"feature-item\">Cadastrar e gerenciar seus clientes</div>\n        <div class=\"feature-item\">Criar e acompanhar empréstimos</div>\n        <div class=\"feature-item\">Controlar parcelas e recebimentos</div>\n        <div class=\"feature-item\">Enviar cobranças via WhatsApp</div>\n        <div class=\"feature-item\">Visualizar relatórios e dashboards</div>\n        <div class=\"feature-item\">Acessar de qualquer dispositivo</div>\n      </div>\n      \n      <div style=\"text-align: center;\">\n        <a href=\"https://credgestor.app.br\" class=\"button\">Acessar Minha Conta</a>\n      </div>\n      \n      <p style=\"margin-top: 30px;\">Se você tiver alguma dúvida ou precisar de ajuda, nossa equipe de suporte está sempre disponível.</p>\n      \n      <p>Bem-vindo e aproveite a plataforma!</p>\n      \n      <p>Equipe CredGestor</p>\n    </div>\n    \n    <div class=\"footer\">\n      <p>Este é um email automático de boas-vindas. Por favor, não responda este email.</p>\n      <p>CredGestor - Sistema de Gestão de Crédito</p>\n      <p>Conta criada em: ${dataFormatada}</p>\n    </div>\n  </div>\n</body>\n</html>\n  `;\n  \n  // Versão texto simples (fallback)\n  const emailTexto = `\nBem-vindo ao CredGestor!\n\nOlá ${nomeUsuario},\n\nÉ um prazer ter você conosco! Sua conta foi criada com sucesso em ${tenantName}.\n\nO CredGestor é a solução completa para gerenciar seus empréstimos e parcelas de forma simples e eficiente.\n\nO que você pode fazer:\n✓ Cadastrar e gerenciar seus clientes\n✓ Criar e acompanhar empréstimos\n✓ Controlar parcelas e recebimentos\n✓ Enviar cobranças via WhatsApp\n✓ Visualizar relatórios e dashboards\n✓ Acessar de qualquer dispositivo\n\nAcesse sua conta: https://credgestor.app.br\n\nSe você tiver alguma dúvida ou precisar de ajuda, nossa equipe de suporte está sempre disponível.\n\nBem-vindo e aproveite a plataforma!\n\nEquipe CredGestor\n\n---\nEste é um email automático de boas-vindas.\nCredGestor - Sistema de Gestão de Crédito\nConta criada em: ${dataFormatada}\n  `;\n  \n  processedItems.push({\n    json: {\n      usuario_id: usuario.id,\n      email: usuario.email,\n      nome_usuario: nomeUsuario,\n      tenant_id: usuario.tenant_id,\n      tenant_name: tenantName,\n      tenant_slug: usuario.tenant_slug,\n      role: usuario.role,\n      data_criacao: usuario.created_at,\n      data_formatada: dataFormatada,\n      email_html: emailHtml,\n      email_texto: emailTexto,\n      assunto: `Bem-vindo ao CredGestor, ${nomeUsuario}!`\n    }\n  });\n}\n\nreturn processedItems;"
+      },
+      "id": "process-data",
+      "name": "Processar Dados do Usuário",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-batch",
+      "name": "Dividir em Lotes",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@credgestor.app.br",
+        "toEmail": "={{ $json.email }}",
+        "subject": "={{ $json.assunto }}",
+        "emailType": "html",
+        "message": "={{ $json.email_html }}",
+        "options": {
+          "text": "={{ $json.email_texto }}"
+        }
+      },
+      "id": "send-email",
+      "name": "Enviar Email de Onboarding",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1120,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "1",
+          "name": "SMTP Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO public.login_audit (\n  tenant_id,\n  user_id,\n  email,\n  success,\n  metadata\n) VALUES (\n  '{{ $json.tenant_id }}'::uuid,\n  '{{ $json.usuario_id }}'::uuid,\n  '{{ $json.email }}',\n  true,\n  '{\"action\": \"onboarding_email_sent\", \"sent_at\": \"' || NOW() || '\"}'::jsonb\n)\nON CONFLICT DO NOTHING;",
+        "options": {}
+      },
+      "id": "log-audit",
+      "name": "Registrar Envio no Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1340,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "error-condition",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "error-handler",
+      "name": "Verificar Erros",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log de erro para debug\nconst error = $input.first().json.error || 'Erro desconhecido';\nconst usuario = $input.first().json;\n\nconsole.error('Erro ao enviar email de onboarding:', {\n  usuario_id: usuario.usuario_id,\n  email: usuario.email,\n  erro: error\n});\n\nreturn [{\n  json: {\n    sucesso: false,\n    usuario_id: usuario.usuario_id,\n    email: usuario.email,\n    erro: error,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "log-error",
+      "name": "Registrar Erro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log de sucesso\nconst usuario = $input.first().json;\n\nconsole.log('Email de onboarding enviado com sucesso:', {\n  usuario_id: usuario.usuario_id,\n  email: usuario.email,\n  tenant: usuario.tenant_name\n});\n\nreturn [{\n  json: {\n    sucesso: true,\n    usuario_id: usuario.usuario_id,\n  email: usuario.email,\n    tenant_name: usuario.tenant_name,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "log-success",
+      "name": "Registrar Sucesso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Verificar Novos Usuários": {
+      "main": [
+        [
+          {
+            "node": "Buscar Novos Usuários",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Novos Usuários": {
+      "main": [
+        [
+          {
+            "node": "Processar Dados do Usuário",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Dados do Usuário": {
+      "main": [
+        [
+          {
+            "node": "Dividir em Lotes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dividir em Lotes": {
+      "main": [
+        [
+          {
+            "node": "Enviar Email de Onboarding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Email de Onboarding": {
+      "main": [
+        [
+          {
+            "node": "Registrar Envio no Log",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Verificar Erros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Envio no Log": {
+      "main": [
+        [
+          {
+            "node": "Registrar Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Erros": {
+      "main": [
+        [
+          {
+            "node": "Registrar Erro",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
