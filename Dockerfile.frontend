@@ -3,16 +3,6 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copiar arquivos de dependências
-COPY package*.json ./
-
-# Instalar dependências
-RUN npm ci --only=production=false
-
-# Copiar código fonte
-COPY . .
-
-# Build da aplicação
 # Variáveis do Vite (opcionais - podem ser vazias)
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
@@ -34,6 +24,18 @@ ENV BUILD_DATE=${BUILD_DATE:-}
 ENV GIT_SHA=${GIT_SHA:-}
 ENV GIT_REF=${GIT_REF:-}
 
+# Copiar apenas arquivos de dependências primeiro (melhor cache)
+COPY package.json package-lock.json* ./
+
+# Instalar dependências (com cache otimizado)
+RUN npm ci --prefer-offline --no-audit --progress=false
+
+# Copiar apenas arquivos necessários para o build (excluindo node_modules via .dockerignore)
+COPY vite.config.ts tsconfig.json tailwind.config.js postcss.config.js index.html ./
+COPY src ./src
+COPY nginx ./nginx
+
+# Build da aplicação (com cache do Vite)
 RUN npm run build
 
 # ===================================================================

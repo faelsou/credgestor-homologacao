@@ -286,7 +286,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          # Apenas amd64 para produção (mais rápido, suficiente para VPS)
+          # Se precisar de arm64, adicione: platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           # Build args - sempre passa metadata, variáveis VITE só para frontend
           build-args: |
             BUILD_DATE=${{ steps.date.outputs.date }}
