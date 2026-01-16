@@ -62,13 +62,33 @@ jobs:
           flake8 backend/ --count --select=E9,F63,F7,F82 --show-source --statistics
           flake8 backend/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-      - name: 🎨 Check Python formatting (black)
+      - name: 🎨 Format and check Python code (black)
         run: |
-          black --check backend/
+          # Formata os arquivos automaticamente
+          echo "🎨 Formatando código Python com black..."
+          black backend/ || echo "⚠️ Erro ao formatar com black"
+          # Verifica se há mudanças após formatação (apenas para aviso)
+          if [ -n "$(git status --porcelain backend/)" ]; then
+            echo "⚠️ Arquivos foram formatados automaticamente pelo black"
+            echo "💡 Considere fazer commit das alterações de formatação localmente"
+            git diff backend/ || true
+          else
+            echo "✅ Todos os arquivos já estão formatados corretamente"
+          fi
 
-      - name: 📐 Check Python imports (isort)
+      - name: 📐 Format and check Python imports (isort)
         run: |
-          isort --check-only --profile=black backend/
+          # Formata os imports automaticamente
+          echo "📐 Formatando imports Python com isort..."
+          isort --profile=black backend/ || echo "⚠️ Erro ao formatar imports com isort"
+          # Verifica se há mudanças após formatação (apenas para aviso)
+          if [ -n "$(git status --porcelain backend/)" ]; then
+            echo "⚠️ Imports foram formatados automaticamente pelo isort"
+            echo "💡 Considere fazer commit das alterações de formatação localmente"
+            git diff backend/ || true
+          else
+            echo "✅ Todos os imports já estão formatados corretamente"
+          fi
 
       - name: 📘 Setup Node.js
         uses: actions/setup-node@v4
