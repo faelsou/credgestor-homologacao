@@ -47,17 +47,6 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
     }
   };
 
-  const fillCredentials = (type: 'ADMIN' | 'COLLECTION') => {
-    if (type === 'ADMIN') {
-      setEmail('admin@credgestor.com');
-      setPassword('admin123');
-    } else {
-      setEmail('cobrador@credgestor.com');
-      setPassword('cobrador123');
-    }
-    setError('');
-  };
-
   return (
     <div className="min-h-screen bg-white">
       {/* Navbar */}
@@ -352,6 +341,15 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
                     </div>
                 </div>
 
+                <div className="flex justify-end">
+                    <button
+                        type="button"
+                        className="text-sm text-emerald-600 hover:text-emerald-700 font-medium transition"
+                    >
+                        Esqueci senha
+                    </button>
+                </div>
+
                 <button
                     type="submit"
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-200 transition-transform active:scale-95"
@@ -359,26 +357,6 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
                     Entrar no Sistema
                 </button>
             </form>
-
-            <div className="mt-8 pt-6 border-t border-slate-100">
-                <p className="text-xs font-bold text-slate-400 text-center mb-3 uppercase tracking-wider">Acesso Rápido (Ambiente de Teste)</p>
-                <div className="grid grid-cols-2 gap-3">
-                    <button
-                        type="button"
-                        onClick={() => fillCredentials('ADMIN')}
-                        className="py-2 px-3 bg-purple-50 text-purple-700 rounded-lg text-xs font-semibold hover:bg-purple-100 transition border border-purple-100"
-                    >
-                        Preencher Admin
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => fillCredentials('COLLECTION')}
-                        className="py-2 px-3 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-100 transition border border-blue-100"
-                    >
-                        Preencher Cobrador
-                    </button>
-                </div>
-            </div>
           </div>
         </div>
       )}
