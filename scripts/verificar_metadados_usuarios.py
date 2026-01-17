@@ -29,37 +29,78 @@ def main():
     print("   Eles são acessados via API do Supabase Auth.")
     print()
     
-    # Buscar todos os usuários via API Admin
+    # Buscar usuários através da tabela tenant_users e depois verificar metadados
     print("📋 USUÁRIOS E SEUS METADADOS:")
     print("-" * 70)
     try:
-        # Usar admin API para listar usuários
-        response = supabase.auth.admin.list_users()
-        users = response.users if hasattr(response, 'users') else []
+        # Primeiro, buscar emails da tabela tenant_users
+        tu_result = supabase.table("tenant_users").select("email, tenant_id, user_id").execute()
+        tenant_users_emails = {tu.get('email') for tu in tu_result.data if tu.get('email')}
+        
+        if not tenant_users_emails:
+            print("⚠️  Nenhum email encontrado em tenant_users")
+            print("   Tentando buscar usuários diretamente via API...")
+            # Tentar buscar via API admin como fallback
+            try:
+                admin_response = supabase.auth.admin.list_users()
+                if hasattr(admin_response, 'users') and admin_response.users:
+                    tenant_users_emails = {user.email for user in admin_response.users if hasattr(user, 'email') and user.email}
+            except Exception as e:
+                print(f"   ⚠️  Erro ao buscar via admin API: {e}")
+        
+        if not tenant_users_emails:
+            print("❌ Nenhum usuário encontrado")
+            return
+        
+        print(f"📧 Encontrados {len(tenant_users_emails)} emails para verificar")
+        print()
+        
+        # Buscar metadados de cada usuário individualmente
+        users = []
+        for email in tenant_users_emails:
+            try:
+                # Buscar usuário por email usando admin API
+                user_response = supabase.auth.admin.get_user_by_email(email)
+                if hasattr(user_response, 'user') and user_response.user:
+                    users.append(user_response.user)
+                elif isinstance(user_response, dict) and 'user' in user_response:
+                    users.append(user_response['user'])
+            except Exception as e:
+                print(f"⚠️  Erro ao buscar usuário {email}: {e}")
+                # Se não conseguir via admin API, criar objeto básico com email
+                users.append({'email': email, 'id': None, 'user_metadata': {}, 'app_metadata': {}})
         
         if not users:
-            print("❌ Nenhum usuário encontrado")
+            print("❌ Nenhum usuário encontrado após verificação")
             return
         
         users_with_tenant = []
         users_without_tenant = []
         
         for user in users:
-            email = user.email or user.get('email', 'Sem email')
-            user_metadata = user.user_metadata or {}
-            app_metadata = user.app_metadata or {}
+            # Suportar tanto objeto User quanto dict
+            if isinstance(user, dict):
+                email = user.get('email', 'Sem email')
+                user_metadata = user.get('user_metadata', {}) or {}
+                app_metadata = user.get('app_metadata', {}) or {}
+                user_id = user.get('id')
+            else:
+                email = getattr(user, 'email', None) or 'Sem email'
+                user_metadata = getattr(user, 'user_metadata', None) or {}
+                app_metadata = getattr(user, 'app_metadata', None) or {}
+                user_id = getattr(user, 'id', None)
             
             tenant_id_metadata = user_metadata.get('tenant_id')
             tenant_id_app = app_metadata.get('tenant_id')
             tenant_id = tenant_id_metadata or tenant_id_app
             
             user_info = {
-                'id': user.id,
+                'id': user_id,
                 'email': email,
                 'tenant_id_metadata': tenant_id_metadata,
                 'tenant_id_app': tenant_id_app,
                 'tenant_id': tenant_id,
-                'created_at': user.created_at if hasattr(user, 'created_at') else None,
+                'created_at': user.get('created_at') if isinstance(user, dict) else getattr(user, 'created_at', None),
             }
             
             if tenant_id:
