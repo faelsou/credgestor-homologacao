@@ -159,17 +159,29 @@ export async function loginWithBackend(email: string, password: string): Promise
     throw new Error('Backend não configurado. Configure VITE_API_BASE_URL ou VITE_API_LOGIN_URL.');
   }
 
-  const tenantId = DEFAULT_TENANT_ID;
+  // Não enviar tenant_id - deixar o backend usar o dos metadados do usuário automaticamente
+  // Isso evita conflitos quando o tenant_id do usuário é diferente do DEFAULT_TENANT_ID
+  const tenantId = undefined; // Removido: DEFAULT_TENANT_ID
 
   console.log('🔐 Tentando login em:', CONFIGURED_LOGIN_URL);
   console.log('📧 Email:', email);
-  console.log('🏢 Tenant ID:', tenantId || 'não informado');
+  console.log('🏢 Tenant ID:', tenantId || 'não informado (backend usará dos metadados)');
 
   try {
+    // Montar payload sem tenant_id para que o backend use o dos metadados
+    const payload: { email: string; senha: string; tenant_id?: string } = { 
+      email, 
+      senha: password 
+    };
+    // Só adiciona tenant_id se estiver explicitamente configurado e for necessário
+    // if (tenantId) {
+    //   payload.tenant_id = tenantId;
+    // }
+
     const response = await fetch(CONFIGURED_LOGIN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, senha: password, tenant_id: tenantId }),
+      body: JSON.stringify(payload),
     });
 
     let body;

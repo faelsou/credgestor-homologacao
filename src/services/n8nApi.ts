@@ -84,12 +84,19 @@ export async function loginWithN8N(email: string, password: string): Promise<N8N
     throw new Error('N8N backend não configurado.');
   }
 
-  const tenantId = DEFAULT_TENANT_ID;
+  // Não enviar tenant_id - deixar o backend usar o dos metadados do usuário automaticamente
+  const tenantId = undefined; // Removido: DEFAULT_TENANT_ID
+
+  // Montar payload sem tenant_id para que o backend use o dos metadados
+  const payload: { email: string; senha: string; tenant_id?: string } = { 
+    email, 
+    senha: password 
+  };
 
   const response = await fetch(CONFIGURED_LOGIN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, senha: password, tenant_id: tenantId }),
+    body: JSON.stringify(payload),
   });
 
   const body = await toJson(response);
