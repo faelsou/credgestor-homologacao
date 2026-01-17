@@ -1568,6 +1568,14 @@ export const AppContext = React.createContext<{
 const App: React.FC = () => {
   const isBackendConfiguredValue = isBackendConfigured;
   const shouldUseLocalPersistence = !isBackendConfiguredValue && !isSupabaseConfigured;
+  
+  // Helper para validar tenantId (REGRA IMPORTANTE: sem fallback)
+  const requireTenantId = useCallback((tenantId: string | undefined, operation: string): string => {
+    if (!tenantId) {
+      throw new Error(`tenantId é obrigatório para ${operation}. Faça logout e login novamente.`);
+    }
+    return tenantId;
+  }, []);
   const [storedState] = useState<LocalAppState>(() => shouldUseLocalPersistence ? loadStoredAppState() : {});
 
   const [user, setUser] = useState<User | null>(() => shouldUseLocalPersistence ? storedState.user ?? null : null);
@@ -1630,10 +1638,17 @@ const App: React.FC = () => {
 
     try {
       const parsed = JSON.parse(stored) as { session: BackendSession; user: User };
-      const restoredSession = { ...parsed.session, tenantId: parsed.session.tenantId ?? DEFAULT_TENANT_ID };
+      // REGRA IMPORTANTE: Se não tiver tenantId na sessão restaurada, limpar e forçar novo login
+      if (!parsed.session.tenantId || !parsed.user.tenantId) {
+        console.warn('⚠️ Sessão restaurada sem tenantId. Limpando e forçando novo login.');
+        localStorage.removeItem(BACKEND_SESSION_STORAGE_KEY);
+        return;
+      }
+      
+      const restoredSession = { ...parsed.session, tenantId: parsed.session.tenantId };
       const storedUser = {
         ...parsed.user,
-        tenantId: parsed.user.tenantId ?? DEFAULT_TENANT_ID,
+        tenantId: parsed.user.tenantId, // Sem fallback
         role: normalizeUserRole(parsed.user.role),
       };
       setSession(restoredSession);
@@ -1689,7 +1704,11 @@ const App: React.FC = () => {
         // Carregar empréstimos
         try {
           const { fetchBackendLoans } = await import('@/services/backendApi');
-          const remoteLoans = await fetchBackendLoans(session.accessToken, session.tenantId || '');
+          // REGRA: tenantId é obrigatório
+          if (!session.tenantId) {
+            throw new Error('tenantId não está definido na sessão');
+          }
+          const remoteLoans = await fetchBackendLoans(session.accessToken, session.tenantId);
           setLoans(remoteLoans);
         } catch (loanError) {
           console.error('Erro ao buscar empréstimos no backend', loanError);
@@ -1699,7 +1718,11 @@ const App: React.FC = () => {
         // Carregar parcelas
         try {
           const { fetchBackendInstallments } = await import('@/services/backendApi');
-          const remoteInstallments = await fetchBackendInstallments(session.accessToken, session.tenantId || '');
+          // REGRA: tenantId é obrigatório
+          if (!session.tenantId) {
+            throw new Error('tenantId não está definido na sessão');
+          }
+          const remoteInstallments = await fetchBackendInstallments(session.accessToken, session.tenantId);
           setInstallments(remoteInstallments);
         } catch (installmentError) {
           console.error('Erro ao buscar parcelas no backend', installmentError);
@@ -1842,9 +1865,14 @@ const App: React.FC = () => {
       if (!password) return false;
       try {
         const result = await loginWithBackend(email, password);
+        // REGRA IMPORTANTE: tenantId é obrigatório - não usar fallback
+        if (!result.user.tenantId) {
+          throw new Error('Usuário não possui tenant_id. Entre em contato com o administrador.');
+        }
+        
         const normalizedUser = {
           ...result.user,
-          tenantId: result.user.tenantId ?? DEFAULT_TENANT_ID,
+          tenantId: result.user.tenantId, // Sem fallback - deve vir do backend
           role: normalizeUserRole(result.user.role),
         };
         const sessionInfo: BackendSession = {
@@ -1852,7 +1880,7 @@ const App: React.FC = () => {
           refreshToken: result.refreshToken,
           accessExpiresAt: result.accessExpiresAt,
           refreshExpiresAt: result.refreshExpiresAt,
-          tenantId: normalizedUser.tenantId,
+          tenantId: normalizedUser.tenantId, // Obrigatório
           tenantName: normalizedUser.tenantName,
         };
 
@@ -1958,22 +1986,41 @@ const App: React.FC = () => {
   }, [fetchUserProfile, mapAuthUserToLocalUser, isBackendConfiguredValue]);
 
   const logout = useCallback(async () => {
+    // REGRA IMPORTANTE: Limpar TODOS os dados ao fazer logout para evitar compartilhamento
     if (isBackendConfiguredValue) {
+      // Limpar sessão e dados do usuário
       setSession(null);
       setUser(null);
+      setUsersList([]);
+      
+      // Limpar dados de negócio
       setClients(MOCK_CLIENTS);
       setLoans(MOCK_LOANS);
       setInstallments(MOCK_INSTALLMENTS);
+      
+      // Limpar localStorage para evitar dados compartilhados entre usuários
+      localStorage.removeItem(BACKEND_SESSION_STORAGE_KEY);
+      localStorage.removeItem(CLIENTS_STORAGE_KEY);
+      localStorage.removeItem(LOCAL_APP_STATE_KEY);
+      
       return;
     }
 
     if (!supabase) {
       setUser(null);
+      setUsersList([]);
+      setClients(MOCK_CLIENTS);
+      localStorage.removeItem(CLIENTS_STORAGE_KEY);
+      localStorage.removeItem(LOCAL_APP_STATE_KEY);
       return;
     }
 
     await supabase.auth.signOut();
     setUser(null);
+    setUsersList([]);
+    setClients(MOCK_CLIENTS);
+    localStorage.removeItem(CLIENTS_STORAGE_KEY);
+    localStorage.removeItem(LOCAL_APP_STATE_KEY);
   }, [isBackendConfiguredValue]);
 
   // ⭐ FUNÇÃO CORRIGIDA - Salva no backend FastAPI quando autenticado
@@ -2025,7 +2072,11 @@ const App: React.FC = () => {
         const loanWithOutstanding = { ...loan, outstandingAmount: loan.totalAmount };
         
         // Criar empréstimo primeiro
-        const created = await createBackendLoan(session.accessToken, session.tenantId || '', loanWithOutstanding);
+        // REGRA: tenantId é obrigatório
+        if (!session.tenantId) {
+          throw new Error('tenantId não está definido na sessão. Faça logout e login novamente.');
+        }
+        const created = await createBackendLoan(session.accessToken, session.tenantId, loanWithOutstanding);
         console.log('✅ Empréstimo criado:', created.id);
         
         // Atualizar os IDs das parcelas com o ID do empréstimo criado
@@ -2038,7 +2089,7 @@ const App: React.FC = () => {
         // Criar parcelas em lote
         const createdInstallments = await createBackendInstallmentsBatch(
           session.accessToken,
-          session.tenantId || '',
+          requireTenantId(session.tenantId, 'criar parcelas'),
           installmentsWithLoanId
         );
         console.log('✅ Parcelas criadas no backend:', createdInstallments.length, 'parcelas');
@@ -2061,7 +2112,7 @@ const App: React.FC = () => {
     if (isBackendConfiguredValue && session?.accessToken) {
       try {
         const { updateBackendLoan } = await import('@/services/backendApi');
-        await updateBackendLoan(session.accessToken, session.tenantId || '', loan.id, loan);
+        await updateBackendLoan(session.accessToken, requireTenantId(session.tenantId, 'atualizar empréstimo'), loan.id, loan);
         setLoans(prev => prev.map(item => item.id === loan.id ? loan : item));
         setInstallments(prev => prev.filter(inst => inst.loanId !== loan.id).concat(generatedInstallments));
         return;
@@ -2078,7 +2129,7 @@ const App: React.FC = () => {
     if (isBackendConfiguredValue && session?.accessToken) {
       try {
         const { deleteBackendLoan } = await import('@/services/backendApi');
-        await deleteBackendLoan(session.accessToken, session.tenantId || '', id);
+        await deleteBackendLoan(session.accessToken, requireTenantId(session.tenantId, 'deletar empréstimo'), id);
       } catch (error) {
         console.error('Erro ao excluir empréstimo no backend', error);
       }
@@ -2115,7 +2166,7 @@ const App: React.FC = () => {
         const { updateBackendInstallment } = await import('@/services/backendApi');
         await updateBackendInstallment(
           session.accessToken,
-          session.tenantId || '',
+          requireTenantId(session.tenantId, 'operar com parcelas'),
           id,
           updatedInstallment
         );
@@ -2260,7 +2311,7 @@ const App: React.FC = () => {
           for (const inst of updatedInstallments) {
             await updateBackendInstallment(
               session.accessToken,
-              session.tenantId || '',
+              requireTenantId(session.tenantId, 'operar com parcelas'),
               inst.id,
               inst
             );
@@ -2334,7 +2385,7 @@ const App: React.FC = () => {
             const { createBackendInstallment } = await import('@/services/backendApi');
             const created = await createBackendInstallment(
               session.accessToken,
-              session.tenantId || '',
+              requireTenantId(session.tenantId, 'operar com parcelas'),
               newInstallment
             );
             newInstallment.id = created.id;
@@ -2385,7 +2436,7 @@ const App: React.FC = () => {
           const { updateBackendInstallment } = await import('@/services/backendApi');
           await updateBackendInstallment(
             session.accessToken,
-            session.tenantId || '',
+            requireTenantId(session.tenantId, 'operar com parcelas'),
             id,
             updatedInstallment
           );
