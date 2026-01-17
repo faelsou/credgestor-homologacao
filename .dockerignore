@@ -1,8 +1,58 @@
+# Dependências
 node_modules
+npm-debug.log
+yarn-error.log
+package-lock.json
+
+# Build outputs
+dist
+build
+.next
+out
+
+# Git
 .git
 .gitignore
-dist
-npm-debug.log
-Dockerfile
-Dockerfile.dev
+.github
+
+# Docker
+Dockerfile*
 .dockerignore
+docker-compose*.yml
+
+# Documentação e arquivos desnecessários
+*.md
+!README.md
+docs/
+.vscode/
+.idea/# Backend (não necessário para frontend)
+backend/
+requirements.txt
+
+# Scripts de desenvolvimento
+scripts/
+*.sh
+
+# Testes
+coverage/
+.nyc_output/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Configurações de ambiente
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# Outros
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

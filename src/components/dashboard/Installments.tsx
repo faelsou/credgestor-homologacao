@@ -429,19 +429,36 @@ export const InstallmentsView: React.FC = () => {
             <div className="space-y-4">
               <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
                 <div className="text-sm text-slate-600 mb-1">Valor da parcela</div>
-                <div className="text-lg font-bold text-slate-900">{formatCurrency(selectedInstallment.amount)}</div>
-                {selectedInstallment.amountPaid > 0 && (
-                  <div className="mt-2 text-sm">
-                    <span className="text-slate-600">Já recebido: </span>
-                    <span className="font-semibold text-emerald-600">{formatCurrency(selectedInstallment.amountPaid)}</span>
-                  </div>
-                )}
-                <div className="mt-2 text-sm">
-                  <span className="text-slate-600">Valor pendente: </span>
-                  <span className="font-semibold text-slate-900">
-                    {formatCurrency(selectedInstallment.amount - (selectedInstallment.amountPaid || 0))}
-                  </span>
-                </div>
+                {(() => {
+                  const loan = loans.find(l => l.id === selectedInstallment.loanId);
+                  // Calcular valor mínimo dos juros baseado no capital restante
+                  const principal = selectedInstallment.principalAmount ?? 0;
+                  const minInterestAmount = principal > 0 && loan 
+                    ? Number((principal * (loan.interestRate / 100)).toFixed(2))
+                    : 0;
+                  
+                  // O valor da parcela deve ser pelo menos o valor mínimo dos juros
+                  const displayAmount = Math.max(selectedInstallment.amount, minInterestAmount);
+                  const pendingAmount = Math.max(displayAmount - (selectedInstallment.amountPaid || 0), minInterestAmount);
+                  
+                  return (
+                    <>
+                      <div className="text-lg font-bold text-slate-900">{formatCurrency(displayAmount)}</div>
+                      {selectedInstallment.amountPaid > 0 && (
+                        <div className="mt-2 text-sm">
+                          <span className="text-slate-600">Já recebido: </span>
+                          <span className="font-semibold text-emerald-600">{formatCurrency(selectedInstallment.amountPaid)}</span>
+                        </div>
+                      )}
+                      <div className="mt-2 text-sm">
+                        <span className="text-slate-600">Valor pendente: </span>
+                        <span className="font-semibold text-slate-900">
+                          {formatCurrency(pendingAmount)}
+                        </span>
+                      </div>
+                    </>
+                  );
+                })()}
                 {selectedInstallment.interestAmount !== undefined && selectedInstallment.principalAmount !== undefined && (
                   <div className="mt-2 text-xs text-slate-500">
                     Juros: {formatCurrency(selectedInstallment.interestAmount)} • 

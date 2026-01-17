@@ -1,0 +1,390 @@
+{
+  "name": "Cobrança Automática - Vencimento Hoje",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-node",
+      "name": "Agendamento Diário",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  inst.id as parcela_id,\n  inst.number as numero_parcela,\n  inst.amount as valor_parcela,\n  inst.due_date as data_vencimento,\n  inst.status,\n  c.id as cliente_id,\n  c.nome as cliente_nome,\n  c.whatsapp,\n  c.celular,\n  c.telefone,\n  l.id as loan_id,\n  l.total_amount as valor_aprovado,\n  l.model as modelo_emprestimo\nFROM public.installments inst\nJOIN public.loans l ON inst.loan_id = l.id\nJOIN public.clients c ON inst.client_id = c.id\nWHERE inst.due_date = CURRENT_DATE\n  AND inst.status IN ('PENDING', 'LATE')\n  AND c.ativo = true\n  AND (c.whatsapp IS NOT NULL OR c.celular IS NOT NULL OR c.telefone IS NOT NULL)\nORDER BY inst.due_date, c.nome;",
+        "options": {}
+      },
+      "id": "postgres-query",
+      "name": "Buscar Parcelas Vencendo Hoje",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        460,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar cada parcela e preparar dados para envio\nconst items = $input.all();\nconst processedItems = [];\n\nfor (const item of items) {\n  const parcela = item.json;\n  \n  // Determinar o telefone a usar (prioridade: whatsapp > celular > telefone)\n  let telefone = parcela.whatsapp || parcela.celular || parcela.telefone;\n  \n  // Remover caracteres não numéricos\n  telefone = telefone ? telefone.replace(/\\D/g, '') : null;\n  \n  // Se não começar com 55 (código do Brasil), adicionar\n  if (telefone && !telefone.startsWith('55')) {\n    telefone = '55' + telefone;\n  }\n  \n  // Formatar valor da parcela\n  const valorFormatado = new Intl.NumberFormat('pt-BR', {\n    style: 'currency',\n    currency: 'BRL'\n  }).format(parseFloat(parcela.valor_parcela || 0));\n  \n  // Formatar data de vencimento\n  const dataVenc = new Date(parcela.data_vencimento);\n  const dataFormatada = dataVenc.toLocaleDateString('pt-BR');\n  \n  // Montar mensagem\n  const mensagem = `Olá ${parcela.cliente_nome}!\\n\\n` +\n    `Lembrete: Sua parcela ${parcela.numero_parcela} no valor de ${valorFormatado} ` +\n    `vence hoje (${dataFormatada}).\\n\\n` +\n    `Por favor, realize o pagamento para evitar juros e multa.\\n\\n` +\n    `Empréstimo: ${parcela.loan_id || 'N/A'}\\n` +\n    `Obrigado!`;\n  \n  if (telefone) {\n    processedItems.push({\n      json: {\n        parcela_id: parcela.parcela_id,\n        cliente_id: parcela.cliente_id,\n        cliente_nome: parcela.cliente_nome,\n        telefone: telefone,\n        mensagem: mensagem,\n        valor_parcela: parcela.valor_parcela,\n        numero_parcela: parcela.numero_parcela,\n        data_vencimento: parcela.data_vencimento,\n        loan_id: parcela.loan_id,\n        modelo_emprestimo: parcela.modelo_emprestimo\n      }\n    });\n  }\n}\n\nreturn processedItems;"
+      },
+      "id": "process-data",
+      "name": "Processar Dados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-batch",
+      "name": "Dividir em Lotes",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WHATSAPP_API_URL || 'https://api.whatsapp.com/send' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.WHATSAPP_API_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone",
+              "value": "={{ $json.telefone }}"
+            },
+            {
+              "name": "message",
+              "value": "={{ $json.mensagem }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-whatsapp",
+      "name": "Enviar WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        300
+      ],
+      "notes": "Configure a URL da API de WhatsApp e o token nas variáveis de ambiente do n8n.\n\nExemplos de APIs compatíveis:\n- Evolution API\n- Twilio WhatsApp\n- WhatsApp Business API\n- ChatAPI\n\nOu use um webhook customizado."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "largerEqual",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "condition-2",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 299,
+              "operator": {
+                "type": "number",
+                "operation": "smallerEqual",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-success",
+      "name": "Verificar Sucesso",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE public.installments\nSET updated_at = CURRENT_TIMESTAMP\nWHERE id = '{{ $(''Processar Dados'').item.json.parcela_id }}';",
+        "options": {}
+      },
+      "id": "update-parcela",
+      "name": "Atualizar Parcela",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1560,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "login_audit",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tenant_id": "={{ $(''Buscar Parcelas Vencendo Hoje'').item.json.tenant_id || ''00000000-0000-0000-0000-000000000001'' }}",
+            "user_id": "={{ $(''Processar Dados'').item.json.cliente_id }}",
+            "email": "cobranca_automatica@system",
+            "success": true,
+            "created_at": "={{ $now }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "log-success",
+      "name": "Registrar Log Sucesso",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1560,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      },
+      "notes": "Opcional: Registrar envio bem-sucedido no log de auditoria"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log de erro\nconst error = $input.first().json;\n\nreturn [{\n  json: {\n    erro: true,\n    mensagem: `Falha ao enviar mensagem para ${$('Processar Dados').item.json.cliente_nome}`,\n    telefone: $('Processar Dados').item.json.telefone,\n    statusCode: error.statusCode || 'N/A',\n    erro_detalhes: error.error || error.message || 'Erro desconhecido',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "log-error",
+      "name": "Registrar Erro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "summary-1",
+              "name": "total_processadas",
+              "value": "={{ $('Dividir em Lotes').item.json.totalItems || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "summary-2",
+              "name": "total_enviadas",
+              "value": "={{ $('Verificar Sucesso').all().filter(item => item.json.statusCode >= 200 && item.json.statusCode <= 299).length }}",
+              "type": "number"
+            },
+            {
+              "id": "summary-3",
+              "name": "total_erros",
+              "value": "={{ $('Registrar Erro').all().length }}",
+              "type": "number"
+            },
+            {
+              "id": "summary-4",
+              "name": "data_execucao",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "summary",
+      "name": "Resumo Execução",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1780,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Agendamento Diário": {
+      "main": [
+        [
+          {
+            "node": "Buscar Parcelas Vencendo Hoje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Parcelas Vencendo Hoje": {
+      "main": [
+        [
+          {
+            "node": "Processar Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Dados": {
+      "main": [
+        [
+          {
+            "node": "Dividir em Lotes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dividir em Lotes": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Verificar Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Sucesso": {
+      "main": [
+        [
+          {
+            "node": "Atualizar Parcela",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Registrar Log Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar Erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar Parcela": {
+      "main": [
+        [
+          {
+            "node": "Resumo Execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Log Sucesso": {
+      "main": [
+        [
+          {
+            "node": "Resumo Execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Erro": {
+      "main": [
+        [
+          {
+            "node": "Resumo Execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
