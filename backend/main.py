@@ -785,13 +785,27 @@ def forgot_password(payload: ForgotPasswordRequest):
         supabase = get_supabase_anon_client()
         
         # O Supabase envia automaticamente um email com o link de reset
-        # O redirectTo deve apontar para a página de reset no frontend
-        # Preferir usar FRONTEND_URL se configurada, senão usar URL relativa
+        # O redirectTo DEVE ser uma URL completa e absoluta
+        # 
+        # IMPORTANTE: Configure no Supabase Dashboard:
+        # 1. Vá em Authentication > URL Configuration
+        # 2. Adicione a URL em "Redirect URLs": https://credgestor.app.br/reset-password
+        # 3. Configure "Site URL" como: https://credgestor.app.br
+        # 
+        # Se a URL não estiver na lista de URLs permitidas, o Supabase usará a "Site URL" padrão
         if settings.frontend_url:
             redirect_to = f"{settings.frontend_url.rstrip('/')}/reset-password"
         else:
-            # URL relativa - o Supabase completará com a URL base do projeto
-            redirect_to = "/reset-password"
+            # Tentar inferir da SUPABASE_URL (removendo /rest/v1 ou /auth/v1)
+            # Se a SUPABASE_URL for de produção, usar HTTPS
+            base_url = settings.supabase_url.replace('/rest/v1', '').replace('/auth/v1', '')
+            # Se não for localhost, assumir produção
+            if 'localhost' not in base_url and '127.0.0.1' not in base_url:
+                # Por padrão, usar HTTPS em produção
+                redirect_to = "https://credgestor.app.br/reset-password"
+            else:
+                # Desenvolvimento local
+                redirect_to = "http://localhost:3000/reset-password"
         
         # Usar reset_password_for_email do Supabase
         response = supabase.auth.reset_password_for_email(
