@@ -65,7 +65,7 @@ export const mapApiUserToUser = (apiUser: any): User => ({
   email: apiUser.email || '',
   role: normalizeUserRole(apiUser.role),
   whatsappContacts: apiUser.whatsapp_contacts || apiUser.whatsappContacts || [],
-  tenantId: apiUser.tenant_id || apiUser.tenantId || DEFAULT_TENANT_ID,
+  tenantId: apiUser.tenant_id || apiUser.tenantId, // REGRA: Sem fallback - deve vir do backend
   tenantName: apiUser.tenant_nome || apiUser.tenantName,
 });
 
@@ -162,10 +162,11 @@ const normalizeApiClient = (payload: ApiClientPayload): Client => {
 };
 
 export async function fetchN8NClients(token: string, tenantId?: string): Promise<Client[]> {
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
-  if (!effectiveTenantId) {
-    throw new Error('tenant_id não informado para buscar clientes.');
+  // REGRA IMPORTANTE: tenant_id é obrigatório - não usar fallback
+  if (!tenantId) {
+    throw new Error('tenant_id é obrigatório para buscar clientes. Usuário deve estar autenticado com tenant válido.');
   }
+  const effectiveTenantId = tenantId;
 
   const bearerToken = sanitizeToken(token);
   if (!bearerToken) {
@@ -224,8 +225,12 @@ export async function createN8NClient(
     notes: client.notes,
   };
 
-  const payload = { ...basePayload, tenant_id: tenantId || DEFAULT_TENANT_ID };
-  const endpoint = `tenants/${tenantId || DEFAULT_TENANT_ID}/clients`;
+  // REGRA IMPORTANTE: tenant_id é obrigatório - não usar fallback
+  if (!tenantId) {
+    throw new Error('tenant_id é obrigatório para criar clientes. Usuário deve estar autenticado com tenant válido.');
+  }
+  const payload = { ...basePayload, tenant_id: tenantId };
+  const endpoint = `tenants/${tenantId}/clients`;
 
   const response = await fetch(buildUrl(endpoint), {
     method: 'POST',
@@ -249,7 +254,11 @@ export async function deleteN8NClient(token: string, tenantId: string | undefine
     throw new Error('Token de acesso inválido ou ausente para excluir clientes.');
   }
 
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  // REGRA IMPORTANTE: tenant_id é obrigatório - não usar fallback
+  if (!tenantId) {
+    throw new Error('tenant_id é obrigatório para deletar clientes. Usuário deve estar autenticado com tenant válido.');
+  }
+  const effectiveTenantId = tenantId;
   const endpoint = `tenants/${effectiveTenantId}/clients/${clientId}`;
 
   const response = await fetch(buildUrl(endpoint), {

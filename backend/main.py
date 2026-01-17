@@ -195,23 +195,37 @@ def _validate_tenant_table(resource: str) -> str:
 
 
 def _get_single_record(table: str, filters: List[Tuple[str, Any]]):
-    supabase = get_supabase_admin_client()
-    query = supabase.table(table).select("*")
-    for column, value in filters:
-        query = query.eq(column, value)
+    try:
+        supabase = get_supabase_admin_client()
+        query = supabase.table(table).select("*")
+        for column, value in filters:
+            query = query.eq(column, value)
 
-    response = query.execute()
-    error = getattr(response, "error", None)
-    if error:
-        raise HTTPException(status_code=500, detail=_format_error(error))
+        response = query.execute()
+        error = getattr(response, "error", None)
+        if error:
+            raise HTTPException(status_code=500, detail=_format_error(error))
 
-    records = response.data or []
-    return records[0] if records else None
+        records = response.data or []
+        return records[0] if records else None
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao consultar banco de dados: {str(e)}"
+        )
 
 
 def _get_tenant_name(tenant_id: str) -> str | None:
-    tenant = _get_single_record("tenants", [("id", tenant_id)])
-    return tenant.get("name") if tenant else None
+    try:
+        tenant = _get_single_record("tenants", [("id", tenant_id)])
+        return tenant.get("name") if tenant else None
+    except Exception as e:
+        # Não deve impedir o login se não conseguir obter o nome do tenant
+        print(f"⚠️  Aviso: Não foi possível obter o nome do tenant {tenant_id}: {e}")
+        return None
 
 
 def _store_user_session(
@@ -288,14 +302,23 @@ def _get_user_attr(user: Any, attr: str):
 
 
 def _tenant_ids_for_email(email: str) -> List[str]:
-    supabase = get_supabase_admin_client()
-    response = (
-        supabase.table("tenant_users").select("tenant_id").eq("email", email).execute()
-    )
-    error = getattr(response, "error", None)
-    if error:
-        raise HTTPException(status_code=500, detail=_format_error(error))
-    return [row.get("tenant_id") for row in response.data or [] if row.get("tenant_id")]
+    try:
+        supabase = get_supabase_admin_client()
+        response = (
+            supabase.table("tenant_users").select("tenant_id").eq("email", email).execute()
+        )
+        error = getattr(response, "error", None)
+        if error:
+            raise HTTPException(status_code=500, detail=_format_error(error))
+        return [row.get("tenant_id") for row in response.data or [] if row.get("tenant_id")]
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao consultar tenant_users: {str(e)}"
+        )
 
 
 def _assert_user_in_tenant(email: str | None, tenant_id: str):
@@ -303,21 +326,30 @@ def _assert_user_in_tenant(email: str | None, tenant_id: str):
         raise HTTPException(
             status_code=403, detail="Usuário sem e-mail válido no token."
         )
-    supabase = get_supabase_admin_client()
-    response = (
-        supabase.table("tenant_users")
-        .select("id")
-        .eq("email", email)
-        .eq("tenant_id", tenant_id)
-        .limit(1)
-        .execute()
-    )
-    error = getattr(response, "error", None)
-    if error:
-        raise HTTPException(status_code=500, detail=_format_error(error))
-    if not response.data:
+    try:
+        supabase = get_supabase_admin_client()
+        response = (
+            supabase.table("tenant_users")
+            .select("id")
+            .eq("email", email)
+            .eq("tenant_id", tenant_id)
+            .limit(1)
+            .execute()
+        )
+        error = getattr(response, "error", None)
+        if error:
+            raise HTTPException(status_code=500, detail=_format_error(error))
+        if not response.data:
+            raise HTTPException(
+                status_code=403, detail="Usuário não autorizado para o tenant informado."
+            )
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=403, detail="Usuário não autorizado para o tenant informado."
+            status_code=500, detail=f"Erro ao verificar acesso do usuário ao tenant: {str(e)}"
         )
 
 
@@ -428,84 +460,105 @@ def require_auth(
 
 
 def _authenticate_user(payload: LoginRequest):
-    settings = get_settings()
-    tenant_id = payload.tenant_id or settings.default_tenant_id
+    try:
+        settings = get_settings()
+        tenant_id = payload.tenant_id or settings.default_tenant_id
 
-    if not settings.supabase_anon_key or settings.supabase_anon_key.strip() == "":
-        raise HTTPException(
-            status_code=500, detail="SUPABASE_ANON_KEY não configurada."
+        if not settings.supabase_anon_key or settings.supabase_anon_key.strip() == "":
+            raise HTTPException(
+                status_code=500, detail="SUPABASE_ANON_KEY não configurada."
+            )
+
+        supabase = get_supabase_anon_client()
+        auth_response = supabase.auth.sign_in_with_password(
+            {"email": payload.email, "password": payload.senha}
         )
+        error = getattr(auth_response, "error", None)
+        if error:
+            raise HTTPException(status_code=401, detail=_format_error(error))
 
-    supabase = get_supabase_anon_client()
-    auth_response = supabase.auth.sign_in_with_password(
-        {"email": payload.email, "password": payload.senha}
-    )
-    error = getattr(auth_response, "error", None)
-    if error:
-        raise HTTPException(status_code=401, detail=_format_error(error))
+        user = getattr(auth_response, "user", None)
+        session = getattr(auth_response, "session", None)
+        if isinstance(auth_response, dict):
+            user = user or auth_response.get("user") or auth_response.get("data")
+            session = session or auth_response.get("session")
 
-    user = getattr(auth_response, "user", None)
-    session = getattr(auth_response, "session", None)
-    if isinstance(auth_response, dict):
-        user = user or auth_response.get("user") or auth_response.get("data")
-        session = session or auth_response.get("session")
+        if not user or not session:
+            raise HTTPException(status_code=401, detail="Falha ao autenticar usuário.")
 
-    if not user or not session:
-        raise HTTPException(status_code=401, detail="Falha ao autenticar usuário.")
+        user_id = _get_user_id(user)
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Usuário inválido.")
 
-    user_id = _get_user_id(user)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Usuário inválido.")
+        resolved_tenant_id = _resolve_tenant_id(user, tenant_id)
+        if not resolved_tenant_id:
+            raise HTTPException(
+                status_code=400,
+                detail="tenant_id não informado ou não identificado para o usuário.",
+            )
 
-    resolved_tenant_id = _resolve_tenant_id(user, tenant_id)
-    if not resolved_tenant_id:
-        raise HTTPException(
-            status_code=400,
-            detail="tenant_id não informado ou não identificado para o usuário.",
+        access_token = (
+            session.get("access_token")
+            if isinstance(session, dict)
+            else session.access_token
         )
+        refresh_token = (
+            session.get("refresh_token")
+            if isinstance(session, dict)
+            else session.refresh_token
+        )
+        refresh_token = refresh_token or ""
+        expires_in = (
+            session.get("expires_in") if isinstance(session, dict) else getattr(session, "expires_in", None)
+        )
+        # Garantir que expires_in seja um número válido
+        try:
+            expires_in = int(expires_in) if expires_in is not None else 3600
+        except (ValueError, TypeError):
+            expires_in = 3600  # Valor padrão se não for um número válido
+        
+        access_expires_at = datetime.now(timezone.utc) + timedelta(
+            seconds=expires_in
+        )
+        refresh_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
 
-    access_token = (
-        session.get("access_token")
-        if isinstance(session, dict)
-        else session.access_token
-    )
-    refresh_token = (
-        session.get("refresh_token")
-        if isinstance(session, dict)
-        else session.refresh_token
-    )
-    refresh_token = refresh_token or ""
-    expires_in = (
-        session.get("expires_in") if isinstance(session, dict) else session.expires_in
-    )
-    access_expires_at = datetime.now(timezone.utc) + timedelta(
-        seconds=expires_in or 3600
-    )
-    refresh_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+        _store_user_session(user_id, resolved_tenant_id, refresh_token, refresh_expires_at)
+        _log_login_event(resolved_tenant_id, user_id, payload.email)
 
-    _store_user_session(user_id, resolved_tenant_id, refresh_token, refresh_expires_at)
-    _log_login_event(resolved_tenant_id, user_id, payload.email)
+        tenant_name = _get_tenant_name(resolved_tenant_id)
+        user_payload = {
+            "id": user_id,
+            "email": _get_user_email(user),
+            "tenant_id": resolved_tenant_id,
+            "tenant_nome": tenant_name,
+            "name": _get_user_metadata(user).get("name")
+            or _get_user_metadata(user).get("nome")
+            or payload.email.split("@")[0],
+        }
 
-    tenant_name = _get_tenant_name(resolved_tenant_id)
-    user_payload = {
-        "id": user_id,
-        "email": _get_user_email(user),
-        "tenant_id": resolved_tenant_id,
-        "tenant_nome": tenant_name,
-        "name": _get_user_metadata(user).get("name")
-        or _get_user_metadata(user).get("nome")
-        or payload.email.split("@")[0],
-    }
-
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
-        "expires_in": int(expires_in or 0),
-        "access_expires_at": access_expires_at.isoformat(),
-        "refresh_expires_at": refresh_expires_at.isoformat(),
-        "usuario": user_payload,
-    }
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "expires_in": expires_in,
+            "access_expires_at": access_expires_at.isoformat(),
+            "refresh_expires_at": refresh_expires_at.isoformat(),
+            "usuario": user_payload,
+        }
+    except HTTPException:
+        # Re-raise HTTPExceptions (já têm status code apropriado)
+        raise
+    except Exception as e:
+        # Captura qualquer outra exceção não tratada e retorna erro 500 com detalhes
+        import traceback
+        error_details = str(e)
+        traceback_str = traceback.format_exc()
+        print(f"❌ Erro inesperado no login: {error_details}")
+        print(f"📋 Traceback: {traceback_str}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro interno ao processar login: {error_details}"
+        )
 
 
 @app.get("/health")
