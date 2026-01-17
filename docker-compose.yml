@@ -5,7 +5,7 @@ services:
   api:
     # Usar imagem do Docker Hub com versão específica
     # Versão atual: v1.0.13 (atualizar VERSION ao fazer mudanças)
-    image: faelsouz/credgestor-homologacao-backend:${DOCKER_VERSION:-v1.0.13}
+    image: faelsouz/credgestor-homologacao-backend:${DOCKER_VERSION:-latest}
     # container_name não é suportado em Docker Swarm (docker stack deploy)
     # container_name: credgestor-api
     # env_file funciona com docker-compose, mas não com docker stack deploy
@@ -84,7 +84,7 @@ services:
   site:
     # Usar imagem do Docker Hub com versão específica
     # Versão atual: v1.0.13 (atualizar VERSION ao fazer mudanças)
-    image: faelsouz/credgestor-homologacao-frontend:${DOCKER_VERSION:-v1.0.13}
+    image: faelsouz/credgestor-homologacao-frontend:${DOCKER_VERSION:-latest}
     # container_name não é suportado em Docker Swarm (docker stack deploy)
     # container_name: credgestor-frontend
     deploy:
