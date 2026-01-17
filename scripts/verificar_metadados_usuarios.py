@@ -6,6 +6,7 @@ Os metadados não são acessíveis via SQL direto, precisam ser acessados via AP
 
 import os
 import sys
+import requests
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -55,19 +56,34 @@ def main():
         print(f"📧 Encontrados {len(tenant_users_emails)} emails para verificar")
         print()
         
-        # Buscar metadados de cada usuário individualmente
+        # Buscar metadados de cada usuário individualmente via API REST
         users = []
+        headers = {
+            "apikey": SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {SERVICE_ROLE_KEY}",
+        }
+        
         for email in tenant_users_emails:
             try:
-                # Buscar usuário por email usando admin API
-                user_response = supabase.auth.admin.get_user_by_email(email)
-                if hasattr(user_response, 'user') and user_response.user:
-                    users.append(user_response.user)
-                elif isinstance(user_response, dict) and 'user' in user_response:
-                    users.append(user_response['user'])
+                # Buscar usuário por email usando API REST direta
+                search_url = f"{SUPABASE_URL}/auth/v1/admin/users"
+                search_params = {"email": email}
+                search_response = requests.get(search_url, params=search_params, headers=headers)
+                
+                if search_response.status_code == 200:
+                    response_data = search_response.json()
+                    users_list = response_data.get('users', [])
+                    if users_list:
+                        users.append(users_list[0])  # Pega o primeiro usuário encontrado
+                    else:
+                        print(f"⚠️  Usuário {email} não encontrado via API")
+                        users.append({'email': email, 'id': None, 'user_metadata': {}, 'app_metadata': {}})
+                else:
+                    print(f"⚠️  Erro ao buscar usuário {email}: Status {search_response.status_code}")
+                    users.append({'email': email, 'id': None, 'user_metadata': {}, 'app_metadata': {}})
             except Exception as e:
                 print(f"⚠️  Erro ao buscar usuário {email}: {e}")
-                # Se não conseguir via admin API, criar objeto básico com email
+                # Se não conseguir via API, criar objeto básico com email
                 users.append({'email': email, 'id': None, 'user_metadata': {}, 'app_metadata': {}})
         
         if not users:
@@ -78,17 +94,12 @@ def main():
         users_without_tenant = []
         
         for user in users:
-            # Suportar tanto objeto User quanto dict
-            if isinstance(user, dict):
-                email = user.get('email', 'Sem email')
-                user_metadata = user.get('user_metadata', {}) or {}
-                app_metadata = user.get('app_metadata', {}) or {}
-                user_id = user.get('id')
-            else:
-                email = getattr(user, 'email', None) or 'Sem email'
-                user_metadata = getattr(user, 'user_metadata', None) or {}
-                app_metadata = getattr(user, 'app_metadata', None) or {}
-                user_id = getattr(user, 'id', None)
+            # A API REST retorna dicts
+            email = user.get('email', 'Sem email')
+            # Os metadados podem estar em user_metadata ou raw_user_meta_data
+            user_metadata = user.get('user_metadata', {}) or user.get('raw_user_meta_data', {}) or {}
+            app_metadata = user.get('app_metadata', {}) or user.get('raw_app_meta_data', {}) or {}
+            user_id = user.get('id')
             
             tenant_id_metadata = user_metadata.get('tenant_id')
             tenant_id_app = app_metadata.get('tenant_id')
