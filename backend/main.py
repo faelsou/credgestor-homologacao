@@ -312,13 +312,20 @@ def _get_user_attr(user: Any, attr: str):
 def _tenant_ids_for_email(email: str) -> List[str]:
     try:
         supabase = get_supabase_admin_client()
+        # REGRA: Buscar apenas usuários ativos
         response = (
-            supabase.table("tenant_users").select("tenant_id").eq("email", email).execute()
+            supabase.table("tenant_users")
+            .select("tenant_id")
+            .eq("email", email)
+            .eq("ativo", True)
+            .execute()
         )
         error = getattr(response, "error", None)
         if error:
             raise HTTPException(status_code=500, detail=_format_error(error))
-        return [row.get("tenant_id") for row in response.data or [] if row.get("tenant_id")]
+        tenant_ids = [row.get("tenant_id") for row in response.data or [] if row.get("tenant_id")]
+        print(f"🔍 [DEBUG] _tenant_ids_for_email({email}): {tenant_ids}")
+        return tenant_ids
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
     except HTTPException:
