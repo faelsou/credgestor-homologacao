@@ -366,11 +366,54 @@ def _resolve_tenant_id(user: Any, requested_tenant_id: str | None) -> str | None
     app_metadata = _get_app_metadata(user)
     metadata_tenant_id = metadata.get("tenant_id") or app_metadata.get("tenant_id")
     
+    email = _get_user_email(user)
+    
     print(f"🔍 [DEBUG] _resolve_tenant_id:")
+    print(f"   email: {email}")
     print(f"   requested_tenant_id: {requested_tenant_id}")
     print(f"   metadata tenant_id: {metadata.get('tenant_id')}")
     print(f"   app_metadata tenant_id: {app_metadata.get('tenant_id')}")
     print(f"   metadata_tenant_id resolvido: {metadata_tenant_id}")
+
+    # REGRA CRÍTICA: Se temos email, buscar tenant_id de tenant_users como fonte da verdade
+    # Isso resolve o problema de usuários compartilhando o mesmo ID no Auth
+    if email:
+        tenant_ids_from_db = _tenant_ids_for_email(email)
+        print(f"🔍 [DEBUG] Tenant_ids encontrados em tenant_users para {email}: {tenant_ids_from_db}")
+        
+        if len(tenant_ids_from_db) == 1:
+            tenant_id_from_db = tenant_ids_from_db[0]
+            
+            # Se o tenant_id dos metadados não corresponde ao do banco, usar o do banco
+            if metadata_tenant_id and metadata_tenant_id != tenant_id_from_db:
+                print(f"⚠️  [DEBUG] INCONSISTÊNCIA: Metadados ({metadata_tenant_id}) != tenant_users ({tenant_id_from_db})")
+                print(f"   Usando tenant_id de tenant_users como fonte da verdade: {tenant_id_from_db}")
+                return tenant_id_from_db
+            
+            # Se não há tenant_id nos metadados, usar o do banco
+            if not metadata_tenant_id:
+                print(f"✅ [DEBUG] Usando tenant_id de tenant_users (não encontrado nos metadados): {tenant_id_from_db}")
+                return tenant_id_from_db
+            
+            # Se ambos correspondem, usar o dos metadados
+            if metadata_tenant_id == tenant_id_from_db:
+                print(f"✅ [DEBUG] Metadados e tenant_users sincronizados: {metadata_tenant_id}")
+                return metadata_tenant_id
+        
+        if len(tenant_ids_from_db) > 1:
+            print(f"⚠️  [DEBUG] Usuário está em múltiplos tenants: {tenant_ids_from_db}")
+            # Se há tenant_id solicitado, verificar se está na lista
+            if requested_tenant_id and requested_tenant_id in tenant_ids_from_db:
+                print(f"✅ [DEBUG] Usando tenant_id solicitado: {requested_tenant_id}")
+                return requested_tenant_id
+            # Se há tenant_id nos metadados e está na lista, usar ele
+            if metadata_tenant_id and metadata_tenant_id in tenant_ids_from_db:
+                print(f"✅ [DEBUG] Usando tenant_id dos metadados (está na lista): {metadata_tenant_id}")
+                return metadata_tenant_id
+            raise HTTPException(
+                status_code=400,
+                detail="Informe o tenant_id para contas associadas a múltiplos tenants.",
+            )
 
     if (
         metadata_tenant_id
@@ -386,7 +429,6 @@ def _resolve_tenant_id(user: Any, requested_tenant_id: str | None) -> str | None
         print(f"✅ [DEBUG] Usando tenant_id dos metadados: {metadata_tenant_id}")
         return metadata_tenant_id
 
-    email = _get_user_email(user)
     print(f"⚠️  [DEBUG] Tenant_id não encontrado nos metadados. Buscando por email: {email}")
 
     if requested_tenant_id:
