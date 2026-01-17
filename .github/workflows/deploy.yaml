@@ -487,8 +487,12 @@ jobs:
             # Executa o deploy
             docker stack deploy -c docker-compose.yml credgestor
             echo "✅ Deploy concluído com sucesso!"
+            echo "🔄 Forçando atualização dos serviços para garantir uso das novas imagens..."
+            # Força atualização dos serviços removendo e recriando (rolling update)
+            docker service update --force --image faelsouz/credgestor-homologacao-backend:latest credgestor_api || echo "⚠️  Serviço api não encontrado ou já atualizado"
+            docker service update --force --image faelsouz/credgestor-homologacao-frontend:latest credgestor_site || echo "⚠️  Serviço site não encontrado ou já atualizado"
             echo "📊 Verificando status dos serviços..."
-            sleep 5
+            sleep 10  # Aguarda mais tempo para serviços iniciarem
             docker stack services credgestor
             echo "📋 Status dos containers:"
             docker stack ps credgestor --no-trunc
