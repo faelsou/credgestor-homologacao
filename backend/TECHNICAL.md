@@ -1,5 +1,17 @@
 # CredGestor Homologação – Integração Supabase (Backend)
 
+## 🔐 Regra Importante: Aplicação Separada por Usuário
+
+**Cada usuário deve ter sua própria aplicação separadamente.**
+
+Isso significa que:
+- ✅ Cada usuário possui seu próprio **tenant** único
+- ✅ Os dados de cada usuário são completamente isolados
+- ✅ Não há compartilhamento de dados entre usuários
+- ✅ Cada usuário tem sua própria instância da aplicação
+
+**IMPORTANTE**: Ao criar novos usuários, sempre criar um novo tenant exclusivo para cada um. Nunca reutilizar tenants entre usuários diferentes.
+
 ## Fluxo de autenticação
 
 1. O front-end envia `POST /auth/login` com `{ email, senha, tenant_id }`.
