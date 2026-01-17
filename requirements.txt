@@ -18,5 +18,9 @@ python-dotenv==1.0.1
 # Utilitários
 python-dateutil==2.9.0
 
+# Supabase Client
+supabase==2.10.0
+requests==2.32.3
+
 # Formatação de código
 black==24.10.0
