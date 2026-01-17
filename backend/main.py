@@ -98,12 +98,20 @@ def _apply_filters(table: str, filters: List[Tuple[str, Any]] | None = None):
     try:
         supabase = get_supabase_admin_client()
         query = supabase.table(table).select("*")
-        for column, value in filters or []:
-            query = query.eq(column, value)
+        # DEBUG: Log dos filtros aplicados
+        if filters:
+            print(f"🔍 [DEBUG] Aplicando filtros na tabela '{table}':")
+            for column, value in filters:
+                print(f"   - {column} = {value}")
+                query = query.eq(column, value)
+        else:
+            print(f"⚠️  [DEBUG] ATENÇÃO: Nenhum filtro aplicado na tabela '{table}'!")
         response = query.execute()
         error = getattr(response, "error", None)
         if error:
             raise HTTPException(status_code=500, detail=_format_error(error))
+        result_count = len(response.data or [])
+        print(f"✅ [DEBUG] Retornando {result_count} registros da tabela '{table}'")
         return response.data or []
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
@@ -396,10 +404,15 @@ def _get_role_from_user(user: Any) -> str | None:
 
 
 def _enforce_tenant_access(context: AuthContext, tenant_id: str) -> str:
+    print(f"🔍 [DEBUG] _enforce_tenant_access: tenant_id={tenant_id}")
+    print(f"   Context tenant_id: {context.tenant_id}, email: {context.email}")
     if context.tenant_id and context.tenant_id != tenant_id:
+        print(f"❌ [DEBUG] ERRO: Tenant do contexto ({context.tenant_id}) != tenant_id da requisição ({tenant_id})")
         raise HTTPException(status_code=403, detail="Tenant inválido.")
     if not context.tenant_id:
+        print(f"⚠️  [DEBUG] Context não tem tenant_id, verificando se usuário está no tenant...")
         _assert_user_in_tenant(context.email, tenant_id)
+    print(f"✅ [DEBUG] Acesso ao tenant {tenant_id} autorizado")
     return tenant_id
 
 
@@ -660,10 +673,15 @@ def list_tenant_resource(
     resource: str,
     context: AuthContext = Depends(require_auth),
 ):
+    print(f"🔍 [DEBUG] list_tenant_resource: tenant_id={tenant_id}, resource={resource}")
+    print(f"   Context tenant_id: {context.tenant_id}, email: {context.email}")
     _enforce_tenant_access(context, tenant_id)
     table = _validate_tenant_table(resource)
     column = TENANT_TABLES[table]
-    return _apply_filters(table, [(column, tenant_id)])
+    print(f"   Tabela: {table}, Coluna: {column}")
+    result = _apply_filters(table, [(column, tenant_id)])
+    print(f"   Retornando {len(result)} registros")
+    return result
 
 
 @app.post("/tenants/{tenant_id}/{resource}")
