@@ -455,7 +455,11 @@ jobs:
             echo "🚀 Fazendo pull das imagens mais recentes do Docker Hub..."
             docker pull faelsouz/credgestor-homologacao-backend:latest || true
             docker pull faelsouz/credgestor-homologacao-frontend:latest || true
+            echo "🔄 Removendo imagens antigas para forçar atualização..."
+            docker image prune -f || true
             echo "🚀 Fazendo deploy do stack Docker..."
+            # Força uso da imagem :latest exportando DOCKER_VERSION
+            export DOCKER_VERSION=latest
             # Carrega variáveis do .env se existir e exporta para o ambiente
             # Nota: docker stack deploy não suporta env_file, então as variáveis
             # devem estar no ambiente ou configuradas diretamente no docker-compose.yml
