@@ -1378,6 +1378,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { LandingPage } from '@/components/LandingPage';
+import { ResetPassword } from '@/components/ResetPassword';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { DashboardHome } from '@/components/dashboard/Home';
 import { ClientsView } from '@/components/dashboard/Clients';
@@ -2183,9 +2184,14 @@ const App: React.FC = () => {
 
       // Para empréstimos "somente juros", o amount é apenas os juros, não juros + principal
       // O status é PAID quando não há mais juros nem principal pendentes
-      const remainingBalance = Number(updatedInterest.toFixed(2));
+      // IMPORTANTE: O amount deve sempre ser pelo menos o valor mínimo dos juros baseado no capital restante
+      const rateDecimal = loan.interestRate / 100;
+      // Calcular valor mínimo dos juros baseado no capital restante
+      const minInterestFromPrincipal = updatedPrincipal > 0 ? Number((updatedPrincipal * rateDecimal).toFixed(2)) : 0;
+      // O amount deve ser pelo menos o valor mínimo dos juros, mesmo que os juros atuais sejam menores ou zero
+      const remainingBalance = Math.max(updatedInterest, minInterestFromPrincipal);
       const newStatus = (updatedInterest <= 0 && updatedPrincipal <= 0) ? InstallmentStatus.PAID : 
-                       (updatedInterest <= 0) ? InstallmentStatus.PARTIAL : InstallmentStatus.PARTIAL;
+                       (updatedInterest <= 0 && updatedPrincipal <= 0) ? InstallmentStatus.PARTIAL : InstallmentStatus.PARTIAL;
       
       // Valor total aplicado nesta parcela (juros + principal)
       const appliedToThisInstallment = interestPayment + principalPayment;
@@ -2203,7 +2209,7 @@ const App: React.FC = () => {
 
       const updatedInstallment = {
         ...installment,
-        amount: remainingBalance, // Apenas juros restantes
+        amount: remainingBalance, // Sempre pelo menos o valor mínimo dos juros baseado no capital restante
         interestAmount: updatedInterest,
         principalAmount: updatedPrincipal,
         amountPaid: Number(((installment.amountPaid || 0) + appliedToThisInstallment).toFixed(2)),
@@ -2233,7 +2239,9 @@ const App: React.FC = () => {
         const rateDecimal = loan.interestRate / 100;
         const newInterest = Number((newPrincipal * rateDecimal).toFixed(2));
         // Para empréstimos "somente juros", o amount é apenas os juros, não juros + principal
-        const newAmount = Number(newInterest.toFixed(2));
+        // IMPORTANTE: O amount deve sempre ser pelo menos o valor mínimo dos juros baseado no capital restante
+        const minInterestFromPrincipal = newPrincipal > 0 ? Number((newPrincipal * rateDecimal).toFixed(2)) : 0;
+        const newAmount = Math.max(newInterest, minInterestFromPrincipal);
 
         const updatedNextInst: Installment = {
           ...nextInst,
@@ -2302,7 +2310,9 @@ const App: React.FC = () => {
       if (totalRemainingCapital > 0) {
         const rateDecimal = loan.interestRate / 100;
         // Calcular juros sobre o capital total restante (ex: R$ 900 * 20% = R$ 180)
-        const nextInterestAmount = Number((totalRemainingCapital * rateDecimal).toFixed(2));
+        // O amount deve sempre ser pelo menos o valor mínimo dos juros baseado no capital restante
+        const nextInterestAmount = totalRemainingCapital > 0 ? Number((totalRemainingCapital * rateDecimal).toFixed(2)) : 0;
+        const nextAmount = nextInterestAmount; // Já é o valor mínimo dos juros
         const nextDueDate = addMonths(getTodayDateString(), 1); // Próximo mês
 
         const newInstallment: Installment = {
@@ -2311,7 +2321,7 @@ const App: React.FC = () => {
           clientId: installment.clientId,
           number: nextNumber,
           dueDate: nextDueDate,
-          amount: nextInterestAmount, // Juros calculados sobre o capital restante (R$ 180)
+          amount: nextAmount, // Sempre pelo menos o valor mínimo dos juros baseado no capital restante
           interestAmount: nextInterestAmount, // R$ 180
           principalAmount: totalRemainingCapital, // Capital total em aberto (R$ 900)
           amountPaid: 0,
@@ -2580,6 +2590,27 @@ const App: React.FC = () => {
     body.classList.remove(...themeClasses.map(t => `theme-${t}`));
     body.classList.add(`theme-${theme}`);
   }, [theme]);
+
+  // Verificar se há token de reset na URL
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  
+  useEffect(() => {
+    // Verificar se há token de reset na URL (query params ou hash)
+    const urlParams = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    
+    const tokenFromQuery = urlParams.get('access_token') || urlParams.get('token');
+    const tokenFromHash = hashParams.get('access_token') || hashParams.get('token');
+    
+    if (tokenFromQuery || tokenFromHash) {
+      setShowResetPassword(true);
+    }
+  }, []);
+
+  // Se houver token de reset na URL, mostrar página de reset
+  if (showResetPassword) {
+    return <ResetPassword />;
+  }
 
   if (!user) {
     return (
