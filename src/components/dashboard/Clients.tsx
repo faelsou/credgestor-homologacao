@@ -946,7 +946,16 @@ export const ClientsView: React.FC = () => {
     // Tenta salvar via backend FastAPI se configurado
     if (isBackendConfigured && session?.accessToken) {
       try {
+        // REGRA CRÍTICA: Validar tenantId antes de tentar salvar
+        if (!session.tenantId) {
+          const errorMsg = 'tenantId não está definido na sessão. Faça logout e login novamente.';
+          console.error(`❌ ${errorMsg}`);
+          throw new Error(errorMsg);
+        }
+        
         console.log(`📤 Sincronizando cliente via backend (${action})`);
+        console.log(`   tenantId: ${session.tenantId}`);
+        console.log(`   Cliente: ${client.name} (CPF: ${client.cpf})`);
         
         // Callback para atualizar sessão quando token for renovado
         const handleTokenRefresh = (newToken: string, newRefreshToken: string) => {
@@ -992,15 +1001,26 @@ export const ClientsView: React.FC = () => {
         return syncedClient;
       } catch (error) {
         console.error('❌ Erro ao salvar no banco de dados:', error);
+        console.error('   Detalhes do erro:', error instanceof Error ? error.message : String(error));
         // Se o erro for de sessão expirada, lança erro mais específico
         if (error instanceof Error && error.message.includes('Sessão expirada')) {
           throw new Error('Sua sessão expirou. Por favor, faça login novamente para continuar.');
+        }
+        // Se o erro for de tenantId, lança erro específico
+        if (error instanceof Error && (error.message.includes('tenant_id') || error.message.includes('tenantId'))) {
+          throw new Error('Erro de autenticação. Faça logout e login novamente.');
         }
         throw error;
       }
     }
 
     console.warn('⚠️ Sincronização desabilitada ou sem sessão válida. Salvando apenas localmente.');
+    if (!session?.accessToken) {
+      console.warn('   Motivo: Sem accessToken na sessão');
+    }
+    if (!session?.tenantId) {
+      console.warn('   Motivo: Sem tenantId na sessão');
+    }
     return null;
   };
 
