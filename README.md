@@ -19,11 +19,39 @@ A aplicação utiliza a estratégia de **Schema Compartilhado com Tenant ID**, o
 - Índices otimizados para queries filtradas por tenant
 - Segurança garantida através de filtros automáticos nas queries
 
+### 🔐 Regra Importante: Aplicação Separada por Usuário
+
+**Cada usuário deve ter sua própria aplicação separadamente.**
+
+- ✅ Cada usuário possui seu próprio **tenant** único
+- ✅ Os dados de cada usuário são completamente isolados
+- ✅ Não há compartilhamento de dados entre usuários
+- ✅ Cada usuário tem sua própria instância da aplicação
+
+**IMPORTANTE**: Ao criar novos usuários, sempre criar um novo tenant exclusivo para cada um. Nunca reutilizar tenants entre usuários diferentes.
+
+📚 Veja mais detalhes em: [REGRA_APLICACAO_SEPARADA.md](./REGRA_APLICACAO_SEPARADA.md)
+
+### 🔄 Migração de Usuários Existentes
+
+Se você já tem usuários cadastrados no banco de dados, execute o script de migração para garantir que cada usuário tenha seu próprio tenant:
+
+```bash
+# 1. Verificar situação atual (simulação)
+python3 scripts/migrar_usuarios_para_tenants_unicos.py --dry-run
+
+# 2. Executar migração
+python3 scripts/migrar_usuarios_para_tenants_unicos.py
+```
+
+📚 Veja o guia completo: [MIGRACAO_TENANTS_UNICOS.md](./MIGRACAO_TENANTS_UNICOS.md)
+
 ### Vantagens desta Arquitetura:
 ✅ Manutenção simplificada (um único schema)
 ✅ Menor custo de infraestrutura
 ✅ Facilita análises agregadas entre tenants
 ✅ Escalabilidade horizontal
+✅ Isolamento completo entre usuários
 
 ## 📊 Estrutura do Banco de Dados
 
