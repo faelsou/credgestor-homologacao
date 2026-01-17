@@ -1581,7 +1581,14 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(() => shouldUseLocalPersistence ? storedState.user ?? null : null);
   const [view, setView] = useState(storedState.view ?? 'home');
 
+  // REGRA IMPORTANTE: Não carregar dados do localStorage quando usa backend
+  // localStorage é compartilhado entre usuários no mesmo navegador
   const [clients, setClients] = useState<Client[]>(() => {
+    // Se usa backend, sempre começar vazio - dados virão do backend
+    if (isBackendConfiguredValue) {
+      return [];
+    }
+    
     if (shouldUseLocalPersistence) {
       return storedState.clients && storedState.clients.length ? storedState.clients : MOCK_CLIENTS;
     }
@@ -1601,8 +1608,19 @@ const App: React.FC = () => {
     }
   });
 
-  const [loans, setLoans] = useState<Loan[]>(() => shouldUseLocalPersistence && storedState.loans ? storedState.loans : MOCK_LOANS);
-  const [installments, setInstallments] = useState<Installment[]>(() => shouldUseLocalPersistence && storedState.installments ? storedState.installments : MOCK_INSTALLMENTS);
+  // REGRA IMPORTANTE: Não carregar dados do localStorage quando usa backend
+  const [loans, setLoans] = useState<Loan[]>(() => {
+    if (isBackendConfiguredValue) {
+      return []; // Dados virão do backend
+    }
+    return shouldUseLocalPersistence && storedState.loans ? storedState.loans : MOCK_LOANS;
+  });
+  const [installments, setInstallments] = useState<Installment[]>(() => {
+    if (isBackendConfiguredValue) {
+      return []; // Dados virão do backend
+    }
+    return shouldUseLocalPersistence && storedState.installments ? storedState.installments : MOCK_INSTALLMENTS;
+  });
   const [usersList, setUsersList] = useState<User[]>(() => shouldUseLocalPersistence && storedState.usersList ? storedState.usersList : []);
   const [theme, setTheme] = useState<ThemeOption>(storedState.theme ?? 'light');
   const [loanToEditId, setLoanToEditId] = useState<string | null>(null);
@@ -1642,6 +1660,12 @@ const App: React.FC = () => {
       if (!parsed.session.tenantId || !parsed.user.tenantId) {
         console.warn('⚠️ Sessão restaurada sem tenantId. Limpando e forçando novo login.');
         localStorage.removeItem(BACKEND_SESSION_STORAGE_KEY);
+        // Limpar todos os dados
+        setClients([]);
+        setLoans([]);
+        setInstallments([]);
+        localStorage.removeItem(CLIENTS_STORAGE_KEY);
+        localStorage.removeItem(LOCAL_APP_STATE_KEY);
         return;
       }
       
@@ -1651,6 +1675,16 @@ const App: React.FC = () => {
         tenantId: parsed.user.tenantId, // Sem fallback
         role: normalizeUserRole(parsed.user.role),
       };
+      
+      // REGRA CRÍTICA: Limpar dados ao restaurar sessão para evitar dados de outro usuário
+      console.log('🧹 Limpando dados ao restaurar sessão...');
+      setClients([]);
+      setLoans([]);
+      setInstallments([]);
+      // Limpar localStorage de dados antigos (pode ser de outro usuário)
+      localStorage.removeItem(CLIENTS_STORAGE_KEY);
+      localStorage.removeItem(LOCAL_APP_STATE_KEY);
+      
       setSession(restoredSession);
       setUser(storedUser);
       setUsersList([storedUser]);
@@ -1670,11 +1704,12 @@ const App: React.FC = () => {
     }
   }, [session, user, isBackendConfiguredValue]);
 
-  useEffect(() => {
-    if (isBackendConfiguredValue) return;
-
-    localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(clients));
-  }, [clients, isBackendConfiguredValue]);
+  // REGRA IMPORTANTE: NÃO salvar dados no localStorage quando usa backend
+  // localStorage é compartilhado entre usuários no mesmo navegador
+  // useEffect(() => {
+  //   if (isBackendConfiguredValue) return;
+  //   localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(clients));
+  // }, [clients, isBackendConfiguredValue]);
 
   useEffect(() => {
     if (!shouldUseLocalPersistence) return;
@@ -1697,8 +1732,19 @@ const App: React.FC = () => {
 
     const loadData = async () => {
       try {
+        // REGRA CRÍTICA: Limpar dados antes de carregar novos para evitar mistura
+        // Isso garante que dados de outro usuário não apareçam
+        console.log('🧹 Limpando dados antes de carregar do backend...');
+        setClients([]);
+        setLoans([]);
+        setInstallments([]);
+        
         // Carregar clientes
+        if (!session.tenantId) {
+          throw new Error('tenantId não está definido na sessão. Faça logout e login novamente.');
+        }
         const remoteClients = await fetchClients(session.accessToken, session.tenantId);
+        console.log(`✅ Carregados ${remoteClients.length} clientes para tenant ${session.tenantId}`);
         setClients(remoteClients);
         
         // Carregar empréstimos
@@ -1735,6 +1781,31 @@ const App: React.FC = () => {
 
     loadData();
   }, [session, isBackendConfiguredValue]);
+
+  // REGRA CRÍTICA: Limpar dados quando o tenantId mudar (usuário diferente fez login)
+  useEffect(() => {
+    if (!isBackendConfiguredValue || !session?.tenantId) return;
+    
+    // Armazenar o tenantId anterior para comparar
+    const previousTenantId = sessionStorage.getItem('current_tenant_id');
+    const currentTenantId = session.tenantId;
+    
+    // Se o tenantId mudou, limpar todos os dados
+    if (previousTenantId && previousTenantId !== currentTenantId) {
+      console.warn('⚠️ TenantId mudou! Limpando dados do tenant anterior...');
+      console.log(`   Tenant anterior: ${previousTenantId}`);
+      console.log(`   Tenant atual: ${currentTenantId}`);
+      setClients([]);
+      setLoans([]);
+      setInstallments([]);
+      // Limpar localStorage
+      localStorage.removeItem(CLIENTS_STORAGE_KEY);
+      localStorage.removeItem(LOCAL_APP_STATE_KEY);
+    }
+    
+    // Atualizar o tenantId atual
+    sessionStorage.setItem('current_tenant_id', currentTenantId);
+  }, [session?.tenantId, isBackendConfiguredValue]);
 
   const fetchUserProfile = useCallback(async (authUserId: string, fallbackEmail?: string): Promise<User | null> => {
     if (!supabase) return null;
@@ -1884,6 +1955,20 @@ const App: React.FC = () => {
           tenantName: normalizedUser.tenantName,
         };
 
+        // REGRA CRÍTICA: Limpar TODOS os dados ao fazer login para evitar compartilhamento
+        // localStorage é compartilhado entre usuários no mesmo navegador
+        console.log('🧹 Limpando dados antigos ao fazer login...');
+        setClients([]);
+        setLoans([]);
+        setInstallments([]);
+        // Limpar localStorage de dados antigos (pode ser de outro usuário)
+        localStorage.removeItem(CLIENTS_STORAGE_KEY);
+        localStorage.removeItem(LOCAL_APP_STATE_KEY);
+        // Limpar sessionStorage também
+        sessionStorage.removeItem('current_tenant_id');
+        // Armazenar o novo tenantId
+        sessionStorage.setItem('current_tenant_id', normalizedUser.tenantId);
+        
         setUser(normalizedUser);
         setUsersList([normalizedUser]);
         setSession(sessionInfo);
