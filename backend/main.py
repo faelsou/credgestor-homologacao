@@ -468,6 +468,23 @@ def _get_role_from_user(user: Any) -> str | None:
 def _enforce_tenant_access(context: AuthContext, tenant_id: str) -> str:
     print(f"🔍 [DEBUG] _enforce_tenant_access: tenant_id={tenant_id}")
     print(f"   Context tenant_id: {context.tenant_id}, email: {context.email}")
+    
+    # REGRA CRÍTICA: Usar email para buscar tenant_id de tenant_users como fonte da verdade
+    # Isso resolve o problema de usuários compartilhando o mesmo ID no Auth
+    if context.email:
+        tenant_ids_from_db = _tenant_ids_for_email(context.email)
+        print(f"🔍 [DEBUG] Tenant_ids encontrados em tenant_users para {context.email}: {tenant_ids_from_db}")
+        
+        # Verificar se o tenant_id da requisição está na lista de tenants do usuário
+        if tenant_id in tenant_ids_from_db:
+            print(f"✅ [DEBUG] Usuário {context.email} tem acesso ao tenant {tenant_id}")
+            return tenant_id
+        else:
+            print(f"❌ [DEBUG] ERRO: Usuário {context.email} NÃO tem acesso ao tenant {tenant_id}")
+            print(f"   Tenants do usuário: {tenant_ids_from_db}")
+            raise HTTPException(status_code=403, detail="Tenant inválido.")
+    
+    # Fallback: usar lógica antiga se não houver email
     if context.tenant_id and context.tenant_id != tenant_id:
         print(f"❌ [DEBUG] ERRO: Tenant do contexto ({context.tenant_id}) != tenant_id da requisição ({tenant_id})")
         raise HTTPException(status_code=403, detail="Tenant inválido.")
