@@ -1,17 +1,25 @@
 import React, { useContext, useState } from 'react';
 import { Menu, X, CheckCircle, TrendingUp, Shield, Smartphone, ArrowRight, BarChart3, Users, PieChart, MessageCircle, Lock, Mail } from 'lucide-react';
 import { AppContext } from '@/pages/App';
+import { forgotPassword } from '@/services/api';
 
 export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
   const { login } = useContext(AppContext);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
 
   // Login State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Forgot Password State
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [forgotPasswordError, setForgotPasswordError] = useState('');
+  const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState(false);
+  const [isSubmittingForgotPassword, setIsSubmittingForgotPassword] = useState(false);
 
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
 
@@ -23,6 +31,31 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
   const resetAuthForm = () => {
     setEmail('');
     setPassword('');
+    setError('');
+  };
+
+  const resetForgotPasswordForm = () => {
+    setForgotPasswordEmail('');
+    setForgotPasswordError('');
+    setForgotPasswordSuccess(false);
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotPasswordError('');
+    setForgotPasswordSuccess(false);
+    setIsSubmittingForgotPassword(true);
+
+    try {
+      await forgotPassword(forgotPasswordEmail);
+      setForgotPasswordSuccess(true);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao solicitar reset de senha';
+      console.error('❌ Erro ao solicitar reset de senha:', error);
+      setForgotPasswordError(errorMessage);
+    } finally {
+      setIsSubmittingForgotPassword(false);
+    }
   };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -344,6 +377,11 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
                 <div className="flex justify-end">
                     <button
                         type="button"
+                        onClick={() => {
+                            setShowAuthModal(false);
+                            setShowForgotPasswordModal(true);
+                            resetAuthForm();
+                        }}
                         className="text-sm text-emerald-600 hover:text-emerald-700 font-medium transition"
                     >
                         Esqueci senha
@@ -357,6 +395,103 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
                     Entrar no Sistema
                 </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Forgot Password Modal */}
+      {showForgotPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-8 shadow-2xl animate-fade-in relative">
+            <button
+              onClick={() => {
+                setShowForgotPasswordModal(false);
+                resetForgotPasswordForm();
+              }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition"
+            >
+              <X size={20} />
+            </button>
+
+            <div className="mb-6 text-center">
+              <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center mx-auto mb-4">
+                <Mail size={24} />
+              </div>
+              <h3 className="text-2xl font-bold text-slate-900">
+                Esqueci minha senha
+              </h3>
+              <p className="text-slate-500 text-sm mt-1">
+                Digite seu email para receber um link de reset
+              </p>
+            </div>
+
+            {forgotPasswordSuccess ? (
+              <div className="space-y-4">
+                <div className="p-4 bg-emerald-50 text-emerald-700 text-sm rounded-lg">
+                  <p className="font-semibold mb-1">Email enviado!</p>
+                  <p>
+                    Se o email estiver cadastrado, você receberá um link para resetar sua senha.
+                    Verifique sua caixa de entrada e spam.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowForgotPasswordModal(false);
+                    resetForgotPasswordForm();
+                    setShowAuthModal(true);
+                  }}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-200 transition-transform active:scale-95"
+                >
+                  Voltar para login
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleForgotPassword} className="space-y-4">
+                {forgotPasswordError && (
+                  <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2">
+                    <span className="font-bold">Erro:</span> {forgotPasswordError}
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-slate-700">Email</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                      type="email"
+                      required
+                      className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all outline-none"
+                      placeholder="seu@email.com"
+                      value={forgotPasswordEmail}
+                      onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                      disabled={isSubmittingForgotPassword}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowForgotPasswordModal(false);
+                      resetForgotPasswordForm();
+                      setShowAuthModal(true);
+                    }}
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-3 rounded-xl transition"
+                    disabled={isSubmittingForgotPassword}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingForgotPassword}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-200 transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmittingForgotPassword ? 'Enviando...' : 'Enviar link'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

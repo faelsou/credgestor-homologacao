@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     supabase_service_role_key: str
     supabase_anon_key: str | None = None
     default_tenant_id: str | None = None
+    frontend_url: str | None = None  # URL do frontend para redirects (ex: https://credgestor.app.br)
     
     @field_validator('supabase_anon_key', 'default_tenant_id', mode='before')
     @classmethod

@@ -51,6 +51,17 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    password: str
+    # O token/hash vem do link do email do Supabase
+    # Pode ser passado como query param ou no body
+    token_hash: str | None = None
+
+
 @dataclass
 class AuthContext:
     user_id: str
@@ -753,6 +764,141 @@ def refresh_token(payload: RefreshTokenRequest):
         raise HTTPException(status_code=401, detail=f"Erro ao conectar ao Supabase: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Erro ao renovar token: {str(e)}")
+
+
+@app.post("/auth/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest):
+    """Solicita reset de senha. Envia email com link de reset."""
+    settings = get_settings()
+    
+    if not settings.supabase_anon_key or settings.supabase_anon_key.strip() == "":
+        raise HTTPException(
+            status_code=500, detail="SUPABASE_ANON_KEY não configurada."
+        )
+    
+    if not settings.supabase_url:
+        raise HTTPException(
+            status_code=500, detail="SUPABASE_URL não configurada."
+        )
+    
+    try:
+        supabase = get_supabase_anon_client()
+        
+        # O Supabase envia automaticamente um email com o link de reset
+        # O redirectTo deve apontar para a página de reset no frontend
+        # Preferir usar FRONTEND_URL se configurada, senão usar URL relativa
+        if settings.frontend_url:
+            redirect_to = f"{settings.frontend_url.rstrip('/')}/reset-password"
+        else:
+            # URL relativa - o Supabase completará com a URL base do projeto
+            redirect_to = "/reset-password"
+        
+        # Usar reset_password_for_email do Supabase
+        response = supabase.auth.reset_password_for_email(
+            payload.email,
+            {
+                "redirect_to": redirect_to
+            }
+        )
+        
+        error = getattr(response, "error", None)
+        if error:
+            # Por segurança, não revelamos se o email existe ou não
+            # Sempre retornamos sucesso para evitar enumeração de emails
+            pass
+        
+        # Sempre retorna sucesso para evitar enumeração de emails
+        return {
+            "message": "Se o email estiver cadastrado, você receberá um link para resetar sua senha.",
+            "success": True
+        }
+    except Exception as e:
+        # Por segurança, sempre retorna sucesso mesmo em caso de erro
+        return {
+            "message": "Se o email estiver cadastrado, você receberá um link para resetar sua senha.",
+            "success": True
+        }
+
+
+@app.post("/auth/reset-password")
+def reset_password(payload: ResetPasswordRequest):
+    """Reseta a senha usando o hash/token recebido por email."""
+    settings = get_settings()
+    
+    if not settings.supabase_anon_key or settings.supabase_anon_key.strip() == "":
+        raise HTTPException(
+            status_code=500, detail="SUPABASE_ANON_KEY não configurada."
+        )
+    
+    if not settings.supabase_url:
+        raise HTTPException(
+            status_code=500, detail="SUPABASE_URL não configurada."
+        )
+    
+    try:
+        import requests
+        
+        # O Supabase envia o hash como parte da URL do link de reset
+        # O frontend deve extrair o hash da URL e enviar aqui
+        # O hash geralmente vem como query param: ?token=... ou #access_token=...
+        
+        # Se não foi passado no body, tenta obter do header ou query
+        token_hash = payload.token_hash
+        
+        if not token_hash:
+            raise HTTPException(
+                status_code=400,
+                detail="Token de reset não fornecido. Verifique o link do email."
+            )
+        
+        # O Supabase usa o hash para criar uma sessão temporária
+        # Precisamos usar a API HTTP do Supabase para atualizar a senha
+        base_url = settings.supabase_url.replace('/rest/v1', '').replace('/auth/v1', '')
+        auth_url = f"{base_url}/auth/v1"
+        
+        # Primeiro, obter o usuário usando o hash (que funciona como access_token temporário)
+        user_response = requests.get(
+            f"{auth_url}/user",
+            headers={
+                "apikey": settings.supabase_anon_key,
+                "Authorization": f"Bearer {token_hash}",
+            },
+            timeout=10,
+        )
+        
+        if user_response.status_code != 200:
+            raise HTTPException(
+                status_code=400,
+                detail="Token inválido ou expirado. Solicite um novo link de reset."
+            )
+        
+        # Atualizar a senha usando o hash como token de autorização
+        update_response = requests.put(
+            f"{auth_url}/user",
+            headers={
+                "apikey": settings.supabase_anon_key,
+                "Authorization": f"Bearer {token_hash}",
+                "Content-Type": "application/json",
+            },
+            json={"password": payload.password},
+            timeout=10,
+        )
+        
+        if update_response.status_code not in [200, 204]:
+            error_data = update_response.json() if update_response.headers.get("content-type", "").startswith("application/json") else {}
+            error_msg = error_data.get("error_description") or error_data.get("error") or "Falha ao resetar senha"
+            raise HTTPException(status_code=400, detail=error_msg)
+        
+        return {
+            "message": "Senha resetada com sucesso. Você já pode fazer login com a nova senha.",
+            "success": True
+        }
+    except HTTPException:
+        raise
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao conectar ao Supabase: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao resetar senha: {str(e)}")
 
 
 @app.get("/tenants/{tenant_id}/loans")

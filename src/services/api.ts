@@ -489,3 +489,81 @@ export async function deleteClient(
   const body = await toJson(response);
   assertOk(response, body);
 }
+
+export interface ForgotPasswordResponse {
+  message: string;
+  success: boolean;
+}
+
+export async function forgotPassword(email: string): Promise<ForgotPasswordResponse> {
+  if (!NORMALIZED_BASE_URL) {
+    throw new Error('Backend não configurado. Configure VITE_API_BASE_URL.');
+  }
+
+  try {
+    const response = await fetch(`${NORMALIZED_BASE_URL}/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+
+    const body = await toJson(response);
+    
+    if (!response.ok) {
+      const errorMessage = body?.detail || body?.error || body?.message || `Erro ${response.status}: ${response.statusText}`;
+      throw new Error(errorMessage);
+    }
+
+    return {
+      message: body?.message || 'Email de reset enviado com sucesso.',
+      success: body?.success ?? true,
+    };
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error(`Não foi possível conectar ao servidor. Verifique se a API está acessível.`);
+    }
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('Erro ao solicitar reset de senha. Tente novamente.');
+  }
+}
+
+export interface ResetPasswordResponse {
+  message: string;
+  success: boolean;
+}
+
+export async function resetPassword(password: string, tokenHash: string): Promise<ResetPasswordResponse> {
+  if (!NORMALIZED_BASE_URL) {
+    throw new Error('Backend não configurado. Configure VITE_API_BASE_URL.');
+  }
+
+  try {
+    const response = await fetch(`${NORMALIZED_BASE_URL}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password, token_hash: tokenHash }),
+    });
+
+    const body = await toJson(response);
+    
+    if (!response.ok) {
+      const errorMessage = body?.detail || body?.error || body?.message || `Erro ${response.status}: ${response.statusText}`;
+      throw new Error(errorMessage);
+    }
+
+    return {
+      message: body?.message || 'Senha resetada com sucesso.',
+      success: body?.success ?? true,
+    };
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error(`Não foi possível conectar ao servidor. Verifique se a API está acessível.`);
+    }
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('Erro ao resetar senha. Tente novamente.');
+  }
+}
