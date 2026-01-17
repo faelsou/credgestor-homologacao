@@ -58,12 +58,17 @@ def main():
         
         # Buscar metadados de cada usuário individualmente via API REST
         users = []
+        users_by_email = {}  # Para evitar duplicatas
         headers = {
             "apikey": SERVICE_ROLE_KEY,
             "Authorization": f"Bearer {SERVICE_ROLE_KEY}",
         }
         
         for email in tenant_users_emails:
+            # Evitar buscar o mesmo email múltiplas vezes
+            if email in users_by_email:
+                continue
+                
             try:
                 # Buscar usuário por email usando API REST direta
                 search_url = f"{SUPABASE_URL}/auth/v1/admin/users"
@@ -74,17 +79,25 @@ def main():
                     response_data = search_response.json()
                     users_list = response_data.get('users', [])
                     if users_list:
-                        users.append(users_list[0])  # Pega o primeiro usuário encontrado
+                        user_data = users_list[0]  # Pega o primeiro usuário encontrado
+                        users_by_email[email] = user_data
+                        users.append(user_data)
                     else:
                         print(f"⚠️  Usuário {email} não encontrado via API")
-                        users.append({'email': email, 'id': None, 'user_metadata': {}, 'app_metadata': {}})
+                        user_data = {'email': email, 'id': None, 'user_metadata': {}, 'app_metadata': {}}
+                        users_by_email[email] = user_data
+                        users.append(user_data)
                 else:
                     print(f"⚠️  Erro ao buscar usuário {email}: Status {search_response.status_code}")
-                    users.append({'email': email, 'id': None, 'user_metadata': {}, 'app_metadata': {}})
+                    user_data = {'email': email, 'id': None, 'user_metadata': {}, 'app_metadata': {}}
+                    users_by_email[email] = user_data
+                    users.append(user_data)
             except Exception as e:
                 print(f"⚠️  Erro ao buscar usuário {email}: {e}")
                 # Se não conseguir via API, criar objeto básico com email
-                users.append({'email': email, 'id': None, 'user_metadata': {}, 'app_metadata': {}})
+                user_data = {'email': email, 'id': None, 'user_metadata': {}, 'app_metadata': {}}
+                users_by_email[email] = user_data
+                users.append(user_data)
         
         if not users:
             print("❌ Nenhum usuário encontrado após verificação")
