@@ -365,30 +365,43 @@ def _resolve_tenant_id(user: Any, requested_tenant_id: str | None) -> str | None
     metadata = _get_user_metadata(user)
     app_metadata = _get_app_metadata(user)
     metadata_tenant_id = metadata.get("tenant_id") or app_metadata.get("tenant_id")
+    
+    print(f"🔍 [DEBUG] _resolve_tenant_id:")
+    print(f"   requested_tenant_id: {requested_tenant_id}")
+    print(f"   metadata tenant_id: {metadata.get('tenant_id')}")
+    print(f"   app_metadata tenant_id: {app_metadata.get('tenant_id')}")
+    print(f"   metadata_tenant_id resolvido: {metadata_tenant_id}")
 
     if (
         metadata_tenant_id
         and requested_tenant_id
         and metadata_tenant_id != requested_tenant_id
     ):
+        print(f"❌ [DEBUG] ERRO: Tenant do token ({metadata_tenant_id}) != tenant da requisição ({requested_tenant_id})")
         raise HTTPException(
             status_code=403, detail="Tenant do token não corresponde à requisição."
         )
 
     if metadata_tenant_id:
+        print(f"✅ [DEBUG] Usando tenant_id dos metadados: {metadata_tenant_id}")
         return metadata_tenant_id
 
     email = _get_user_email(user)
+    print(f"⚠️  [DEBUG] Tenant_id não encontrado nos metadados. Buscando por email: {email}")
 
     if requested_tenant_id:
+        print(f"🔍 [DEBUG] Verificando se usuário está no tenant solicitado: {requested_tenant_id}")
         _assert_user_in_tenant(email, requested_tenant_id)
         return requested_tenant_id
 
     if email:
         tenant_ids = _tenant_ids_for_email(email)
+        print(f"🔍 [DEBUG] Tenant_ids encontrados para {email}: {tenant_ids}")
         if len(tenant_ids) == 1:
+            print(f"✅ [DEBUG] Usando único tenant_id encontrado: {tenant_ids[0]}")
             return tenant_ids[0]
         if len(tenant_ids) > 1:
+            print(f"❌ [DEBUG] ERRO: Usuário está em múltiplos tenants: {tenant_ids}")
             raise HTTPException(
                 status_code=400,
                 detail="Informe o tenant_id para contas associadas a múltiplos tenants.",
@@ -462,6 +475,13 @@ def require_auth(
     app_metadata = _get_app_metadata(user)
     tenant_id = metadata.get("tenant_id") or app_metadata.get("tenant_id")
     role = _get_role_from_user(user)
+    
+    # DEBUG: Log do tenant_id resolvido
+    print(f"🔍 [DEBUG] require_auth: user_id={user_id}, email={email}")
+    print(f"   metadata tenant_id: {metadata.get('tenant_id')}")
+    print(f"   app_metadata tenant_id: {app_metadata.get('tenant_id')}")
+    print(f"   tenant_id resolvido: {tenant_id}")
+    print(f"   role: {role}")
 
     return AuthContext(
         user_id=user_id,
@@ -475,7 +495,10 @@ def require_auth(
 def _authenticate_user(payload: LoginRequest):
     try:
         settings = get_settings()
-        tenant_id = payload.tenant_id or settings.default_tenant_id
+        # REGRA CRÍTICA: NÃO usar default_tenant_id como fallback
+        # Cada usuário DEVE ter seu próprio tenant_id nos metadados
+        tenant_id = payload.tenant_id  # Não usar default_tenant_id
+        print(f"🔍 [DEBUG] _authenticate_user: email={payload.email}, tenant_id do payload={tenant_id}")
 
         if not settings.supabase_anon_key or settings.supabase_anon_key.strip() == "":
             raise HTTPException(
@@ -504,10 +527,11 @@ def _authenticate_user(payload: LoginRequest):
             raise HTTPException(status_code=401, detail="Usuário inválido.")
 
         resolved_tenant_id = _resolve_tenant_id(user, tenant_id)
+        print(f"🔍 [DEBUG] _authenticate_user: resolved_tenant_id={resolved_tenant_id}")
         if not resolved_tenant_id:
             raise HTTPException(
                 status_code=400,
-                detail="tenant_id não informado ou não identificado para o usuário.",
+                detail="tenant_id não informado ou não identificado para o usuário. Entre em contato com o administrador.",
             )
 
         access_token = (

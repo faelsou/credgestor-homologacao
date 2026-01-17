@@ -30,13 +30,28 @@ def main():
     print("📋 1. TENANTS E USUÁRIOS:")
     print("-" * 70)
     try:
-        result = supabase.table("tenants").select("*, tenant_users(*)").execute()
-        for tenant in result.data:
-            tenant_users = tenant.get('tenant_users', [])
-            active_users = [tu for tu in tenant_users if tu.get('ativo', False)]
-            print(f"Tenant: {tenant.get('name')} (ID: {tenant.get('id')})")
-            print(f"  Usuários: {len(active_users)}")
-            for tu in active_users:
+        # Buscar tenants separadamente
+        tenants_result = supabase.table("tenants").select("*").execute()
+        tenants = {t.get('id'): t for t in tenants_result.data}
+        
+        # Buscar tenant_users separadamente
+        tenant_users_result = supabase.table("tenant_users").select("*").eq("ativo", True).execute()
+        
+        # Agrupar usuários por tenant
+        tenants_with_users = {}
+        for tu in tenant_users_result.data:
+            tenant_id = tu.get('tenant_id')
+            if tenant_id not in tenants_with_users:
+                tenants_with_users[tenant_id] = []
+            tenants_with_users[tenant_id].append(tu)
+        
+        # Mostrar resultados
+        for tenant_id, tenant in tenants.items():
+            users = tenants_with_users.get(tenant_id, [])
+            print(f"Tenant: {tenant.get('name')} (ID: {tenant_id})")
+            print(f"  Email: {tenant.get('email')}")
+            print(f"  Usuários ativos: {len(users)}")
+            for tu in users:
                 print(f"    - {tu.get('email')} (Role: {tu.get('role')})")
             print()
     except Exception as e:
