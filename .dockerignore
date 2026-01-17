@@ -25,9 +25,10 @@ docker-compose*.yml
 !README.md
 docs/
 .vscode/
-.idea/# Backend (não necessário para frontend)
-backend/
-requirements.txt
+.idea/
+# Backend - NÃO ignorar quando buildando backend (comentado para permitir build do backend)
+# backend/
+# requirements.txt
 
 # Scripts de desenvolvimento
 scripts/
