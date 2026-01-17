@@ -1,0 +1,298 @@
+{
+  "name": "Cobrança Automática - Vencimento Hoje (Simplificado)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-node",
+      "name": "Agendamento Diário 8h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  par.id as parcela_id,\n  par.numero_parcela,\n  par.valor_parcela,\n  par.data_vencimento,\n  par.status,\n  par.tenant_id,\n  c.id as cliente_id,\n  c.nome as cliente_nome,\n  COALESCE(c.whatsapp, c.celular, c.telefone) as telefone,\n  prop.numero_proposta,\n  prop.valor_aprovado\nFROM public.parcelas par\nJOIN public.propostas prop ON par.proposta_id = prop.id\nJOIN public.clients c ON prop.cliente_id = c.id\nWHERE par.data_vencimento = CURRENT_DATE\n  AND par.status IN ('pendente', 'atrasado')\n  AND c.ativo = true\n  AND (c.whatsapp IS NOT NULL OR c.celular IS NOT NULL OR c.telefone IS NOT NULL)\nORDER BY par.data_vencimento, c.nome;",
+        "options": {}
+      },
+      "id": "postgres-query",
+      "name": "Buscar Parcelas Vencendo Hoje",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        460,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar cada parcela e preparar dados para envio\nconst items = $input.all();\nconst processedItems = [];\n\nfor (const item of items) {\n  const parcela = item.json;\n  \n  // Limpar e formatar telefone\n  let telefone = parcela.telefone || '';\n  telefone = telefone.replace(/\\D/g, ''); // Remove não numéricos\n  \n  // Adicionar código do país se necessário\n  if (telefone && !telefone.startsWith('55')) {\n    telefone = '55' + telefone;\n  }\n  \n  // Formatar valor\n  const valorFormatado = new Intl.NumberFormat('pt-BR', {\n    style: 'currency',\n    currency: 'BRL'\n  }).format(parseFloat(parcela.valor_parcela || 0));\n  \n  // Formatar data\n  const dataVenc = new Date(parcela.data_vencimento);\n  const dataFormatada = dataVenc.toLocaleDateString('pt-BR');\n  \n  // Montar mensagem\n  const mensagem = `Olá ${parcela.cliente_nome}!\\n\\n` +\n    `Lembrete: Sua parcela ${parcela.numero_parcela} no valor de ${valorFormatado} ` +\n    `vence hoje (${dataFormatada}).\\n\\n` +\n    `Por favor, realize o pagamento para evitar juros e multa.\\n\\n` +\n    `Proposta: ${parcela.numero_proposta}\\n` +\n    `Obrigado!`;\n  \n  if (telefone && telefone.length >= 10) {\n    processedItems.push({\n      json: {\n        parcela_id: parcela.parcela_id,\n        cliente_id: parcela.cliente_id,\n        cliente_nome: parcela.cliente_nome,\n        telefone: telefone,\n        mensagem: mensagem,\n        valor_parcela: parcela.valor_parcela,\n        numero_parcela: parcela.numero_parcela,\n        data_vencimento: parcela.data_vencimento,\n        numero_proposta: parcela.numero_proposta,\n        tenant_id: parcela.tenant_id\n      }\n    });\n  }\n}\n\nreturn processedItems;"
+      },
+      "id": "process-data",
+      "name": "Processar e Formatar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-batch",
+      "name": "Processar uma por vez",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WHATSAPP_API_URL || 'https://api.evolutionapi.com/v1/message/sendText/YOUR_INSTANCE' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.WHATSAPP_API_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.telefone }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.mensagem }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-whatsapp",
+      "name": "Enviar WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "largerEqual",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "condition-2",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 299,
+              "operator": {
+                "type": "number",
+                "operation": "smallerEqual",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-success",
+      "name": "Sucesso?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.parcelas SET updated_at = CURRENT_TIMESTAMP WHERE id = '{{ $(''Processar e Formatar'').item.json.parcela_id }}';",
+        "options": {}
+      },
+      "id": "update-parcela",
+      "name": "Marcar como Processada",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1560,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "summary-1",
+              "name": "total_processadas",
+              "value": "={{ $('Processar uma por vez').item.json.totalItems || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "summary-2",
+              "name": "data_execucao",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "summary",
+      "name": "Resumo",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1780,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Agendamento Diário 8h": {
+      "main": [
+        [
+          {
+            "node": "Buscar Parcelas Vencendo Hoje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Parcelas Vencendo Hoje": {
+      "main": [
+        [
+          {
+            "node": "Processar e Formatar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar e Formatar": {
+      "main": [
+        [
+          {
+            "node": "Processar uma por vez",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar uma por vez": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Sucesso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sucesso?": {
+      "main": [
+        [
+          {
+            "node": "Marcar como Processada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Marcar como Processada": {
+      "main": [
+        [
+          {
+            "node": "Resumo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
