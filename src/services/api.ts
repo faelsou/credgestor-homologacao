@@ -89,7 +89,7 @@ export const mapApiUserToUser = (apiUser: any): User => ({
   email: apiUser.email || '',
   role: normalizeUserRole(apiUser.role),
   whatsappContacts: apiUser.whatsapp_contacts || apiUser.whatsappContacts || [],
-  tenantId: apiUser.tenant_id || apiUser.tenantId || DEFAULT_TENANT_ID,
+  tenantId: apiUser.tenant_id || apiUser.tenantId, // REGRA: Sem fallback - deve vir do backend
   tenantName: apiUser.tenant_nome || apiUser.tenantName,
 });
 
@@ -263,10 +263,12 @@ export async function fetchClients(token: string, tenantId?: string): Promise<Cl
     throw new Error('Token de acesso inválido ou ausente.');
   }
 
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
-  if (!effectiveTenantId) {
-    throw new Error('tenant_id é obrigatório para buscar clientes.');
+  // REGRA IMPORTANTE: tenant_id é obrigatório - não usar fallback
+  if (!tenantId) {
+    throw new Error('tenant_id é obrigatório para buscar clientes. Usuário deve estar autenticado com tenant válido.');
   }
+
+  const effectiveTenantId = tenantId;
 
   const endpoint = `tenants/${effectiveTenantId}/clients`;
 
@@ -297,10 +299,11 @@ export async function createClient(
     throw new Error('Token de acesso inválido ou ausente para criar clientes.');
   }
 
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
-  if (!effectiveTenantId) {
-    throw new Error('tenant_id é obrigatório para criar clientes.');
+  // REGRA IMPORTANTE: tenant_id é obrigatório - não usar fallback
+  if (!tenantId) {
+    throw new Error('tenant_id é obrigatório para criar clientes. Usuário deve estar autenticado com tenant válido.');
   }
+  const effectiveTenantId = tenantId;
 
   // Monta o payload no formato esperado pelo backend
   const payload = {
@@ -384,10 +387,11 @@ export async function updateClient(
     throw new Error('Token de acesso inválido ou ausente para atualizar clientes.');
   }
 
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
-  if (!effectiveTenantId) {
-    throw new Error('tenant_id é obrigatório para atualizar clientes.');
+  // REGRA IMPORTANTE: tenant_id é obrigatório - não usar fallback
+  if (!tenantId) {
+    throw new Error('tenant_id é obrigatório para atualizar clientes. Usuário deve estar autenticado com tenant válido.');
   }
+  const effectiveTenantId = tenantId;
 
   const payload = {
     nome: client.name,
@@ -471,10 +475,11 @@ export async function deleteClient(
     throw new Error('Token de acesso inválido ou ausente para deletar clientes.');
   }
 
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
-  if (!effectiveTenantId) {
-    throw new Error('tenant_id é obrigatório para deletar clientes.');
+  // REGRA IMPORTANTE: tenant_id é obrigatório - não usar fallback
+  if (!tenantId) {
+    throw new Error('tenant_id é obrigatório para deletar clientes. Usuário deve estar autenticado com tenant válido.');
   }
+  const effectiveTenantId = tenantId;
 
   const endpoint = `tenants/${effectiveTenantId}/clients/${clientId}`;
 
