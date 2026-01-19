@@ -1774,6 +1774,29 @@ const App: React.FC = () => {
           console.error('Erro ao buscar parcelas no backend', installmentError);
           // Continua mesmo se falhar ao carregar parcelas
         }
+        
+        // Carregar usuários do tenant
+        try {
+          const { fetchBackendUsers } = await import('@/services/backendApi');
+          // REGRA: tenantId é obrigatório
+          if (!session.tenantId) {
+            throw new Error('tenantId não está definido na sessão');
+          }
+          const remoteUsers = await fetchBackendUsers(session.accessToken, session.tenantId);
+          const formattedUsers = remoteUsers.map(u => ({
+            id: u.id,
+            email: u.email,
+            name: u.name,
+            role: normalizeUserRole(u.role),
+            whatsappContacts: u.whatsappContacts || [],
+            tenantId: u.tenantId
+          }));
+          setUsersList(formattedUsers);
+          console.log(`✅ Carregados ${formattedUsers.length} usuários para tenant ${session.tenantId}`);
+        } catch (usersError) {
+          console.error('Erro ao buscar usuários no backend', usersError);
+          // Continua mesmo se falhar ao carregar usuários
+        }
       } catch (error) {
         console.error('Erro ao buscar dados no backend', error);
       }
@@ -2637,12 +2660,47 @@ const App: React.FC = () => {
   }, [installments, loans, user?.role, isBackendConfiguredValue, session]);
 
   const addUser = useCallback(async (newUser: User): Promise<User | null> => {
-    if (isBackendConfiguredValue || !supabase) {
+    // Se usar backend, criar usuário via API do backend
+    if (isBackendConfiguredValue && session?.accessToken && session?.tenantId) {
+      try {
+        const { createBackendUser } = await import('@/services/backendApi');
+        const createdUser = await createBackendUser(
+          session.accessToken,
+          session.tenantId,
+          {
+            email: newUser.email,
+            password: newUser.password ?? '',
+            name: newUser.name,
+            role: newUser.role,
+            whatsappContacts: newUser.whatsappContacts ?? []
+          }
+        );
+        
+        const formatted: User = {
+          id: createdUser.id,
+          email: createdUser.email,
+          name: createdUser.name,
+          role: normalizeUserRole(createdUser.role),
+          whatsappContacts: createdUser.whatsappContacts ?? [],
+          tenantId: createdUser.tenantId
+        };
+        
+        setUsersList(prev => [...prev, formatted]);
+        return formatted;
+      } catch (error) {
+        console.error('Erro ao cadastrar usuário no backend', error);
+        throw error;
+      }
+    }
+    
+    // Fallback para modo local (sem backend)
+    if (!supabase) {
       const fallbackUser = { ...newUser, id: newUser.id ?? `local-${Date.now()}` };
       setUsersList(prev => [...prev, fallbackUser]);
       return fallbackUser;
     }
 
+    // Modo Supabase direto (sem backend)
     const { data, error } = await supabase.auth.signUp({
       email: newUser.email,
       password: newUser.password ?? ''
@@ -2656,16 +2714,26 @@ const App: React.FC = () => {
     const authUser = data.user;
     if (!authUser) return null;
 
+    // Obter tenant_id do usuário atual para vincular o novo usuário
+    const currentTenantId = user?.tenantId || session?.tenantId;
+    
+    const userData: any = {
+      id: authUser.id,
+      email: newUser.email,
+      name: newUser.name,
+      role: newUser.role,
+      whatsapp_contacts: newUser.whatsappContacts ?? []
+    };
+    
+    // Se tiver tenant_id, adicionar ao perfil
+    if (currentTenantId) {
+      userData.tenant_id = currentTenantId;
+    }
+
     const { data: profile, error: profileError } = await supabase
       .from('users')
-      .upsert({
-        id: authUser.id,
-        email: newUser.email,
-        name: newUser.name,
-        role: newUser.role,
-        whatsapp_contacts: newUser.whatsappContacts ?? []
-      })
-      .select('id, name, email, role, whatsapp_contacts')
+      .upsert(userData)
+      .select('id, name, email, role, whatsapp_contacts, tenant_id')
       .single();
 
     if (profileError) {
@@ -2673,10 +2741,35 @@ const App: React.FC = () => {
       throw profileError;
     }
 
+    // Criar vínculo em tenant_users se tiver tenant_id
+    if (currentTenantId) {
+      try {
+        await supabase
+          .from('tenant_users')
+          .upsert({
+            tenant_id: currentTenantId,
+            user_id: authUser.id,
+            email: newUser.email,
+            role: newUser.role,
+            ativo: true,
+            metadata: {
+              name: newUser.name,
+              role: newUser.role,
+              created_by: user?.email || 'system'
+            }
+          }, {
+            on_conflict: 'tenant_id,email'
+          });
+      } catch (tenantError) {
+        console.warn('Aviso: Erro ao criar vínculo em tenant_users', tenantError);
+        // Não falha a criação do usuário se o vínculo falhar
+      }
+    }
+
     const formatted = mapDbUserToUser(profile);
     setUsersList(prev => [...prev, formatted]);
     return formatted;
-  }, [mapDbUserToUser, isBackendConfiguredValue]);
+  }, [mapDbUserToUser, isBackendConfiguredValue, session, user]);
 
   const removeUser = useCallback(async (id: string) => {
     if (id === user?.id) {
