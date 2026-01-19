@@ -6,6 +6,7 @@ from fastapi import Body, Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from .settings import get_settings
 from .supabase_client import (
@@ -22,6 +23,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Instrumentação Prometheus para métricas da API
+instrumentator = Instrumentator(
+    should_group_status_codes=False,
+    should_ignore_untemplated=True,
+    should_instrument_requests_inprogress=True,
+    excluded_handlers=["/metrics", "/health"],  # Exclui endpoints de métricas e health
+    inprogress_name="http_requests_inprogress",
+    inprogress_labels=True,
+)
+instrumentator.instrument(app).expose(app)
 
 TENANT_TABLES: Dict[str, str] = {
     "clients": "tenant_id",
@@ -103,7 +115,7 @@ def _apply_filters(table: str, filters: List[Tuple[str, Any]] | None = None):
             print(f"🔍 [DEBUG] Aplicando filtros na tabela '{table}':")
             for column, value in filters:
                 print(f"   - {column} = {value}")
-                query = query.eq(column, value)
+            query = query.eq(column, value)
         else:
             print(f"⚠️  [DEBUG] ATENÇÃO: Nenhum filtro aplicado na tabela '{table}'!")
         response = query.execute()

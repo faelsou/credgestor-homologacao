@@ -72,6 +72,12 @@ services:
         
         # Serviço da API
         - traefik.http.services.credgestor-api.loadbalancer.server.port=8000
+        
+        # Labels para Prometheus Service Discovery
+        - prometheus.io/scrape=true
+        - prometheus.io/port=8000
+        - prometheus.io/path=/metrics
+        - prometheus.io/job=credgestor-api
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

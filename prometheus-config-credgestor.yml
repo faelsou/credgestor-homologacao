@@ -1,0 +1,38 @@
+# Configuração do Prometheus para coletar métricas do CredGestor
+# Adicione este job ao seu arquivo prometheus.yml do stack observability
+
+scrape_configs:
+  # ... outros jobs existentes (cadvisor, node_exporter, etc.) ...
+  
+  # Job para coletar métricas da API CredGestor
+  - job_name: 'credgestor-api'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: '/metrics'
+    static_configs:
+      # Opção 1: Se a API está na mesma rede Docker
+      - targets: ['credgestor_api:8000']
+        labels:
+          service: 'credgestor-api'
+          environment: 'production'
+      
+      # Opção 2: Se a API está acessível externamente (descomente se necessário)
+      # - targets: ['167.235.76.26:8000']
+      #   labels:
+      #     service: 'credgestor-api'
+      #     environment: 'production'
+    
+    # Opção 3: Se usar Docker Swarm Service Discovery (descomente se necessário)
+    # docker_sd_configs:
+    #   - host: unix:///var/run/docker.sock
+    #     role: tasks
+    #     filters:
+    #       - name: label
+    #         values: ["prometheus.io/scrape=true"]
+    # relabel_configs:
+    #   - source_labels: [__meta_docker_container_label_prometheus_io_job]
+    #     target_label: job
+    #   - source_labels: [__meta_docker_container_label_prometheus_io_port]
+    #     target_label: __address__
+    #     regex: (.+)
+    #     replacement: $1:8000
