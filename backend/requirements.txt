@@ -3,3 +3,6 @@ uvicorn[standard]>=0.30.0,<1.0
 supabase>=2.4.0
 pydantic-settings>=2.2.1
 python-dotenv>=1.0.1
+
+# Monitoramento Prometheus
+prometheus-fastapi-instrumentator>=7.0.0
