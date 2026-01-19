@@ -67,21 +67,30 @@ export const DashboardHome: React.FC = () => {
     [loans]
   );
 
+  // Função auxiliar para normalizar data para comparação
+  const normalizeDateString = (dateStr: string): string => {
+    // Se já está no formato YYYY-MM-DD, retorna
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    // Se tem timestamp, remove
+    if (dateStr.includes('T')) return dateStr.split('T')[0];
+    if (dateStr.includes(' ')) return dateStr.split(' ')[0];
+    return dateStr;
+  };
+
   // Aplicar filtros de data para parcelados
   const parceladosFilteredData = useMemo(() => {
     const { start, end } = parceladosDateRange === 'ALL' && parceladosStartDate && parceladosEndDate
       ? { start: parceladosStartDate, end: parceladosEndDate }
       : getDateRange(parceladosDateRange);
     
-    const startDate = new Date(start);
-    startDate.setHours(0, 0, 0, 0);
-    const endDate = new Date(end);
-    endDate.setHours(23, 59, 59, 999);
+    // Normalizar datas de início e fim para comparação
+    const startNormalized = normalizeDateString(start);
+    const endNormalized = normalizeDateString(end);
 
     const parceladosLoanIds = new Set(parceladosLoans.map(l => l.id));
     return installments.filter(inst => {
-      const due = new Date(inst.dueDate);
-      return parceladosLoanIds.has(inst.loanId) && due >= startDate && due <= endDate;
+      const dueNormalized = normalizeDateString(inst.dueDate);
+      return parceladosLoanIds.has(inst.loanId) && dueNormalized >= startNormalized && dueNormalized <= endNormalized;
     });
   }, [installments, parceladosLoans, parceladosDateRange, parceladosStartDate, parceladosEndDate]);
 
@@ -91,15 +100,14 @@ export const DashboardHome: React.FC = () => {
       ? { start: jurosStartDate, end: jurosEndDate }
       : getDateRange(jurosDateRange);
     
-    const startDate = new Date(start);
-    startDate.setHours(0, 0, 0, 0);
-    const endDate = new Date(end);
-    endDate.setHours(23, 59, 59, 999);
+    // Normalizar datas de início e fim para comparação
+    const startNormalized = normalizeDateString(start);
+    const endNormalized = normalizeDateString(end);
 
     const jurosLoanIds = new Set(jurosLoans.map(l => l.id));
     return installments.filter(inst => {
-      const due = new Date(inst.dueDate);
-      return jurosLoanIds.has(inst.loanId) && due >= startDate && due <= endDate;
+      const dueNormalized = normalizeDateString(inst.dueDate);
+      return jurosLoanIds.has(inst.loanId) && dueNormalized >= startNormalized && dueNormalized <= endNormalized;
     });
   }, [installments, jurosLoans, jurosDateRange, jurosStartDate, jurosEndDate]);
 
@@ -158,7 +166,8 @@ export const DashboardHome: React.FC = () => {
     const grouped = new Map<string, { date: string; received: number; receivable: number }>();
     
     parceladosFilteredData.forEach(inst => {
-      const dateKey = inst.dueDate.split('T')[0];
+      // Normalizar a data para YYYY-MM-DD (remover timestamp se presente)
+      const dateKey = inst.dueDate.includes('T') ? inst.dueDate.split('T')[0] : inst.dueDate.split(' ')[0];
       const existing = grouped.get(dateKey) || { date: dateKey, received: 0, receivable: 0 };
       
       if (inst.status === InstallmentStatus.PAID) {
@@ -171,7 +180,12 @@ export const DashboardHome: React.FC = () => {
     });
 
     return Array.from(grouped.values())
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .sort((a, b) => {
+        // Comparar datas de forma segura
+        const dateA = a.date.split('-').map(Number);
+        const dateB = b.date.split('-').map(Number);
+        return new Date(dateA[0], dateA[1] - 1, dateA[2]).getTime() - new Date(dateB[0], dateB[1] - 1, dateB[2]).getTime();
+      })
       .slice(-30); // Últimos 30 dias
   }, [parceladosFilteredData]);
 
@@ -180,7 +194,8 @@ export const DashboardHome: React.FC = () => {
     const grouped = new Map<string, { date: string; received: number; receivable: number }>();
     
     jurosFilteredData.forEach(inst => {
-      const dateKey = inst.dueDate.split('T')[0];
+      // Normalizar a data para YYYY-MM-DD (remover timestamp se presente)
+      const dateKey = inst.dueDate.includes('T') ? inst.dueDate.split('T')[0] : inst.dueDate.split(' ')[0];
       const existing = grouped.get(dateKey) || { date: dateKey, received: 0, receivable: 0 };
       
       if (inst.status === InstallmentStatus.PAID) {
@@ -193,7 +208,12 @@ export const DashboardHome: React.FC = () => {
     });
 
     return Array.from(grouped.values())
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .sort((a, b) => {
+        // Comparar datas de forma segura
+        const dateA = a.date.split('-').map(Number);
+        const dateB = b.date.split('-').map(Number);
+        return new Date(dateA[0], dateA[1] - 1, dateA[2]).getTime() - new Date(dateB[0], dateB[1] - 1, dateB[2]).getTime();
+      })
       .slice(-30); // Últimos 30 dias
   }, [jurosFilteredData]);
 
