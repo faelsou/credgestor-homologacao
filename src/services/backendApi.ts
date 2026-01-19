@@ -650,3 +650,85 @@ export async function deleteBackendInstallment(
   const body = await toJson(response);
   assertOk(response, body);
 }
+
+/**
+ * Normaliza um usuário da API para o formato do frontend
+ */
+const normalizeApiUser = (apiUser: any): any => {
+  return {
+    id: apiUser.id || '',
+    email: apiUser.email || '',
+    name: apiUser.name || apiUser.email?.split('@')[0] || 'Usuário',
+    role: apiUser.role || 'COLLECTION',
+    whatsappContacts: apiUser.whatsapp_contacts || apiUser.whatsappContacts || [],
+    tenantId: apiUser.tenant_id || apiUser.tenantId,
+  };
+};
+
+/**
+ * Cria um usuário no backend dentro do tenant especificado
+ */
+export async function createBackendUser(
+  token: string,
+  tenantId: string,
+  user: { email: string; password: string; name: string; role: string; whatsappContacts?: string[] }
+): Promise<any> {
+  const bearerToken = token?.replace(/[\r\n]+/g, '').trim();
+  if (!bearerToken) {
+    throw new Error('Token de acesso inválido ou ausente para criar usuários.');
+  }
+
+  const payload = {
+    email: user.email,
+    password: user.password,
+    name: user.name,
+    role: user.role,
+    whatsapp_contacts: user.whatsappContacts || [],
+  };
+
+  const endpoint = `tenants/${tenantId}/users`;
+
+  const response = await fetch(buildUrl(endpoint), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearerToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const body = await toJson(response);
+  assertOk(response, body);
+
+  const record = Array.isArray(body) ? body[0] : body;
+  return normalizeApiUser(record);
+}
+
+/**
+ * Busca usuários do tenant no backend
+ */
+export async function fetchBackendUsers(
+  token: string,
+  tenantId: string
+): Promise<any[]> {
+  const bearerToken = token?.replace(/[\r\n]+/g, '').trim();
+  if (!bearerToken) {
+    throw new Error('Token de acesso inválido ou ausente.');
+  }
+
+  const endpoint = `tenants/${tenantId}/users`;
+
+  const response = await fetch(buildUrl(endpoint), {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearerToken}`,
+    },
+  });
+
+  const body = await toJson(response);
+  assertOk(response, body);
+
+  const records = Array.isArray(body) ? body : body?.data || [];
+  return records.map(normalizeApiUser);
+}

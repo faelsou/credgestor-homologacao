@@ -95,17 +95,10 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
             
             <div className="hidden md:flex space-x-8">
               <a href="#funcionalidades" className="text-slate-600 hover:text-emerald-600 font-medium transition">Funcionalidades</a>
-              <a href="#como-funciona" className="text-slate-600 hover:text-emerald-600 font-medium transition">Como Funciona</a>
               <a href="#planos" className="text-slate-600 hover:text-emerald-600 font-medium transition">Planos</a>
             </div>
 
             <div className="hidden md:flex items-center space-x-4">
-              <button
-                onClick={() => openAuthModal()}
-                className="text-emerald-600 font-semibold hover:text-emerald-700"
-              >
-                Entrar
-              </button>
               <button
                 onClick={() => openAuthModal()}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg font-semibold transition shadow-lg shadow-emerald-200"
@@ -126,10 +119,8 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
         {isMenuOpen && (
           <div className="md:hidden absolute top-16 left-0 w-full bg-white border-b border-slate-200 shadow-xl p-4 flex flex-col space-y-4">
             <a href="#funcionalidades" className="text-slate-700 font-medium py-2" onClick={toggleMenu}>Funcionalidades</a>
-            <a href="#como-funciona" className="text-slate-700 font-medium py-2" onClick={toggleMenu}>Como Funciona</a>
             <a href="#planos" className="text-slate-700 font-medium py-2" onClick={toggleMenu}>Planos</a>
             <hr className="border-slate-100"/>
-            <button onClick={() => openAuthModal()} className="w-full text-center text-emerald-600 font-bold py-3">Entrar</button>
             <button onClick={() => openAuthModal()} className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold">Entrar agora</button>
           </div>
         )}

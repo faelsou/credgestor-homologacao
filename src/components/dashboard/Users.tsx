@@ -14,16 +14,6 @@ export const UsersView: React.FC = () => {
   const [role, setRole] = useState<UserRole>(UserRole.COLLECTION);
   const [whatsappContacts, setWhatsappContacts] = useState('');
 
-  if (user?.role !== UserRole.ADMIN) {
-    return (
-      <div className="text-center p-10 text-slate-500">
-        <Shield size={48} className="mx-auto mb-4 text-slate-300" />
-        <h2 className="text-xl font-bold text-slate-700">Acesso Negado</h2>
-        <p>Apenas administradores podem gerenciar a equipe.</p>
-      </div>
-    );
-  }
-
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     const newUser: User = {
