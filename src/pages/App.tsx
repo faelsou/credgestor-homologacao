@@ -1968,7 +1968,7 @@ const App: React.FC = () => {
         sessionStorage.removeItem('current_tenant_id');
         // Armazenar o novo tenantId
         sessionStorage.setItem('current_tenant_id', normalizedUser.tenantId);
-        
+
         setUser(normalizedUser);
         setUsersList([normalizedUser]);
         setSession(sessionInfo);
@@ -2289,9 +2289,15 @@ const App: React.FC = () => {
 
     // Função auxiliar para adicionar meses a uma data
     const addMonths = (dateString: string, months: number) => {
-      const baseDate = new Date(dateString);
-      const newDate = new Date(baseDate.setMonth(baseDate.getMonth() + months));
-      return newDate.toISOString().split('T')[0];
+      // Parse a data no formato YYYY-MM-DD evitando problemas de fuso horário
+      const [year, month, day] = dateString.split('-').map(Number);
+      const baseDate = new Date(year, month - 1, day);
+      const newDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + months, baseDate.getDate());
+      // Formatar de volta para YYYY-MM-DD
+      const yearStr = newDate.getFullYear();
+      const monthStr = String(newDate.getMonth() + 1).padStart(2, '0');
+      const dayStr = String(newDate.getDate()).padStart(2, '0');
+      return `${yearStr}-${monthStr}-${dayStr}`;
     };
 
     if (loan.model === LoanModel.INTEREST_ONLY) {
