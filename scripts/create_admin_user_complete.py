@@ -137,7 +137,7 @@ def create_unique_tenant(supabase: Client, user_email: str, user_name: str):
             return None
     except Exception as e:
         print(f"❌ Erro ao criar tenant: {e}")
-        return None
+    return None
 
 def create_user_in_public_users(supabase: Client, user_id: str, email: str, name: str, role: str, tenant_id: str):
     """Cria ou atualiza o usuário na tabela public.users"""
