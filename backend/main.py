@@ -830,6 +830,200 @@ def create_user(
     return _insert_row("users", payload)
 
 
+@app.get("/tenants/{tenant_id}/users")
+def list_tenant_users(
+    tenant_id: str,
+    context: AuthContext = Depends(require_auth)
+):
+    """
+    Lista todos os usuários do tenant especificado.
+    Qualquer usuário autenticado pode listar usuários do seu próprio tenant.
+    """
+    # Verificar se o usuário tem acesso ao tenant
+    _enforce_tenant_access(context, tenant_id)
+    
+    try:
+        supabase = get_supabase_admin_client()
+        
+        # Buscar usuários do tenant em tenant_users
+        response = supabase.table("tenant_users").select(
+            "id, tenant_id, user_id, email, role, ativo, metadata, created_at"
+        ).eq("tenant_id", tenant_id).eq("ativo", True).execute()
+        
+        if response.error:
+            raise HTTPException(status_code=500, detail=f"Erro ao buscar usuários: {response.error}")
+        
+        # Buscar informações adicionais de public.users
+        users_data = []
+        for tenant_user in (response.data or []):
+            user_id = tenant_user.get("user_id")
+            if user_id:
+                user_response = supabase.table("users").select(
+                    "id, email, name, role, whatsapp_contacts, tenant_id"
+                ).eq("id", user_id).single().execute()
+                
+                if user_response.data:
+                    users_data.append({
+                        **user_response.data,
+                        "tenant_user_id": tenant_user.get("id"),
+                        "ativo": tenant_user.get("ativo", True)
+                    })
+                else:
+                    # Se não encontrar em users, usar dados de tenant_users
+                    users_data.append({
+                        "id": user_id,
+                        "email": tenant_user.get("email"),
+                        "name": tenant_user.get("metadata", {}).get("name", tenant_user.get("email", "").split("@")[0]),
+                        "role": tenant_user.get("role"),
+                        "whatsapp_contacts": [],
+                        "tenant_id": tenant_id
+                    })
+        
+        return users_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao listar usuários do tenant: {str(e)}"
+        )
+
+
+@app.post("/tenants/{tenant_id}/users")
+def create_tenant_user(
+    tenant_id: str,
+    payload: Dict[str, Any] = Body(...),
+    context: AuthContext = Depends(require_auth)
+):
+    """
+    Permite que qualquer usuário autenticado crie outros usuários no mesmo tenant.
+    O novo usuário será vinculado ao tenant_id especificado.
+    """
+    import requests
+    
+    # Verificar se o usuário tem acesso ao tenant
+    _enforce_tenant_access(context, tenant_id)
+    
+    settings = get_settings()
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        raise HTTPException(
+            status_code=500, 
+            detail="Configuração do Supabase incompleta. SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são necessários."
+        )
+    
+    # Extrair dados do payload
+    email = payload.get("email")
+    password = payload.get("password")
+    name = payload.get("name", email.split("@")[0] if email else "Usuário")
+    role = payload.get("role", "COLLECTION")
+    whatsapp_contacts = payload.get("whatsapp_contacts", [])
+    
+    if not email or not password:
+        raise HTTPException(
+            status_code=400,
+            detail="Email e senha são obrigatórios."
+        )
+    
+    # Criar usuário no Supabase Auth
+    auth_url = f"{settings.supabase_url}/auth/v1/admin/users"
+    auth_headers = {
+        "apikey": settings.supabase_service_role_key,
+        "Authorization": f"Bearer {settings.supabase_service_role_key}",
+        "Content-Type": "application/json"
+    }
+    
+    auth_payload = {
+        "email": email,
+        "password": password,
+        "email_confirm": True,
+        "user_metadata": {
+            "name": name,
+            "tenant_id": tenant_id
+        },
+        "app_metadata": {
+            "provider": "email",
+            "providers": ["email"],
+            "role": role,
+            "tenant_id": tenant_id
+        }
+    }
+    
+    try:
+        auth_response = requests.post(auth_url, json=auth_payload, headers=auth_headers, timeout=10)
+        auth_response.raise_for_status()
+        auth_data = auth_response.json()
+        user_id = auth_data.get("id")
+        
+        if not user_id:
+            raise HTTPException(status_code=500, detail="Falha ao criar usuário no Auth: ID não retornado.")
+        
+        # Criar registro em public.users
+        supabase = get_supabase_admin_client()
+        user_profile = {
+            "id": user_id,
+            "email": email,
+            "name": name,
+            "role": role,
+            "whatsapp_contacts": whatsapp_contacts,
+            "tenant_id": tenant_id
+        }
+        
+        users_response = supabase.table("users").upsert(user_profile).execute()
+        if users_response.error:
+            print(f"⚠️  Aviso: Erro ao criar perfil em public.users: {users_response.error}")
+        
+        # Criar vínculo em tenant_users
+        tenant_user_data = {
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "email": email,
+            "role": role,
+            "ativo": True,
+            "metadata": {
+                "name": name,
+                "role": role,
+                "created_by": context.email
+            }
+        }
+        
+        tenant_users_response = supabase.table("tenant_users").upsert(
+            tenant_user_data,
+            on_conflict="tenant_id,email"
+        ).execute()
+        
+        if tenant_users_response.error:
+            print(f"⚠️  Aviso: Erro ao criar vínculo em tenant_users: {tenant_users_response.error}")
+        
+        # Retornar dados do usuário criado
+        return {
+            "id": user_id,
+            "email": email,
+            "name": name,
+            "role": role,
+            "whatsapp_contacts": whatsapp_contacts,
+            "tenant_id": tenant_id
+        }
+        
+    except requests.exceptions.HTTPError as e:
+        error_data = {}
+        try:
+            if e.response and e.response.content:
+                error_data = e.response.json()
+        except:
+            pass
+        
+        error_msg = error_data.get("msg", error_data.get("message", str(e)))
+        raise HTTPException(
+            status_code=e.response.status_code if e.response else 500,
+            detail=f"Erro ao criar usuário no Auth: {error_msg}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao criar usuário: {str(e)}"
+        )
+
+
 @app.post("/auth/login")
 def login(payload: LoginRequest):
     return _authenticate_user(payload)
