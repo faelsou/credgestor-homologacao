@@ -37,9 +37,15 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const [promissoryNote, setPromissoryNote] = useState<PromissoryNote>(createDefaultPromissoryNote(startDate));
 
   const addMonths = (dateString: string, months: number) => {
-    const baseDate = new Date(dateString);
-    const newDate = new Date(baseDate.setMonth(baseDate.getMonth() + months));
-    return newDate.toISOString().split('T')[0];
+    // Parse a data no formato YYYY-MM-DD evitando problemas de fuso horário
+    const [year, month, day] = dateString.split('-').map(Number);
+    const baseDate = new Date(year, month - 1, day);
+    const newDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + months, baseDate.getDate());
+    // Formatar de volta para YYYY-MM-DD
+    const yearStr = newDate.getFullYear();
+    const monthStr = String(newDate.getMonth() + 1).padStart(2, '0');
+    const dayStr = String(newDate.getDate()).padStart(2, '0');
+    return `${yearStr}-${monthStr}-${dayStr}`;
   };
 
   const calculatePriceInstallment = (principal: number, rateDecimal: number, periods: number) => {
@@ -58,7 +64,9 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     const priceInstallment = calculatePriceInstallment(amount, rateDecimal, installmentsCount || 1);
 
     for (let i = 1; i <= installmentsCount; i++) {
-      const dueDate = addMonths(startDate, i);
+      // A primeira parcela deve ser calculada a partir da data de início
+      // Se i=1, adiciona 0 meses (usa a data de início), se i=2, adiciona 1 mês, etc.
+      const dueDate = addMonths(startDate, i - 1);
       let installmentAmount = amortizationBase;
       let interestPortion = 0;
       let principalPortion = amortizationBase;

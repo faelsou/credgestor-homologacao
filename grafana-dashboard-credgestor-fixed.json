@@ -111,12 +111,12 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(http_requests_total{job=~\"credgestor.*|.*api.*\"}[5m])) by (method, endpoint)",
-          "legendFormat": "{{method}} {{endpoint}}",
+          "expr": "sum(rate(http_requests_total{job=\"credgestor-api\"}[5m])) by (method, handler)",
+          "legendFormat": "{{method}} {{handler}}",
           "refId": "A"
         }
       ],
-      "title": "Taxa de Requisições por Endpoint (RPS) - Requer API expondo /metrics",
+      "title": "Taxa de Requisições por Endpoint (RPS)",
       "type": "timeseries"
     },
     {
@@ -182,7 +182,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=~\"credgestor.*|.*api.*\"}[5m])) by (le, endpoint)) * 1000",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_highr_seconds_bucket{job=\"credgestor-api\"}[5m])) by (le)) * 1000",
           "legendFormat": "p95",
           "refId": "A"
         },
@@ -191,7 +191,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{job=~\"credgestor.*|.*api.*\"}[5m])) by (le, endpoint)) * 1000",
+          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_highr_seconds_bucket{job=\"credgestor-api\"}[5m])) by (le)) * 1000",
           "legendFormat": "p50",
           "refId": "B"
         },
@@ -200,12 +200,12 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=~\"credgestor.*|.*api.*\"}[5m])) by (le, endpoint)) * 1000",
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_highr_seconds_bucket{job=\"credgestor-api\"}[5m])) by (le)) * 1000",
           "legendFormat": "p99",
           "refId": "C"
         }
       ],
-      "title": "Latência (p50, p95, p99) - Requer API expondo /metrics",
+      "title": "Latência (p50, p95, p99)",
       "type": "stat"
     },
     {
@@ -294,7 +294,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(http_requests_total{job=~\"credgestor.*|.*api.*\", status=~\"5..\"}[5m])) by (status)",
+          "expr": "sum(rate(http_requests_total{job=\"credgestor-api\", status=~\"5..\"}[5m])) by (status)",
           "legendFormat": "5xx - {{status}}",
           "refId": "A"
         },
@@ -303,12 +303,12 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(http_requests_total{job=~\"credgestor.*|.*api.*\", status=~\"4..\"}[5m])) by (status)",
+          "expr": "sum(rate(http_requests_total{job=\"credgestor-api\", status=~\"4..\"}[5m])) by (status)",
           "legendFormat": "4xx - {{status}}",
           "refId": "B"
         }
       ],
-      "title": "Taxa de Erros (4xx, 5xx) - Requer API expondo /metrics",
+      "title": "Taxa de Erros (4xx, 5xx)",
       "type": "timeseries"
     },
     {
@@ -386,12 +386,12 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "up{job=~\"credgestor.*|.*api.*|.*cadvisor.*|.*node.*\"}",
+          "expr": "up{job=\"credgestor-api\"}",
           "legendFormat": "{{job}} - {{instance}}",
           "refId": "A"
         }
       ],
-      "title": "Status Serviços Prometheus",
+      "title": "Status API CredGestor",
       "type": "stat"
     },
     {

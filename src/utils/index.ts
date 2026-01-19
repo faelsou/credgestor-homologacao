@@ -129,13 +129,40 @@ export const formatCurrency = (value: number) => {
 };
 
 export const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('pt-BR');
+  if (!dateString) return '';
+  // Normalizar a data para evitar problemas de fuso horário
+  // Se já está no formato YYYY-MM-DD, usar diretamente
+  let normalizedDate = dateString;
+  if (dateString.includes('T')) {
+    normalizedDate = dateString.split('T')[0];
+  } else if (dateString.includes(' ')) {
+    normalizedDate = dateString.split(' ')[0];
+  }
+  
+  // Parse a data no formato YYYY-MM-DD
+  const [year, month, day] = normalizedDate.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.toLocaleDateString('pt-BR');
 };
 
 export const isLate = (dueDate: string) => {
+  if (!dueDate) return false;
+  // Normalizar a data para evitar problemas de fuso horário
+  let normalizedDate = dueDate;
+  if (dueDate.includes('T')) {
+    normalizedDate = dueDate.split('T')[0];
+  } else if (dueDate.includes(' ')) {
+    normalizedDate = dueDate.split(' ')[0];
+  }
+  
+  // Parse a data no formato YYYY-MM-DD
+  const [year, month, day] = normalizedDate.split('-').map(Number);
+  const due = new Date(year, month - 1, day);
+  
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0);
+  
   return due < today;
 };
 
