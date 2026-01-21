@@ -25,8 +25,8 @@ export const InstallmentsView: React.FC = () => {
   const filtered = useMemo(() => {
     let result = installments.filter(inst => {
       if (filter === 'ALL') return true;
-      if (filter === 'LATE') return inst.status !== InstallmentStatus.PAID && isLate(inst.dueDate);
-      if (filter === 'PENDING') return inst.status === InstallmentStatus.PENDING && !isLate(inst.dueDate);
+      if (filter === 'LATE') return isActuallyLate(inst);
+      if (filter === 'PENDING') return inst.status === InstallmentStatus.PENDING && !isActuallyLate(inst);
       if (filter === 'PARTIAL') return inst.status === InstallmentStatus.PARTIAL;
       return inst.status === filter;
     });
@@ -46,6 +46,49 @@ export const InstallmentsView: React.FC = () => {
   }, [installments, filter, searchTerm, clients]);
 
   const getClient = (id: string) => clients.find(c => c.id === id);
+
+  // Verifica se uma parcela está realmente atrasada, considerando pagamentos
+  const isActuallyLate = (inst: Installment): boolean => {
+    // Se está paga, não está atrasada
+    if (inst.status === InstallmentStatus.PAID) {
+      return false;
+    }
+
+    // Se a data de vencimento não passou, não está atrasada
+    if (!isLate(inst.dueDate)) {
+      return false;
+    }
+
+    // Se há histórico de pagamentos, verificar se o último pagamento foi feito antes ou no dia do vencimento
+    if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+      // Ordenar pagamentos por data (mais recente primeiro)
+      const sortedPayments = [...inst.paymentHistory].sort((a, b) => 
+        new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
+      );
+      
+      const lastPaymentDate = sortedPayments[0].paymentDate;
+      const dueDate = inst.dueDate;
+      
+      // Normalizar datas para comparação
+      const normalizeDate = (dateStr: string) => {
+        if (dateStr.includes('T')) return dateStr.split('T')[0];
+        if (dateStr.includes(' ')) return dateStr.split(' ')[0];
+        return dateStr;
+      };
+      
+      const lastPayment = normalizeDate(lastPaymentDate);
+      const due = normalizeDate(dueDate);
+      
+      // Se o último pagamento foi feito antes ou no dia do vencimento, não está atrasada
+      // (foi cadastrada retroativa mas pagou em dia)
+      if (lastPayment <= due) {
+        return false;
+      }
+    }
+
+    // Se chegou aqui, está atrasada
+    return true;
+  };
 
   const handleWhatsapp = (inst: Installment) => {
     const client = getClient(inst.clientId);
@@ -384,7 +427,7 @@ export const InstallmentsView: React.FC = () => {
           <tbody className="divide-y divide-slate-100">
             {filtered.map(inst => {
                const client = getClient(inst.clientId);
-               const late = inst.status !== InstallmentStatus.PAID && isLate(inst.dueDate);
+               const late = isActuallyLate(inst);
                return (
                 <tr key={inst.id} className="hover:bg-slate-50">
                     <td className="p-4">{formatDate(inst.dueDate)}</td>
@@ -457,7 +500,7 @@ export const InstallmentsView: React.FC = () => {
       <div className="md:hidden space-y-4">
         {filtered.map(inst => {
             const client = getClient(inst.clientId);
-            const late = inst.status !== InstallmentStatus.PAID && isLate(inst.dueDate);
+            const late = isActuallyLate(inst);
             return (
                 <div key={inst.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                     <div className="flex justify-between items-start mb-2">
