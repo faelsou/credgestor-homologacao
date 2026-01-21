@@ -430,6 +430,21 @@ jobs:
           echo "👤 VPS User: ${{ secrets.VPS_USER }}"
           echo "🔑 VPS SSH Key: [configurado]"
 
+      - name: 🔍 Test SSH connection
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST || '167.235.76.26' }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            echo "✅ Conexão SSH estabelecida com sucesso"
+            echo "📍 Host: ${{ secrets.VPS_HOST || '167.235.76.26' }}"
+            echo "👤 User: ${{ secrets.VPS_USER }}"
+            echo "🔌 Port: ${{ secrets.VPS_PORT || 22 }}"
+            hostname
+            pwd
+
       - name: 📤 Copy docker-compose.yml to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -440,7 +455,9 @@ jobs:
           source: "docker-compose.yml"
           target: "/var/www/credgestor-homologacao/"
           strip_components: 0
-          timeout: 60s
+          timeout: 120s
+          command_timeout: 120s
+          debug: true
 
       - name: 🚀 Deploy to production with Docker Stack
         uses: appleboy/ssh-action@v1.0.3
