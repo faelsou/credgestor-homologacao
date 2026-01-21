@@ -2295,6 +2295,30 @@ const App: React.FC = () => {
     }));
   }, [installments, session, isBackendConfiguredValue]);
 
+  const updateInstallment = useCallback(async (id: string, installment: Installment) => {
+    // Salvar no backend se estiver configurado
+    if (isBackendConfiguredValue && session?.accessToken) {
+      try {
+        const { updateBackendInstallment } = await import('@/services/backendApi');
+        await updateBackendInstallment(
+          session.accessToken,
+          requireTenantId(session.tenantId, 'atualizar parcela'),
+          id,
+          installment
+        );
+      } catch (error) {
+        console.error('Erro ao atualizar parcela no backend', error);
+        // Continua com atualização local mesmo se falhar
+      }
+    }
+
+    // Atualizar estado local
+    setInstallments(prev => prev.map(inst => {
+      if (inst.id !== id) return inst;
+      return installment;
+    }));
+  }, [session, isBackendConfiguredValue, requireTenantId]);
+
   const startEditingLoan = (loanId: string) => {
     if (user?.role !== UserRole.ADMIN) return;
     setLoanToEditId(loanId);

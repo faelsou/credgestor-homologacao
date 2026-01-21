@@ -6,7 +6,7 @@ import { InstallmentStatus, Installment, UserRole } from '@/types';
 
 export const InstallmentsView: React.FC = () => {
   const { installments, clients, loans, payInstallment, updateInstallment, scheduleFuturePayment, user } = useContext(AppContext);
-  const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'LATE' | 'PAID'>('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'LATE' | 'PAID' | 'PARTIAL'>('ALL');
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [promiseModal, setPromiseModal] = useState<Installment | null>(null);
@@ -25,7 +25,8 @@ export const InstallmentsView: React.FC = () => {
     let result = installments.filter(inst => {
       if (filter === 'ALL') return true;
       if (filter === 'LATE') return inst.status !== InstallmentStatus.PAID && isLate(inst.dueDate);
-      if (filter === 'PENDING') return (inst.status === InstallmentStatus.PENDING || inst.status === InstallmentStatus.PARTIAL) && !isLate(inst.dueDate);
+      if (filter === 'PENDING') return inst.status === InstallmentStatus.PENDING && !isLate(inst.dueDate);
+      if (filter === 'PARTIAL') return inst.status === InstallmentStatus.PARTIAL;
       return inst.status === filter;
     });
 
@@ -346,7 +347,7 @@ export const InstallmentsView: React.FC = () => {
 
       {/* Tabs */}
       <div className="flex space-x-2 overflow-x-auto pb-2">
-        {['ALL', 'PENDING', 'LATE', 'PAID'].map(f => (
+        {['ALL', 'PENDING', 'LATE', 'PARTIAL', 'PAID'].map(f => (
           <button
             key={f}
             onClick={() => setFilter(f as any)}
@@ -354,7 +355,7 @@ export const InstallmentsView: React.FC = () => {
               filter === f ? 'bg-slate-800 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
             }`}
           >
-            {f === 'ALL' ? 'Todas' : f === 'PENDING' ? 'A Vencer' : f === 'LATE' ? 'Em Atraso' : 'Pagas'}
+            {f === 'ALL' ? 'Todas' : f === 'PENDING' ? 'A Vencer' : f === 'LATE' ? 'Em Atraso' : f === 'PARTIAL' ? 'Parcial' : 'Pagas'}
           </button>
         ))}
       </div>
