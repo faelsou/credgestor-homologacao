@@ -406,12 +406,32 @@ export async function deleteBackendLoan(
  * Normaliza uma parcela da API para o formato do frontend
  */
 const normalizeApiInstallment = (apiInst: any): any => {
+  const promisedPaymentHistory = apiInst.promised_payment_history || apiInst.promisedPaymentHistory || [];
+  const originalDueDate = apiInst.due_date || apiInst.dueDate || '';
+  
+  // Se houver histórico de agendamentos, usar a data mais recente como data de vencimento
+  let dueDate = originalDueDate;
+  if (promisedPaymentHistory && Array.isArray(promisedPaymentHistory) && promisedPaymentHistory.length > 0) {
+    const allDates = [
+      ...promisedPaymentHistory.map((e: any) => e.date),
+      apiInst.promised_payment_date || apiInst.promisedPaymentDate
+    ].filter(Boolean);
+    
+    if (allDates.length > 0) {
+      // Ordenar datas e pegar a mais recente
+      const sortedDates = allDates.sort((a: string, b: string) => 
+        new Date(b).getTime() - new Date(a).getTime()
+      );
+      dueDate = sortedDates[0];
+    }
+  }
+  
   return {
     id: apiInst.id || '',
     loanId: apiInst.loan_id || apiInst.loanId || '',
     clientId: apiInst.client_id || apiInst.clientId || '',
     number: parseInt(apiInst.number || 0, 10),
-    dueDate: apiInst.due_date || apiInst.dueDate || '',
+    dueDate: dueDate,
     amount: parseFloat(apiInst.amount || 0),
     amountPaid: parseFloat(apiInst.amount_paid || apiInst.amountPaid || 0),
     interestAmount: apiInst.interest_amount || apiInst.interestAmount ? parseFloat(apiInst.interest_amount || apiInst.interestAmount) : undefined,
@@ -419,7 +439,7 @@ const normalizeApiInstallment = (apiInst: any): any => {
     promisedPaymentReason: apiInst.promised_payment_reason || apiInst.promisedPaymentReason || undefined,
     promisedPaymentAmount: apiInst.promised_payment_amount || apiInst.promisedPaymentAmount ? parseFloat(apiInst.promised_payment_amount || apiInst.promisedPaymentAmount) : undefined,
     promisedPaymentDate: apiInst.promised_payment_date || apiInst.promisedPaymentDate || undefined,
-    promisedPaymentHistory: apiInst.promised_payment_history || apiInst.promisedPaymentHistory || [],
+    promisedPaymentHistory: promisedPaymentHistory,
     status: apiInst.status || 'PENDING',
     paidDate: apiInst.paid_date || apiInst.paidDate || undefined,
   };
