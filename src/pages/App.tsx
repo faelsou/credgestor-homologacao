@@ -2379,18 +2379,20 @@ const App: React.FC = () => {
       const principalDue = Math.max(0, installment.principalAmount ?? Math.max(0, installment.amount - interestDue));
       const totalDue = Math.max(0, interestDue + principalDue);
 
-      // Permitir pagamentos maiores que o valor devido - o excedente abaterá o capital
+      // IMPORTANTE: Para empréstimos INTEREST_ONLY, o capital NÃO deve ser abatido da parcela atual
+      // O capital deve permanecer intacto até que seja totalmente pago em uma ação separada
+      // Apenas os juros são abatidos da parcela atual
       let remainingPayment = paymentValue;
 
-      // 1. Abater primeiro os juros da parcela atual
+      // 1. Abater APENAS os juros da parcela atual
       const interestPayment = Math.min(remainingPayment, interestDue);
       remainingPayment -= interestPayment;
       const updatedInterest = Number((interestDue - interestPayment).toFixed(2));
 
-      // 2. Abater o principal (capital) da parcela atual
-      const principalPayment = Math.min(remainingPayment, principalDue);
-      remainingPayment -= principalPayment;
-      const updatedPrincipal = Number((principalDue - principalPayment).toFixed(2));
+      // 2. NÃO abater o capital da parcela atual - o capital permanece intacto
+      // O capital só será abatido quando o pagamento total for recebido
+      const principalPayment = 0; // Não abater capital da parcela atual
+      const updatedPrincipal = principalDue; // Manter o capital original intacto
 
       // Para empréstimos "somente juros", o amount é apenas os juros, não juros + principal
       // O status é PAID quando não há mais juros nem principal pendentes
@@ -2428,40 +2430,13 @@ const App: React.FC = () => {
         paidDate: newStatus === InstallmentStatus.PAID ? new Date().toISOString() : installment.paidDate
       };
 
-      // 3. Se ainda sobrar valor, abater o capital das próximas parcelas pendentes
-      const loanInstallments = installments.filter(inst => inst.loanId === loan.id && inst.id !== id);
-      const pendingInstallments = loanInstallments
-        .filter(inst => inst.status !== InstallmentStatus.PAID)
-        .sort((a, b) => a.number - b.number);
-
+      // 3. IMPORTANTE: O capital NÃO deve ser abatido automaticamente das próximas parcelas
+      // O capital deve permanecer intacto até que o admin dê baixa recebendo todo o pagamento
+      // Apenas os juros são abatidos - o capital permanece até pagamento total explícito
       const updatedInstallments: Installment[] = [updatedInstallment];
-      let excessPayment = remainingPayment;
-
-      // Abater o capital excedente nas próximas parcelas
-      for (const nextInst of pendingInstallments) {
-        if (excessPayment <= 0) break;
-
-        const nextPrincipal = nextInst.principalAmount ?? 0;
-        const capitalReduction = Math.min(excessPayment, nextPrincipal);
-        excessPayment -= capitalReduction;
-
-        const newPrincipal = Number((nextPrincipal - capitalReduction).toFixed(2));
-        const rateDecimal = loan.interestRate / 100;
-        const newInterest = Number((newPrincipal * rateDecimal).toFixed(2));
-        // Para empréstimos "somente juros", o amount é apenas os juros, não juros + principal
-        // IMPORTANTE: O amount deve sempre ser pelo menos o valor mínimo dos juros baseado no capital restante
-        const minInterestFromPrincipal = newPrincipal > 0 ? Number((newPrincipal * rateDecimal).toFixed(2)) : 0;
-        const newAmount = Math.max(newInterest, minInterestFromPrincipal);
-
-        const updatedNextInst: Installment = {
-          ...nextInst,
-          principalAmount: newPrincipal,
-          interestAmount: newInterest,
-          amount: newAmount
-        };
-
-        updatedInstallments.push(updatedNextInst);
-      }
+      
+      // Se houver pagamento excedente após abater os juros, ele não será aplicado automaticamente
+      // O capital permanece intacto até que seja explicitamente pago pelo admin
 
       // Atualizar parcelas no backend se configurado
       if (isBackendConfiguredValue && session?.accessToken) {
@@ -2498,6 +2473,7 @@ const App: React.FC = () => {
       }
       
       // Capital das parcelas que não foram atualizadas (ainda pendentes)
+      const loanInstallments = installments.filter(inst => inst.loanId === loan.id && inst.id !== id);
       const otherPendingInstallments = loanInstallments.filter(
         inst => inst.status !== InstallmentStatus.PAID && 
                 !updatedInstallments.some(updated => updated.id === inst.id)
