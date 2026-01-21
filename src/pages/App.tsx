@@ -2264,11 +2264,16 @@ const App: React.FC = () => {
     };
 
     const promisedPaymentHistory = [...(installment.promisedPaymentHistory ?? []), entry];
+    
+    // Encontrar a data mais recente do histórico (incluindo o novo agendamento)
+    // A data de vencimento deve ser sempre a data mais recente do histórico de agendamentos
+    const allDates = [...promisedPaymentHistory.map(e => e.date), scheduledDate];
+    const mostRecentDate = allDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
 
-    // Atualizar a data de vencimento (dueDate) para a data do agendamento quando alterada
+    // Atualizar a data de vencimento (dueDate) para a data mais recente do agendamento
     const updatedInstallment = {
       ...installment,
-      dueDate: scheduledDate, // Atualizar dueDate para a data do agendamento
+      dueDate: mostRecentDate, // Atualizar dueDate para a data mais recente do histórico
       promisedPaymentReason: entry.reason,
       promisedPaymentAmount: entry.amount,
       promisedPaymentDate: entry.date,
