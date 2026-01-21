@@ -9,6 +9,7 @@ export const InstallmentsView: React.FC = () => {
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'LATE' | 'PAID' | 'PARTIAL'>('ALL');
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
   const [paymentAmount, setPaymentAmount] = useState(0);
+  const [paymentDate, setPaymentDate] = useState(getTodayDateString());
   const [promiseModal, setPromiseModal] = useState<Installment | null>(null);
   const [promiseReason, setPromiseReason] = useState('');
   const [promiseAmount, setPromiseAmount] = useState(0);
@@ -73,6 +74,7 @@ export const InstallmentsView: React.FC = () => {
     const pendingAmount = installment.amount - (installment.amountPaid || 0);
     const minAmount = interestAmount > 0 ? interestAmount : pendingAmount;
     setPaymentAmount(minAmount > 0 ? minAmount : installment.amount);
+    setPaymentDate(getTodayDateString());
   };
 
   const getInterestAmount = (inst: Installment) => {
@@ -139,6 +141,11 @@ export const InstallmentsView: React.FC = () => {
       return;
     }
 
+    if (!paymentDate) {
+      alert('Informe a data do pagamento.');
+      return;
+    }
+
     // Validar valor mínimo (pelo menos o valor dos juros baseado na taxa do empréstimo)
     const loan = loans.find(l => l.id === selectedInstallment.loanId);
     let interestAmount = selectedInstallment.interestAmount ?? 0;
@@ -156,9 +163,10 @@ export const InstallmentsView: React.FC = () => {
     }
 
     // Permitir pagamentos maiores que o valor pendente - o excedente abaterá o capital
-    payInstallment(selectedInstallment.id, paymentAmount);
+    payInstallment(selectedInstallment.id, paymentAmount, paymentDate);
     setSelectedInstallment(null);
     setPaymentAmount(0);
+    setPaymentDate(getTodayDateString());
   };
 
   const openPromiseModal = (inst: Installment) => {
@@ -594,6 +602,22 @@ export const InstallmentsView: React.FC = () => {
                   return null;
                 })()}
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Data do pagamento <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={paymentDate}
+                  onChange={e => setPaymentDate(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  max={getTodayDateString()}
+                />
+                <p className="mt-1 text-xs text-slate-600">
+                  Para pagamentos retroativos, selecione a data em que o pagamento foi realizado.
+                </p>
+              </div>
             </div>
 
             <div className="flex gap-3 mt-6">
@@ -601,6 +625,7 @@ export const InstallmentsView: React.FC = () => {
                 onClick={() => {
                   setSelectedInstallment(null);
                   setPaymentAmount(0);
+                  setPaymentDate(getTodayDateString());
                 }} 
                 className="flex-1 py-2 rounded-lg border hover:bg-slate-50"
               >
