@@ -2251,17 +2251,20 @@ const App: React.FC = () => {
     const installment = installments.find(inst => inst.id === id);
     if (!installment) return;
 
+    const scheduledDate = date || getTodayDateString();
     const entry = {
       reason,
       amount,
-      date: date || getTodayDateString(),
+      date: scheduledDate,
       createdAt
     };
 
     const promisedPaymentHistory = [...(installment.promisedPaymentHistory ?? []), entry];
 
+    // Atualizar a data de vencimento (dueDate) para a data do agendamento quando alterada
     const updatedInstallment = {
       ...installment,
+      dueDate: scheduledDate, // Atualizar dueDate para a data do agendamento
       promisedPaymentReason: entry.reason,
       promisedPaymentAmount: entry.amount,
       promisedPaymentDate: entry.date,
