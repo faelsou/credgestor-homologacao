@@ -1,11 +1,11 @@
 import React, { useContext, useState, useMemo } from 'react';
-import { Search, MessageCircle, CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Pencil } from 'lucide-react';
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, getTodayDateString, isLate } from '@/utils';
 import { InstallmentStatus, Installment, UserRole } from '@/types';
 
 export const InstallmentsView: React.FC = () => {
-  const { installments, clients, loans, payInstallment, scheduleFuturePayment, user } = useContext(AppContext);
+  const { installments, clients, loans, payInstallment, updateInstallment, scheduleFuturePayment, user } = useContext(AppContext);
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'LATE' | 'PAID'>('ALL');
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
   const [paymentAmount, setPaymentAmount] = useState(0);
@@ -15,6 +15,11 @@ export const InstallmentsView: React.FC = () => {
   const [promiseDate, setPromiseDate] = useState(getTodayDateString());
   const [promiseLateFee, setPromiseLateFee] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
+  const [editingInstallment, setEditingInstallment] = useState<Installment | null>(null);
+  const [editDueDate, setEditDueDate] = useState('');
+  const [editAmount, setEditAmount] = useState(0);
+  const [editInterestAmount, setEditInterestAmount] = useState(0);
+  const [editPrincipalAmount, setEditPrincipalAmount] = useState(0);
 
   const filtered = useMemo(() => {
     let result = installments.filter(inst => {
@@ -196,6 +201,48 @@ export const InstallmentsView: React.FC = () => {
     }
   };
 
+  const handleEditInstallment = (inst: Installment) => {
+    setEditingInstallment(inst);
+    setEditDueDate(inst.dueDate);
+    setEditAmount(inst.amount);
+    setEditInterestAmount(inst.interestAmount ?? 0);
+    setEditPrincipalAmount(inst.principalAmount ?? 0);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingInstallment) return;
+
+    if (!editDueDate) {
+      alert('Informe a data de vencimento.');
+      return;
+    }
+
+    if (!editAmount || editAmount <= 0) {
+      alert('Informe um valor válido para a parcela.');
+      return;
+    }
+
+    try {
+      const updatedInstallment: Installment = {
+        ...editingInstallment,
+        dueDate: editDueDate,
+        amount: editAmount,
+        interestAmount: editInterestAmount > 0 ? editInterestAmount : undefined,
+        principalAmount: editPrincipalAmount > 0 ? editPrincipalAmount : undefined,
+      };
+
+      await updateInstallment(editingInstallment.id, updatedInstallment);
+      setEditingInstallment(null);
+      setEditDueDate('');
+      setEditAmount(0);
+      setEditInterestAmount(0);
+      setEditPrincipalAmount(0);
+    } catch (error) {
+      console.error('Erro ao atualizar parcela', error);
+      alert('Erro ao salvar alterações. Tente novamente.');
+    }
+  };
+
   const renderStatus = (inst: Installment, late: boolean) => {
     if (inst.status === InstallmentStatus.PAID) {
       return <span className="flex items-center gap-1 text-emerald-600 font-bold"><CheckCircle size={14}/> Pago</span>;
@@ -365,6 +412,16 @@ export const InstallmentsView: React.FC = () => {
                             <MessageCircle size={18} />
                         </button>
                         
+                        {user?.role === UserRole.ADMIN && (
+                          <button
+                            onClick={() => handleEditInstallment(inst)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                            title="Editar parcela"
+                          >
+                            <Pencil size={18} />
+                          </button>
+                        )}
+                        
                         {inst.status !== InstallmentStatus.PAID && user?.role === UserRole.ADMIN && (
                              <button onClick={() => handlePay(inst.id)} className="px-3 py-1 bg-emerald-600 text-white text-xs font-bold rounded hover:bg-emerald-700 ml-2">
                                 Receber
@@ -430,6 +487,11 @@ export const InstallmentsView: React.FC = () => {
                          <button onClick={() => handleWhatsapp(inst)} className="py-2 bg-emerald-50 text-emerald-700 font-semibold rounded-lg text-sm flex items-center justify-center gap-2">
                             <MessageCircle size={16} /> WhatsApp
                          </button>
+                         {user?.role === UserRole.ADMIN && (
+                           <button onClick={() => handleEditInstallment(inst)} className="py-2 bg-blue-50 text-blue-700 font-semibold rounded-lg text-sm flex items-center justify-center gap-2">
+                             <Pencil size={16} /> Editar
+                           </button>
+                         )}
                     </div>
                      {inst.status !== InstallmentStatus.PAID && user?.role === UserRole.ADMIN && (
                          <button onClick={() => handlePay(inst.id)} className="w-full mt-2 py-2 bg-emerald-600 text-white font-semibold rounded-lg text-sm">
@@ -616,6 +678,101 @@ export const InstallmentsView: React.FC = () => {
             <div className="flex gap-3 mt-6">
               <button onClick={() => setPromiseModal(null)} className="flex-1 py-2 rounded-lg border hover:bg-slate-50">Cancelar</button>
               <button onClick={handleSavePromise} className="flex-1 py-2 rounded-lg bg-purple-600 text-white font-bold hover:bg-purple-700">Salvar promessa</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Edição de Parcela */}
+      {editingInstallment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="mb-4">
+              <h3 className="text-xl font-bold text-slate-900">Editar Parcela {editingInstallment.number}</h3>
+              <p className="text-sm text-slate-600">Corrija os dados da parcela caso tenha sido preenchida incorretamente.</p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Data de Vencimento <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={editDueDate}
+                  onChange={e => setEditDueDate(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Valor Total <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={editAmount || ''}
+                  onChange={e => setEditAmount(parseFloat(e.target.value) || 0)}
+                  placeholder="0,00"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Juros
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={editInterestAmount || ''}
+                    onChange={e => setEditInterestAmount(parseFloat(e.target.value) || 0)}
+                    placeholder="0,00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Capital
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={editPrincipalAmount || ''}
+                    onChange={e => setEditPrincipalAmount(parseFloat(e.target.value) || 0)}
+                    placeholder="0,00"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button 
+                onClick={() => {
+                  setEditingInstallment(null);
+                  setEditDueDate('');
+                  setEditAmount(0);
+                  setEditInterestAmount(0);
+                  setEditPrincipalAmount(0);
+                }} 
+                className="flex-1 py-2 rounded-lg border hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={handleSaveEdit} 
+                className="flex-1 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700"
+              >
+                Salvar Alterações
+              </button>
             </div>
           </div>
         </div>

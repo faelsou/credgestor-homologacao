@@ -1555,6 +1555,7 @@ export const AppContext = React.createContext<{
   updateLoan: (loan: Loan, generatedInstallments: Installment[]) => void;
   deleteLoan: (id: string) => void;
   payInstallment: (id: string, amount?: number) => void;
+  updateInstallment: (id: string, installment: Installment) => Promise<void>;
   scheduleFuturePayment: (id: string, reason: string, amount: number, date?: string) => Promise<void>;
   startEditingLoan: (loanId: string) => void;
   addUser: (newUser: User) => Promise<User | null>;
@@ -2812,6 +2813,7 @@ const App: React.FC = () => {
     updateLoan,
     deleteLoan,
     payInstallment,
+    updateInstallment,
     scheduleFuturePayment,
     startEditingLoan,
     addUser,
@@ -2820,7 +2822,7 @@ const App: React.FC = () => {
     setView,
     theme,
     setTheme
-  }), [user, usersList, clients, loans, installments, session, setSession, isBackendConfiguredValue, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setView]);
+  }), [user, usersList, clients, loans, installments, session, setSession, isBackendConfiguredValue, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, updateInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setView]);
 
   useEffect(() => {
     const body = document.body;
