@@ -1795,7 +1795,10 @@ const App: React.FC = () => {
           setUsersList(formattedUsers);
           console.log(`✅ Carregados ${formattedUsers.length} usuários para tenant ${session.tenantId}`);
         } catch (usersError) {
-          console.error('Erro ao buscar usuários no backend', usersError);
+          // Erro ao buscar usuários não é crítico - apenas loga sem mostrar erro ao usuário
+          if (usersError instanceof Error && !usersError.message.includes('404')) {
+            console.warn('Aviso ao buscar usuários no backend (não crítico):', usersError.message);
+          }
           // Continua mesmo se falhar ao carregar usuários
         }
       } catch (error) {

@@ -460,8 +460,8 @@ export const DashboardHome: React.FC = () => {
           {/* Gráfico */}
           <div className="space-y-3">
             <p className="text-xs uppercase font-semibold text-slate-500">Evolução do Período</p>
-            <div className="h-48 w-full">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-48 w-full min-h-[192px]">
+              <ResponsiveContainer width="100%" height="100%" minHeight={192}>
                 <LineChart data={parceladosChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis 
@@ -593,8 +593,8 @@ export const DashboardHome: React.FC = () => {
           {/* Gráfico */}
           <div className="space-y-3">
             <p className="text-xs uppercase font-semibold text-slate-500">Evolução do Período</p>
-            <div className="h-48 w-full">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-48 w-full min-h-[192px]">
+              <ResponsiveContainer width="100%" height="100%" minHeight={192}>
                 <LineChart data={jurosChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis 
