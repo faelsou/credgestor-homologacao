@@ -2271,13 +2271,19 @@ const App: React.FC = () => {
     const mostRecentDate = allDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
 
     // Atualizar a data de vencimento (dueDate) para a data mais recente do agendamento
+    // IMPORTANTE: Os juros (interestAmount) e capital (principalAmount) NÃO devem ser alterados
+    // a menos que haja multa diária configurada. Preservar os valores originais.
     const updatedInstallment = {
       ...installment,
       dueDate: mostRecentDate, // Atualizar dueDate para a data mais recente do histórico
       promisedPaymentReason: entry.reason,
       promisedPaymentAmount: entry.amount,
       promisedPaymentDate: entry.date,
-      promisedPaymentHistory
+      promisedPaymentHistory,
+      // Preservar juros e capital originais - não alterar
+      interestAmount: installment.interestAmount,
+      principalAmount: installment.principalAmount,
+      amount: installment.amount // Preservar também o valor total da parcela
     };
 
     // Salvar no backend se estiver configurado
