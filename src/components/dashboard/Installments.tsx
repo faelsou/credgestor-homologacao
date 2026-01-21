@@ -31,21 +31,18 @@ export const InstallmentsView: React.FC = () => {
       return false;
     }
 
-    // Se a data de vencimento não passou, não está atrasada
+    // PRIMEIRO: Se a data de vencimento não passou, não está atrasada (independente de pagamentos)
+    // Isso garante que parcelas com vencimento futuro nunca sejam consideradas atrasadas
     if (!isLate(inst.dueDate)) {
       return false;
     }
 
-    // Se há histórico de pagamentos, verificar se o último pagamento foi feito antes ou no dia do vencimento
+    // Se chegou aqui, a data de vencimento já passou
+    // Agora verificar se há pagamentos que indicam que está em dia (cadastro retroativo)
+
+    // Se há histórico de pagamentos, verificar se algum pagamento foi feito antes ou no dia do vencimento
+    // Isso cobre casos de cadastro retroativo onde o cliente pagou em dia
     if (inst.paymentHistory && inst.paymentHistory.length > 0) {
-      // Ordenar pagamentos por data (mais recente primeiro)
-      const sortedPayments = [...inst.paymentHistory].sort((a, b) => 
-        new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
-      );
-      
-      const lastPaymentDate = sortedPayments[0].paymentDate;
-      const dueDate = inst.dueDate;
-      
       // Normalizar datas para comparação
       const normalizeDate = (dateStr: string) => {
         if (dateStr.includes('T')) return dateStr.split('T')[0];
@@ -53,17 +50,25 @@ export const InstallmentsView: React.FC = () => {
         return dateStr;
       };
       
-      const lastPayment = normalizeDate(lastPaymentDate);
-      const due = normalizeDate(dueDate);
+      const due = normalizeDate(inst.dueDate);
       
-      // Se o último pagamento foi feito antes ou no dia do vencimento, não está atrasada
-      // (foi cadastrada retroativa mas pagou em dia)
-      if (lastPayment <= due) {
+      // Verificar se algum pagamento foi feito antes ou no dia do vencimento
+      // Se sim, a parcela foi cadastrada retroativa mas o cliente pagou em dia
+      const hasPaymentOnTime = inst.paymentHistory.some(payment => {
+        const paymentDate = normalizeDate(payment.paymentDate);
+        return paymentDate <= due;
+      });
+      
+      if (hasPaymentOnTime) {
+        // Há pelo menos um pagamento feito antes ou no dia do vencimento
+        // Isso indica cadastro retroativo com pagamento em dia - não está atrasada
         return false;
       }
     }
 
-    // Se chegou aqui, está atrasada
+    // Se chegou aqui, está atrasada:
+    // - A data de vencimento passou
+    // - E (não há pagamentos OU todos os pagamentos foram feitos depois do vencimento)
     return true;
   }, []);
 
