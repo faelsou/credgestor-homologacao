@@ -137,7 +137,7 @@
 //  addLoan: (loan: Loan, generatedInstallments: Installment[]) => void;
 //  updateLoan: (loan: Loan, generatedInstallments: Installment[]) => void;
 //  deleteLoan: (id: string) => void;
-//  payInstallment: (id: string, amount?: number) => void;
+//  payInstallment: (id: string, amount?: number, paymentDate?: string) => void;
 //  scheduleFuturePayment: (id: string, reason: string, amount: number, date?: string) => void;
 //  startEditingLoan: (loanId: string) => void;
 //  addUser: (newUser: User) => Promise<User | null>;
@@ -823,7 +823,7 @@
 //  addLoan: (loan: Loan, generatedInstallments: Installment[]) => void;
 //  updateLoan: (loan: Loan, generatedInstallments: Installment[]) => void;
 //  deleteLoan: (id: string) => void;
-//  payInstallment: (id: string, amount?: number) => void;
+//  payInstallment: (id: string, amount?: number, paymentDate?: string) => void;
 //  scheduleFuturePayment: (id: string, reason: string, amount: number, date?: string) => void;
 //  startEditingLoan: (loanId: string) => void;
 //  addUser: (newUser: User) => Promise<User | null>;
@@ -1554,7 +1554,7 @@ export const AppContext = React.createContext<{
   addLoan: (loan: Loan, generatedInstallments: Installment[]) => void;
   updateLoan: (loan: Loan, generatedInstallments: Installment[]) => void;
   deleteLoan: (id: string) => void;
-  payInstallment: (id: string, amount?: number) => void;
+  payInstallment: (id: string, amount?: number, paymentDate?: string) => void;
   updateInstallment: (id: string, installment: Installment) => Promise<void>;
   scheduleFuturePayment: (id: string, reason: string, amount: number, date?: string) => Promise<void>;
   startEditingLoan: (loanId: string) => void;
@@ -2328,7 +2328,7 @@ const App: React.FC = () => {
     setView('loans');
   };
 
-  const payInstallment = useCallback(async (id: string, amount?: number) => {
+  const payInstallment = useCallback(async (id: string, amount?: number, paymentDate?: string) => {
     if (user?.role === UserRole.COLLECTION) {
       alert("Acesso restrito: Cobradores não podem baixar pagamentos, apenas visualizar.");
       return;
@@ -2340,6 +2340,9 @@ const App: React.FC = () => {
     const paymentValue = installment.status === InstallmentStatus.PAID ? 0 : (amount ?? installment.amount);
     const loan = loans.find(l => l.id === installment.loanId);
     if (!loan) return;
+    
+    // Usar a data fornecida ou a data de hoje como padrão
+    const actualPaymentDate = paymentDate || getTodayDateString();
 
     // Função auxiliar para adicionar meses a uma data
     const addMonths = (dateString: string, months: number) => {
@@ -2397,7 +2400,7 @@ const App: React.FC = () => {
         amount: appliedToThisInstallment,
         interestPaid: interestPayment,
         principalPaid: principalPayment,
-        paymentDate: getTodayDateString(),
+        paymentDate: actualPaymentDate,
         createdAt: new Date().toISOString()
       };
       const existingHistory = installment.paymentHistory || [];
@@ -2561,7 +2564,7 @@ const App: React.FC = () => {
         amount: paymentValue,
         interestPaid: 0,
         principalPaid: paymentValue,
-        paymentDate: getTodayDateString(),
+        paymentDate: actualPaymentDate,
         createdAt: new Date().toISOString()
       };
       const existingHistory = installment.paymentHistory || [];
