@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
-import { Plus, Calculator, Pencil, Trash2, FileText, Clock8 } from 'lucide-react';
+import { Plus, Calculator, Pencil, Trash2, FileText, Clock8, Search } from 'lucide-react';
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, generateNoteHash, getTodayDateString } from '@/utils';
 import { LoanStatus, Installment, InstallmentStatus, UserRole, Loan, PromissoryNote, IndicationType, Client, LoanModel } from '@/types';
@@ -18,6 +18,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const [promiseAmount, setPromiseAmount] = useState(0);
   const [promiseDate, setPromiseDate] = useState(getTodayDateString());
   const [promiseLateFee, setPromiseLateFee] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
   
   // Form State
   const [selectedClientId, setSelectedClientId] = useState('');
@@ -225,6 +226,17 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   };
 
   const getClientName = (id: string) => clients.find(c => c.id === id)?.name || 'Desconhecido';
+
+  // Filtrar empréstimos por busca
+  const filteredLoans = useMemo(() => {
+    if (!searchTerm.trim()) return loans;
+    const searchLower = searchTerm.toLowerCase();
+    return loans.filter(loan => {
+      const client = clients.find(c => c.id === loan.clientId);
+      const clientName = client?.name || getClientName(loan.clientId);
+      return clientName.toLowerCase().includes(searchLower);
+    });
+  }, [loans, clients, searchTerm]);
 
   const canAdd = user?.role === UserRole.ADMIN;
 
@@ -487,6 +499,18 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
         )}
       </div>
 
+      {/* Campo de Busca */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+        <input
+          type="text"
+          className="w-full pl-10 pr-4 py-3 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
+          placeholder="Buscar por nome do cliente..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+        />
+      </div>
+
       <div className="overflow-x-auto bg-white rounded-xl border border-slate-200 shadow-sm">
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-semibold">
@@ -503,7 +527,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {loans.map(loan => {
+            {filteredLoans.map(loan => {
               const clientInstallments = installments.filter(inst => inst.loanId === loan.id);
               const loanClient = clients.find(c => c.id === loan.clientId);
               const clientName = loanClient?.name || getClientName(loan.clientId);
@@ -592,9 +616,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
               </tr>
               );
             })}
-            {loans.length === 0 && (
+            {filteredLoans.length === 0 && (
                 <tr>
-                    <td colSpan={canAdd ? 8 : 7} className="p-8 text-center text-slate-400">Nenhum empréstimo cadastrado.</td>
+                    <td colSpan={canAdd ? 8 : 7} className="p-8 text-center text-slate-400">
+                      {searchTerm ? 'Nenhum empréstimo encontrado com esse termo.' : 'Nenhum empréstimo cadastrado.'}
+                    </td>
                 </tr>
             )}
           </tbody>

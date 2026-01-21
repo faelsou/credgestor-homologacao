@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useMemo } from 'react';
 import { Search, MessageCircle, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, getTodayDateString, isLate } from '@/utils';
@@ -14,13 +14,29 @@ export const InstallmentsView: React.FC = () => {
   const [promiseAmount, setPromiseAmount] = useState(0);
   const [promiseDate, setPromiseDate] = useState(getTodayDateString());
   const [promiseLateFee, setPromiseLateFee] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const filtered = installments.filter(inst => {
-    if (filter === 'ALL') return true;
-    if (filter === 'LATE') return inst.status !== InstallmentStatus.PAID && isLate(inst.dueDate);
-    if (filter === 'PENDING') return (inst.status === InstallmentStatus.PENDING || inst.status === InstallmentStatus.PARTIAL) && !isLate(inst.dueDate);
-    return inst.status === filter;
-  }).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+  const filtered = useMemo(() => {
+    let result = installments.filter(inst => {
+      if (filter === 'ALL') return true;
+      if (filter === 'LATE') return inst.status !== InstallmentStatus.PAID && isLate(inst.dueDate);
+      if (filter === 'PENDING') return (inst.status === InstallmentStatus.PENDING || inst.status === InstallmentStatus.PARTIAL) && !isLate(inst.dueDate);
+      return inst.status === filter;
+    });
+
+    // Aplicar busca por nome do cliente ou número da parcela
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      result = result.filter(inst => {
+        const client = getClient(inst.clientId);
+        const clientName = client?.name || '';
+        return clientName.toLowerCase().includes(searchLower) || 
+               inst.number.toString().includes(searchTerm);
+      });
+    }
+
+    return result.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+  }, [installments, filter, searchTerm, clients]);
 
   const getClient = (id: string) => clients.find(c => c.id === id);
 
@@ -268,6 +284,18 @@ export const InstallmentsView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Campo de Busca */}
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+        <input
+          type="text"
+          className="w-full pl-10 pr-4 py-3 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
+          placeholder="Buscar por nome do cliente ou número da parcela..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+        />
+      </div>
 
       {/* Tabs */}
       <div className="flex space-x-2 overflow-x-auto pb-2">
