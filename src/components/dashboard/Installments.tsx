@@ -1,4 +1,4 @@
-import React, { useContext, useState, useMemo } from 'react';
+import React, { useContext, useState, useMemo, useCallback } from 'react';
 import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Pencil } from 'lucide-react';
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, getTodayDateString, isLate } from '@/utils';
@@ -22,33 +22,10 @@ export const InstallmentsView: React.FC = () => {
   const [editInterestAmount, setEditInterestAmount] = useState(0);
   const [editPrincipalAmount, setEditPrincipalAmount] = useState(0);
 
-  const filtered = useMemo(() => {
-    let result = installments.filter(inst => {
-      if (filter === 'ALL') return true;
-      if (filter === 'LATE') return isActuallyLate(inst);
-      if (filter === 'PENDING') return inst.status === InstallmentStatus.PENDING && !isActuallyLate(inst);
-      if (filter === 'PARTIAL') return inst.status === InstallmentStatus.PARTIAL;
-      return inst.status === filter;
-    });
-
-    // Aplicar busca por nome do cliente ou número da parcela
-    if (searchTerm.trim()) {
-      const searchLower = searchTerm.toLowerCase();
-      result = result.filter(inst => {
-        const client = getClient(inst.clientId);
-        const clientName = client?.name || '';
-        return clientName.toLowerCase().includes(searchLower) || 
-               inst.number.toString().includes(searchTerm);
-      });
-    }
-
-    return result.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
-  }, [installments, filter, searchTerm, clients]);
-
   const getClient = (id: string) => clients.find(c => c.id === id);
 
   // Verifica se uma parcela está realmente atrasada, considerando pagamentos
-  const isActuallyLate = (inst: Installment): boolean => {
+  const isActuallyLate = useCallback((inst: Installment): boolean => {
     // Se está paga, não está atrasada
     if (inst.status === InstallmentStatus.PAID) {
       return false;
@@ -88,7 +65,30 @@ export const InstallmentsView: React.FC = () => {
 
     // Se chegou aqui, está atrasada
     return true;
-  };
+  }, []);
+
+  const filtered = useMemo(() => {
+    let result = installments.filter(inst => {
+      if (filter === 'ALL') return true;
+      if (filter === 'LATE') return isActuallyLate(inst);
+      if (filter === 'PENDING') return inst.status === InstallmentStatus.PENDING && !isActuallyLate(inst);
+      if (filter === 'PARTIAL') return inst.status === InstallmentStatus.PARTIAL;
+      return inst.status === filter;
+    });
+
+    // Aplicar busca por nome do cliente ou número da parcela
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      result = result.filter(inst => {
+        const client = getClient(inst.clientId);
+        const clientName = client?.name || '';
+        return clientName.toLowerCase().includes(searchLower) || 
+               inst.number.toString().includes(searchTerm);
+      });
+    }
+
+    return result.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+  }, [installments, filter, searchTerm, clients]);
 
   const handleWhatsapp = (inst: Installment) => {
     const client = getClient(inst.clientId);
