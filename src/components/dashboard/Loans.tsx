@@ -17,12 +17,13 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const [promiseReason, setPromiseReason] = useState('');
   const [promiseAmount, setPromiseAmount] = useState(0);
   const [promiseDate, setPromiseDate] = useState(getTodayDateString());
+  const [promiseLateFee, setPromiseLateFee] = useState(0);
   
   // Form State
   const [selectedClientId, setSelectedClientId] = useState('');
   const [amount, setAmount] = useState(1000);
   const [interestRate, setInterestRate] = useState(20); // 20%
-  const [installmentsCount, setInstallmentsCount] = useState(4);
+  const [installmentsCount, setInstallmentsCount] = useState(1);
   const [startDate, setStartDate] = useState(getTodayDateString());
   const [loanModel, setLoanModel] = useState<LoanModel>(LoanModel.PRICE);
   const createDefaultPromissoryNote = (baseDate: string): PromissoryNote => ({
@@ -72,45 +73,12 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       let principalPortion = amortizationBase;
 
       switch (loanModel) {
-        case LoanModel.FIXED_AMORTIZATION:
-          installmentAmount = amortizationBase;
-          principalPortion = amortizationBase;
-          remainingPrincipal -= principalPortion;
-          break;
-        case LoanModel.SIMPLE_INTEREST: {
-          interestPortion = amount * rateDecimal;
-          principalPortion = amortizationBase;
-          installmentAmount = principalPortion + interestPortion;
-          remainingPrincipal -= principalPortion;
-          break;
-        }
-        case LoanModel.COMPOUND_INTEREST: {
-          interestPortion = remainingPrincipal * rateDecimal;
-          principalPortion = Math.min(amortizationBase, remainingPrincipal);
-          installmentAmount = principalPortion + interestPortion;
-          remainingPrincipal = remainingPrincipal + interestPortion - principalPortion;
-          break;
-        }
-        case LoanModel.SAC: {
-          interestPortion = remainingPrincipal * rateDecimal;
-          principalPortion = amortizationBase;
-          installmentAmount = principalPortion + interestPortion;
-          remainingPrincipal -= principalPortion;
-          break;
-        }
         case LoanModel.PRICE: {
           interestPortion = remainingPrincipal * rateDecimal;
           const amortization = priceInstallment - interestPortion;
           principalPortion = amortization;
           installmentAmount = priceInstallment;
           remainingPrincipal -= principalPortion;
-          break;
-        }
-        case LoanModel.PARTICULAR: {
-          interestPortion = amount * rateDecimal;
-          principalPortion = amortizationBase;
-          installmentAmount = principalPortion + interestPortion;
-          remainingPrincipal = Math.max(0, remainingPrincipal - principalPortion);
           break;
         }
         case LoanModel.INTEREST_ONLY: {
@@ -144,18 +112,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
 
   const loanModelLabel = (model: LoanModel) => {
     switch (model) {
-      case LoanModel.FIXED_AMORTIZATION:
-        return 'Amortização Fixa';
-      case LoanModel.SIMPLE_INTEREST:
-        return 'Juros Simples';
-      case LoanModel.COMPOUND_INTEREST:
-        return 'Juros Compostos';
-      case LoanModel.SAC:
-        return 'SAC';
       case LoanModel.PRICE:
         return 'Price';
-      case LoanModel.PARTICULAR:
-        return 'Modelo Particular';
       case LoanModel.INTEREST_ONLY:
         return 'Somente Juros';
       default:
@@ -171,7 +129,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setSelectedClientId('');
     setAmount(1000);
     setInterestRate(20);
-    setInstallmentsCount(4);
+    setInstallmentsCount(1);
     setLoanModel(LoanModel.PRICE);
     const today = getTodayDateString();
     setStartDate(today);
@@ -391,7 +349,9 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setPromiseModal({ loan, installment: nextInst });
     setPromiseReason(defaults.reason);
     setPromiseAmount(defaults.amount);
-    setPromiseDate(defaults.date);
+    // Usar a data de vencimento como padrão
+    setPromiseDate(nextInst.dueDate);
+    setPromiseLateFee(0);
   };
 
   const handleSavePromise = () => {
@@ -410,15 +370,13 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       return;
     }
 
-    const today = new Date(getTodayDateString());
-    const scheduled = new Date(promiseDate);
-    if (scheduled < today) {
-      alert('Selecione uma data futura ou igual a hoje.');
-      return;
-    }
-
-    scheduleFuturePayment(promiseModal.installment.id, promiseReason.trim(), promiseAmount, promiseDate);
+    // Incluir multa/atraso no motivo se informado
+    const reasonWithLateFee = promiseLateFee > 0 
+      ? `${promiseReason.trim()} | Multa/Atraso: ${formatCurrency(promiseLateFee)}`
+      : promiseReason.trim();
+    scheduleFuturePayment(promiseModal.installment.id, reasonWithLateFee, promiseAmount, promiseDate);
     setPromiseModal(null);
+    setPromiseLateFee(0);
   };
 
   const generatePromissoryNotePDF = (
@@ -463,7 +421,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
           </style>
         </head>
         <body>
-          <h1>Nota Promissória</h1>
+          <h1>Resumo do empréstimo</h1>
           <div class="section"><span class="label">Número:</span> <span class="value">${promissoryNote.numberHash}</span></div>
           <div class="section"><span class="label">Emitente:</span> <span class="value">${client.name}</span></div>
           <div class="section"><span class="label">CPF:</span> <span class="value">${client.cpf}</span></div>
@@ -708,12 +666,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                   value={loanModel}
                   onChange={e => setLoanModel(e.target.value as LoanModel)}
                 >
-                  <option value={LoanModel.FIXED_AMORTIZATION}>Amortização Fixa</option>
-                  <option value={LoanModel.SIMPLE_INTEREST}>Juros Simples</option>
-                  <option value={LoanModel.COMPOUND_INTEREST}>Juros Compostos</option>
-                  <option value={LoanModel.SAC}>SAC</option>
                   <option value={LoanModel.PRICE}>Price</option>
-                  <option value={LoanModel.PARTICULAR}>Modelo Particular</option>
                   <option value={LoanModel.INTEREST_ONLY}>Somente Juros</option>
                 </select>
               </div>
@@ -766,12 +719,6 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 </div>
               </div>
 
-              {loanModel === LoanModel.PARTICULAR && (
-                <div className="border border-amber-200 bg-amber-50 text-amber-900 rounded-xl p-3 text-sm leading-relaxed">
-                  <p className="font-semibold">Modelo Particular</p>
-                  <p>Em cada parcela o cliente paga juros fixos de {formatCurrency(amount * (interestRate / 100))} mais a amortização de {formatCurrency(installmentsCount > 0 ? amount / installmentsCount : 0)}, conforme solicitado.</p>
-                </div>
-              )}
 
               <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
                 <div className="flex justify-between items-center">
@@ -931,14 +878,31 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 </p>
               </div>
               <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Multa/Atraso</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
+                  value={promiseLateFee || ''}
+                  onChange={e => setPromiseLateFee(parseFloat(e.target.value) || 0)}
+                  placeholder="Informe o valor da multa/atraso"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Valor adicional por atraso no pagamento
+                </p>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Data do recebimento</label>
                 <input
                   type="date"
                   className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
                   value={promiseDate}
                   onChange={e => setPromiseDate(e.target.value)}
-                  min={getTodayDateString()}
                 />
+                <p className="text-xs text-slate-500 mt-1">
+                  Data de vencimento da parcela: {formatDate(promiseModal.installment.dueDate)}
+                </p>
               </div>
             </div>
 

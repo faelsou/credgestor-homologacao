@@ -114,12 +114,12 @@ export const DashboardHome: React.FC = () => {
   // Estatísticas para empréstimos parcelados
   const parceladosStats = useMemo(() => {
     const total = parceladosFilteredData.reduce((acc, curr) => acc + curr.amount, 0);
+    // Somar todos os amountPaid de todas as parcelas, independente do status
     const received = parceladosFilteredData
-      .filter(i => i.status === InstallmentStatus.PAID)
       .reduce((acc, curr) => acc + (curr.amountPaid || 0), 0);
     const receivable = parceladosFilteredData
       .filter(i => i.status !== InstallmentStatus.PAID)
-      .reduce((acc, curr) => acc + curr.amount, 0);
+      .reduce((acc, curr) => acc + (curr.amount - (curr.amountPaid || 0)), 0);
     const late = parceladosFilteredData
       .filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate))
       .reduce((acc, curr) => acc + curr.amount, 0);
@@ -139,12 +139,12 @@ export const DashboardHome: React.FC = () => {
   // Estatísticas para empréstimos somente juros
   const jurosStats = useMemo(() => {
     const total = jurosFilteredData.reduce((acc, curr) => acc + curr.amount, 0);
+    // Somar todos os amountPaid de todas as parcelas, independente do status
     const received = jurosFilteredData
-      .filter(i => i.status === InstallmentStatus.PAID)
       .reduce((acc, curr) => acc + (curr.amountPaid || 0), 0);
     const receivable = jurosFilteredData
       .filter(i => i.status !== InstallmentStatus.PAID)
-      .reduce((acc, curr) => acc + curr.amount, 0);
+      .reduce((acc, curr) => acc + (curr.amount - (curr.amountPaid || 0)), 0);
     const late = jurosFilteredData
       .filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate))
       .reduce((acc, curr) => acc + curr.amount, 0);
@@ -170,10 +170,14 @@ export const DashboardHome: React.FC = () => {
       const dateKey = inst.dueDate.includes('T') ? inst.dueDate.split('T')[0] : inst.dueDate.split(' ')[0];
       const existing = grouped.get(dateKey) || { date: dateKey, received: 0, receivable: 0 };
       
-      if (inst.status === InstallmentStatus.PAID) {
-        existing.received += inst.amountPaid || inst.amount;
-      } else {
-        existing.receivable += inst.amount;
+      // Somar todos os pagamentos recebidos (amountPaid)
+      const paidAmount = inst.amountPaid || 0;
+      existing.received += paidAmount;
+      
+      // Calcular o valor ainda a receber (valor total - já recebido)
+      const remainingAmount = inst.amount - paidAmount;
+      if (remainingAmount > 0) {
+        existing.receivable += remainingAmount;
       }
       
       grouped.set(dateKey, existing);
@@ -198,10 +202,14 @@ export const DashboardHome: React.FC = () => {
       const dateKey = inst.dueDate.includes('T') ? inst.dueDate.split('T')[0] : inst.dueDate.split(' ')[0];
       const existing = grouped.get(dateKey) || { date: dateKey, received: 0, receivable: 0 };
       
-      if (inst.status === InstallmentStatus.PAID) {
-        existing.received += inst.amountPaid || inst.amount;
-      } else {
-        existing.receivable += inst.amount;
+      // Somar todos os pagamentos recebidos (amountPaid)
+      const paidAmount = inst.amountPaid || 0;
+      existing.received += paidAmount;
+      
+      // Calcular o valor ainda a receber (valor total - já recebido)
+      const remainingAmount = inst.amount - paidAmount;
+      if (remainingAmount > 0) {
+        existing.receivable += remainingAmount;
       }
       
       grouped.set(dateKey, existing);
