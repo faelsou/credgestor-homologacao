@@ -2517,7 +2517,20 @@ const App: React.FC = () => {
         // O amount deve sempre ser pelo menos o valor mínimo dos juros baseado no capital restante
         const nextInterestAmount = totalRemainingCapital > 0 ? Number((totalRemainingCapital * rateDecimal).toFixed(2)) : 0;
         const nextAmount = nextInterestAmount; // Já é o valor mínimo dos juros
-        const nextDueDate = addMonths(getTodayDateString(), 1); // Próximo mês
+        
+        // Encontrar a data de vencimento mais recente entre todas as parcelas do empréstimo
+        // Isso garante que as parcelas seguem uma sequência lógica mesmo em cadastros retroativos
+        const allDates = [
+          ...allLoanInstallments.map(inst => inst.dueDate),
+          updatedInstallment.dueDate
+        ];
+        const mostRecentDueDate = allDates.sort((a, b) => 
+          new Date(b).getTime() - new Date(a).getTime()
+        )[0];
+        
+        // Criar a próxima parcela 1 mês após a data de vencimento mais recente
+        // Isso mantém a sequência correta mesmo em cadastros retroativos
+        const nextDueDate = addMonths(mostRecentDueDate, 1);
 
         const newInstallment: Installment = {
           id: `inst_${loan.id}_${nextNumber}_${Date.now()}`,
@@ -2554,10 +2567,18 @@ const App: React.FC = () => {
       updatedInstallments.length = 0;
       updatedInstallments.push(...allUpdatedInstallments);
 
-      // Atualizar todas as parcelas modificadas
+      // Atualizar todas as parcelas modificadas e adicionar novas parcelas
       setInstallments(prev => {
         const updatedMap = new Map(updatedInstallments.map(inst => [inst.id, inst]));
-        return prev.map(inst => updatedMap.get(inst.id) || inst);
+        const existingIds = new Set(prev.map(inst => inst.id));
+        
+        // Atualizar parcelas existentes
+        const updated = prev.map(inst => updatedMap.get(inst.id) || inst);
+        
+        // Adicionar novas parcelas que não existem ainda
+        const newInstallments = updatedInstallments.filter(inst => !existingIds.has(inst.id));
+        
+        return [...updated, ...newInstallments];
       });
     } else {
       // Lógica para outros modelos de empréstimo
