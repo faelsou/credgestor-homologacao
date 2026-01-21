@@ -13,6 +13,7 @@ export const LoanHistoryView: React.FC = () => {
   const [promiseReason, setPromiseReason] = useState('');
   const [promiseAmount, setPromiseAmount] = useState(0);
   const [promiseDate, setPromiseDate] = useState(getTodayDateString());
+  const [promiseLateFee, setPromiseLateFee] = useState(0);
 
   // Função para calcular o status correto do empréstimo baseado nas parcelas
   const calculateLoanStatus = (loan: typeof loans[0]): LoanStatus => {
@@ -165,7 +166,9 @@ export const LoanHistoryView: React.FC = () => {
     const defaults = getPromiseDefaults(nextInst);
     setPromiseReason(defaults.reason);
     setPromiseAmount(defaults.amount);
-    setPromiseDate(defaults.date);
+    // Usar a data de vencimento como padrão
+    setPromiseDate(nextInst.dueDate);
+    setPromiseLateFee(0);
   };
 
   const handleSavePromise = () => {
@@ -184,15 +187,13 @@ export const LoanHistoryView: React.FC = () => {
       return;
     }
 
-    const today = new Date(getTodayDateString());
-    const scheduled = new Date(promiseDate);
-    if (scheduled < today) {
-      alert('Selecione uma data futura ou igual a hoje.');
-      return;
-    }
-
-    scheduleFuturePayment(promiseModal.installment.id, promiseReason.trim(), promiseAmount, promiseDate);
+    // Incluir multa/atraso no motivo se informado
+    const reasonWithLateFee = promiseLateFee > 0 
+      ? `${promiseReason.trim()} | Multa/Atraso: ${formatCurrency(promiseLateFee)}`
+      : promiseReason.trim();
+    scheduleFuturePayment(promiseModal.installment.id, reasonWithLateFee, promiseAmount, promiseDate);
     setPromiseModal(null);
+    setPromiseLateFee(0);
   };
 
   return (
@@ -345,14 +346,31 @@ export const LoanHistoryView: React.FC = () => {
                 </p>
               </div>
               <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Multa/Atraso</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
+                  value={promiseLateFee || ''}
+                  onChange={e => setPromiseLateFee(parseFloat(e.target.value) || 0)}
+                  placeholder="Informe o valor da multa/atraso"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Valor adicional por atraso no pagamento
+                </p>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Data do recebimento</label>
                 <input
                   type="date"
                   className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
                   value={promiseDate}
                   onChange={e => setPromiseDate(e.target.value)}
-                  min={getTodayDateString()}
                 />
+                <p className="text-xs text-slate-500 mt-1">
+                  Data de vencimento da parcela: {formatDate(promiseModal.installment.dueDate)}
+                </p>
               </div>
             </div>
 
