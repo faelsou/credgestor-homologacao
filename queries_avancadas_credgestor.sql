@@ -456,7 +456,7 @@ ORDER BY l.model;
 -- 5. QUERIES DE MANUTENÇÃO E DIAGNÓSTICO
 -- ============================================================================
 
--- 5.1. Verificar Integridade de Dados
+-- 5.1. Verificar Integridade de Dados (Resumo)
 SELECT 
     'Clientes sem tenant' as problema,
     COUNT(*) as quantidade
@@ -486,6 +486,48 @@ SELECT
     COUNT(*) as quantidade
 FROM public.tenant_users tu
 WHERE NOT EXISTS (SELECT 1 FROM public.tenants t WHERE t.id = tu.tenant_id);
+
+-- 5.1.1. Detalhar Registros Órfãos (para correção)
+-- Clientes sem tenant válido
+SELECT 
+    'CLIENTE ÓRFÃO' as tipo,
+    c.id,
+    c.nome,
+    c.cpf_cnpj,
+    c.tenant_id as tenant_id_invalido,
+    c.created_at
+FROM public.clients c
+WHERE NOT EXISTS (SELECT 1 FROM public.tenants t WHERE t.id = c.tenant_id)
+ORDER BY c.created_at DESC;
+
+-- Usuários sem tenant válido
+SELECT 
+    'USUÁRIO ÓRFÃO' as tipo,
+    tu.id,
+    tu.email,
+    tu.tenant_id as tenant_id_invalido,
+    tu.role,
+    tu.ativo,
+    tu.created_at
+FROM public.tenant_users tu
+WHERE NOT EXISTS (SELECT 1 FROM public.tenants t WHERE t.id = tu.tenant_id)
+ORDER BY tu.created_at DESC;
+
+-- Ver histórico de auditoria para identificar tenant correto
+SELECT 
+    'AUDITORIA - Clientes Órfãos' as tipo,
+    a.registro_id as cliente_id,
+    c.nome as cliente_nome,
+    tu.email as usuario_criador,
+    tu.tenant_id as tenant_id_correto,
+    a.data_hora
+FROM public.auditoria a
+JOIN public.clients c ON a.registro_id = c.id
+LEFT JOIN public.tenant_users tu ON a.usuario_id = tu.user_id
+WHERE a.tabela = 'clients'
+  AND a.acao = 'INSERT'
+  AND NOT EXISTS (SELECT 1 FROM public.tenants t WHERE t.id = c.tenant_id)
+ORDER BY a.data_hora DESC;
 
 -- 5.2. Sessões Expiradas (limpeza)
 SELECT 
