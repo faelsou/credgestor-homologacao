@@ -2371,21 +2371,31 @@ const App: React.FC = () => {
       if (loan.model === LoanModel.INTEREST_ONLY) {
         let totalOutstanding = 0;
         
-        // Soma todo o capital pendente
+        // IMPORTANTE: No modelo "somente juros", o capital é compartilhado entre todas as parcelas
+        // Não devemos somar o capital de todas as parcelas, mas sim pegar o capital de UMA parcela pendente
+        // (todas as parcelas têm o mesmo capital)
+        let capitalAmount = 0;
+        let totalInterest = 0;
+        
+        // Encontrar o capital de uma parcela pendente (todas têm o mesmo capital)
         for (const inst of relatedInstallments) {
-          const principal = inst.principalAmount ?? 0;
-          if (principal > 0 && inst.status !== InstallmentStatus.PAID) {
-            totalOutstanding += principal;
+          if (inst.status !== InstallmentStatus.PAID) {
+            const principal = inst.principalAmount ?? 0;
+            if (principal > 0 && capitalAmount === 0) {
+              capitalAmount = principal; // Capital é o mesmo para todas as parcelas
+            }
+            
+            // Soma todos os juros pendentes
+            const interest = inst.interestAmount ?? 0;
+            if (interest > 0) {
+              totalInterest += interest;
+            }
           }
         }
         
-        // Soma todos os juros pendentes
-        for (const inst of relatedInstallments) {
-          const interest = inst.interestAmount ?? 0;
-          if (interest > 0 && inst.status !== InstallmentStatus.PAID) {
-            totalOutstanding += interest;
-          }
-        }
+        // Se não encontrou capital em nenhuma parcela, pode ser que o capital esteja em uma parcela futura
+        // ou que todas as parcelas já foram pagas. Nesse caso, não há capital pendente.
+        totalOutstanding = capitalAmount + totalInterest;
         
         return Number(totalOutstanding.toFixed(2));
       }
@@ -2426,14 +2436,17 @@ const App: React.FC = () => {
         
         // Se não houver valores definidos, calcular baseado no modelo
         if (loan.model === LoanModel.INTEREST_ONLY) {
-          // Para somente juros, calcular juros baseado no capital se não estiver definido
-          if (pendingInterest === 0 && pendingPrincipal > 0) {
-            pendingInterest = Number((pendingPrincipal * (loan.interestRate / 100)).toFixed(2));
+          // Para somente juros, o amount geralmente já representa os juros
+          // Se não houver interestAmount definido, usar o amount como juros
+          if (pendingInterest === 0) {
+            // Tentar usar o interestAmount da parcela, se não tiver, usar o amount
+            pendingInterest = inst.interestAmount ?? inst.amount;
           }
-          // Se ainda não tiver principal, usar o amount como base
-          if (pendingPrincipal === 0 && pendingInterest === 0) {
-            pendingPrincipal = inst.amount;
-            pendingInterest = Number((pendingPrincipal * (loan.interestRate / 100)).toFixed(2));
+          
+          // Para o capital, usar o principalAmount se existir
+          // No modelo "somente juros", o capital é compartilhado entre parcelas
+          if (pendingPrincipal === 0) {
+            pendingPrincipal = inst.principalAmount ?? 0;
           }
         } else {
           // Para outros modelos, se não tiver valores separados, usar o amount pendente
