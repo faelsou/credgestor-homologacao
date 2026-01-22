@@ -1,0 +1,31 @@
+# Configuração simplificada do Prometheus para CredGestor
+# Versão mínima - apenas coleta métricas da API CredGestor
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # CredGestor API - Métricas da aplicação
+  - job_name: 'credgestor-api'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: '/metrics'
+    
+    # Opção 1: Via HTTPS (Recomendado)
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    static_configs:
+      - targets: ['credgestor.app.br:443']
+        labels:
+          service: 'credgestor-api'
+          environment: 'production'
+    
+    # Opção 2: Via HTTP direto (descomente se necessário)
+    # scheme: http
+    # static_configs:
+    #   - targets: ['167.235.76.26:8000']
+    #     labels:
+    #       service: 'credgestor-api'
+    #       environment: 'production'

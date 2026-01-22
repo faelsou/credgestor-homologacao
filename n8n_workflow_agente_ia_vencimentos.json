@@ -1,0 +1,470 @@
+{
+  "name": "Agente IA - Notificações Vencimentos Diários",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-node",
+      "name": "Agendamento Diário",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  inst.id as parcela_id,\n  inst.loan_id,\n  inst.client_id,\n  inst.tenant_id,\n  inst.number as numero_parcela,\n  inst.due_date as data_vencimento,\n  inst.amount as valor_parcela,\n  inst.amount_paid as valor_pago,\n  inst.interest_amount,\n  inst.principal_amount,\n  inst.status,\n  c.nome as cliente_nome,\n  c.whatsapp,\n  c.celular,\n  c.telefone,\n  c.email as cliente_email,\n  l.model as modelo_emprestimo,\n  t.name as tenant_name\nFROM public.installments inst\nJOIN public.clients c ON inst.client_id = c.id\nJOIN public.loans l ON inst.loan_id = l.id\nJOIN public.tenants t ON inst.tenant_id = t.id\nWHERE inst.due_date = CURRENT_DATE\n  AND inst.status IN ('PENDING', 'LATE')\n  AND c.ativo = true\nORDER BY inst.tenant_id, inst.due_date, c.nome;",
+        "options": {}
+      },
+      "id": "buscar-parcelas",
+      "name": "Buscar Parcelas Vencendo Hoje",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        460,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar parcelas e agrupar por tenant\nconst items = $input.all();\nconst tenantsMap = {};\n\nfor (const item of items) {\n  const parcela = item.json;\n  const tenantId = parcela.tenant_id;\n  \n  if (!tenantsMap[tenantId]) {\n    tenantsMap[tenantId] = {\n      tenant_id: tenantId,\n      tenant_name: parcela.tenant_name,\n      parcelas: [],\n      total_valor: 0,\n      total_parcelas: 0\n    };\n  }\n  \n  // Calcular valor em aberto\n  const valorAberto = parseFloat(parcela.valor_parcela || 0) - parseFloat(parcela.valor_pago || 0);\n  \n  // Determinar telefone do cliente (prioridade: whatsapp > celular > telefone)\n  let telefone = parcela.whatsapp || parcela.celular || parcela.telefone;\n  telefone = telefone ? telefone.replace(/\\D/g, '') : null;\n  if (telefone && !telefone.startsWith('55')) {\n    telefone = '55' + telefone;\n  }\n  \n  // Determinar tipo e valor para mensagem\n  const modelo = parcela.modelo_emprestimo || 'PRICE';\n  let tipoValor = 'Parcela';\n  let valorMensagem = valorAberto;\n  \n  if (modelo === 'INTEREST_ONLY') {\n    tipoValor = 'Juros';\n    valorMensagem = parseFloat(parcela.interest_amount || 0) || valorAberto;\n  }\n  \n  tenantsMap[tenantId].parcelas.push({\n    parcela_id: parcela.parcela_id,\n    cliente_id: parcela.client_id,\n    cliente_nome: parcela.cliente_nome,\n    cliente_phone: telefone,\n    cliente_email: parcela.cliente_email,\n    numero_parcela: parcela.numero_parcela,\n    valor_aberto: valorAberto,\n    tipo_valor: tipoValor,\n    valor_mensagem: valorMensagem,\n    status: parcela.status,\n    data_vencimento: parcela.data_vencimento,\n    modelo_emprestimo: modelo\n  });\n  \n  tenantsMap[tenantId].total_valor += valorAberto;\n  tenantsMap[tenantId].total_parcelas += 1;\n}\n\n// Converter para array\nconst processedItems = Object.values(tenantsMap).map(tenant => ({\n  json: tenant\n}));\n\nreturn processedItems;"
+      },
+      "id": "processar-por-tenant",
+      "name": "Agrupar por Tenant",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-tenants",
+      "name": "Processar Tenants",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  tu.id,\n  tu.email,\n  tu.role,\n  tu.metadata,\n  u.name as user_name\nFROM public.tenant_users tu\nLEFT JOIN public.users u ON tu.user_id = u.id\nWHERE tu.tenant_id = '{{ $json.tenant_id }}'\n  AND tu.ativo = true;",
+        "options": {}
+      },
+      "id": "buscar-usuarios",
+      "name": "Buscar Usuários do Tenant",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1120,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatar mensagem de email para usuários\nconst tenantData = $('Processar Tenants').item.json;\nconst usuarios = $input.all();\nconst processedItems = [];\n\nconst hoje = new Date().toLocaleDateString('pt-BR');\nconst hora = new Date().toLocaleTimeString('pt-BR');\n\nfor (const usuario of usuarios) {\n  const user = usuario.json;\n  \n  let mensagem = `🔔 NOTIFICAÇÃO DE VENCIMENTOS - ${hoje}\\n\\n`;\n  mensagem += `Olá! Este é um resumo automático dos vencimentos do dia de hoje para o tenant: ${tenantData.tenant_name}\\n\\n`;\n  mensagem += `📊 RESUMO:\\n`;\n  mensagem += `• Total de parcelas vencendo: ${tenantData.total_parcelas}\\n`;\n  mensagem += `• Valor total em aberto: R$ ${tenantData.total_valor.toFixed(2).replace('.', ',')}\\n\\n`;\n  mensagem += `📋 DETALHES DAS PARCELAS:\\n`;\n  \n  for (const parcela of tenantData.parcelas) {\n    const statusEmoji = parcela.status === 'LATE' ? '🔴' : '🟡';\n    const valorFormatado = parcela.valor_mensagem.toFixed(2).replace('.', ',');\n    const contato = parcela.cliente_phone || parcela.cliente_email || 'Não informado';\n    \n    mensagem += `\\n${statusEmoji} Cliente: ${parcela.cliente_nome}\\n`;\n    mensagem += `   • Parcela #${parcela.numero_parcela}\\n`;\n    mensagem += `   • ${parcela.tipo_valor}: R$ ${valorFormatado}\\n`;\n    mensagem += `   • Status: ${parcela.status}\\n`;\n    mensagem += `   • Contato: ${contato}\\n`;\n  }\n  \n  mensagem += `\\n---\\nSistema CredGestor - Agente de IA\\nGerado automaticamente em ${hoje} ${hora}\\n`;\n  \n  processedItems.push({\n    json: {\n      email: user.email,\n      assunto: `Vencimentos do Dia - ${tenantData.tenant_name}`,\n      mensagem: mensagem,\n      tenant_id: tenantData.tenant_id,\n      tenant_name: tenantData.tenant_name\n    }\n  });\n}\n\nreturn processedItems;"
+      },
+      "id": "formatar-email",
+      "name": "Formatar Email para Usuários",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatar mensagens WhatsApp individuais para clientes\nconst tenantData = $('Processar Tenants').item.json;\nconst processedItems = [];\n\nconst hoje = new Date().toLocaleDateString('pt-BR');\n\nfor (const parcela of tenantData.parcelas) {\n  // Só processar se tiver telefone\n  if (!parcela.cliente_phone) {\n    continue;\n  }\n  \n  const valorFormatado = parcela.valor_mensagem.toFixed(2).replace('.', ',');\n  \n  let mensagem = `🔔 *Lembrete de Vencimento*\\n\\n`;\n  mensagem += `Olá *${parcela.cliente_nome}*!\\n\\n`;\n  mensagem += `Sua ${parcela.tipo_valor.toLowerCase()} #${parcela.numero_parcela} no valor de *R$ ${valorFormatado}* vence hoje (${hoje}).\\n\\n`;\n  mensagem += `Por favor, realize o pagamento para evitar juros e multa.\\n\\n`;\n  mensagem += `*Telefone para contato:* ${parcela.cliente_phone.replace(/^55/, '')}\\n\\n`;\n  mensagem += `Obrigado!`;\n  \n  processedItems.push({\n    json: {\n      telefone: parcela.cliente_phone,\n      mensagem: mensagem,\n      cliente_nome: parcela.cliente_nome,\n      parcela_id: parcela.parcela_id,\n      numero_parcela: parcela.numero_parcela,\n      valor: parcela.valor_mensagem\n    }\n  });\n}\n\nreturn processedItems;"
+      },
+      "id": "formatar-whatsapp",
+      "name": "Formatar WhatsApp para Clientes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EMAIL_API_URL || 'https://api.sendgrid.com/v3/mail/send' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SENDGRID_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "from",
+              "value": "={ \"email\": \"noreply@credgestor.com.br\", \"name\": \"CredGestor\" }"
+            },
+            {
+              "name": "to",
+              "value": "=[{ \"email\": \"{{ $json.email }}\" }]"
+            },
+            {
+              "name": "subject",
+              "value": "={{ $json.assunto }}"
+            },
+            {
+              "name": "content",
+              "value": "=[{ \"type\": \"text/plain\", \"value\": \"{{ $json.mensagem }}\" }]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "enviar-email",
+      "name": "Enviar Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        200
+      ],
+      "notes": "Configure EMAIL_API_URL e SENDGRID_API_KEY nas variáveis de ambiente do n8n.\n\nOu ajuste para usar outro serviço de email (AWS SES, SMTP, etc.)"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-whatsapp",
+      "name": "Processar WhatsApp",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1560,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WHATSAPP_API_URL || 'https://api.evolutionapi.com/v1/message/sendText/' + $env.WHATSAPP_API_INSTANCE || 'CredGestor' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.AUTHENTICATION_API_KEY || $env.WHATSAPP_API_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.telefone }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.mensagem }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "enviar-whatsapp",
+      "name": "Enviar WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1780,
+        400
+      ],
+      "notes": "Configure as variáveis de ambiente:\n- WHATSAPP_API_URL (URL completa) OU\n- WHATSAPP_API_INSTANCE (nome da instância)\n- AUTHENTICATION_API_KEY ou WHATSAPP_API_TOKEN\n\nExemplo Evolution API:\n- WHATSAPP_API_INSTANCE=CredGestor\n- AUTHENTICATION_API_KEY=CN4AnbOtY79Wv6wNyx88cdoKXqugcINi"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "largerEqual",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "condition-2",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 299,
+              "operator": {
+                "type": "number",
+                "operation": "smallerEqual",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "verificar-sucesso",
+      "name": "Verificar Sucesso",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "summary-1",
+              "name": "tenant_name",
+              "value": "={{ $('Processar Tenants').item.json.tenant_name }}",
+              "type": "string"
+            },
+            {
+              "id": "summary-2",
+              "name": "total_parcelas",
+              "value": "={{ $('Processar Tenants').item.json.total_parcelas }}",
+              "type": "number"
+            },
+            {
+              "id": "summary-3",
+              "name": "total_valor",
+              "value": "={{ $('Processar Tenants').item.json.total_valor }}",
+              "type": "number"
+            },
+            {
+              "id": "summary-4",
+              "name": "emails_enviados",
+              "value": "={{ $('Formatar Email para Usuários').all().length }}",
+              "type": "number"
+            },
+            {
+              "id": "summary-5",
+              "name": "whatsapp_enviados",
+              "value": "={{ $('Processar WhatsApp').item.json.totalItems || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "summary-6",
+              "name": "data_execucao",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "resumo",
+      "name": "Resumo Execução",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2220,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Agendamento Diário": {
+      "main": [
+        [
+          {
+            "node": "Buscar Parcelas Vencendo Hoje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Parcelas Vencendo Hoje": {
+      "main": [
+        [
+          {
+            "node": "Agrupar por Tenant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agrupar por Tenant": {
+      "main": [
+        [
+          {
+            "node": "Processar Tenants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Tenants": {
+      "main": [
+        [
+          {
+            "node": "Buscar Usuários do Tenant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Usuários do Tenant": {
+      "main": [
+        [
+          {
+            "node": "Formatar Email para Usuários",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Formatar WhatsApp para Clientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar Email para Usuários": {
+      "main": [
+        [
+          {
+            "node": "Enviar Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar WhatsApp para Clientes": {
+      "main": [
+        [
+          {
+            "node": "Processar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Verificar Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Sucesso": {
+      "main": [
+        [
+          {
+            "node": "Resumo Execução",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resumo Execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Email": {
+      "main": [
+        [
+          {
+            "node": "Resumo Execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-21T00:00:00.000Z",
+  "versionId": "1"
+}

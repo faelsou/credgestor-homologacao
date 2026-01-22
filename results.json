@@ -1,0 +1,26 @@
+{
+  "config": {
+    "base_url": "http://credgestor.app.com.br",
+    "num_users": 50,
+    "duration": 120,
+    "ramp_up": 5
+  },
+  "stats": {
+    "total_requests": 20579,
+    "successful_requests": 0,
+    "failed_requests": 20579,
+    "success_rate": 0.0,
+    "requests_per_second": 164.6979281136916,
+    "avg_response_time": 0.040507378479245626,
+    "errors_by_status": {
+      "0": 20579
+    },
+    "errors_by_endpoint": {
+      "/health": 5162,
+      "/tenants/{tenant_id}/clients": 5151,
+      "/tenants/{tenant_id}/loans": 5143,
+      "/tenants/{tenant_id}/installments": 5123
+    }
+  },
+  "timestamp": "2026-01-19T06:19:33.643500"
+}

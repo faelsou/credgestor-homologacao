@@ -8,7 +8,7 @@ import { InstallmentStatus, LoanStatus, LoanModel } from '@/types';
 type DateRange = '1D' | '7D' | '1M' | '3M' | 'ALL';
 
 export const DashboardHome: React.FC = () => {
-  const { clients, installments, loans } = useContext(AppContext);
+  const { clients, installments, loans, setView } = useContext(AppContext);
   
   // Função para calcular datas baseado no range
   const getDateRange = (range: DateRange): { start: string; end: string } => {
@@ -417,12 +417,24 @@ export const DashboardHome: React.FC = () => {
               value={formatCurrency(parceladosStats.received)}
               icon={<TrendingUp className="text-emerald-600" size={20} />}
               bg="bg-emerald-50"
+              onClick={() => {
+                const { start, end } = parceladosDateRange === 'ALL' && parceladosStartDate && parceladosEndDate
+                  ? { start: parceladosStartDate, end: parceladosEndDate }
+                  : getDateRange(parceladosDateRange);
+                setView('installments', 'PAID', { start, end });
+              }}
             />
             <StatCard
               title="A Receber"
               value={formatCurrency(parceladosStats.receivable)}
               icon={<TrendingDown className="text-blue-600" size={20} />}
               bg="bg-blue-50"
+              onClick={() => {
+                const { start, end } = parceladosDateRange === 'ALL' && parceladosStartDate && parceladosEndDate
+                  ? { start: parceladosStartDate, end: parceladosEndDate }
+                  : getDateRange(parceladosDateRange);
+                setView('installments', 'PENDING', { start, end });
+              }}
             />
             <StatCard
               title="Em Atraso"
@@ -430,6 +442,12 @@ export const DashboardHome: React.FC = () => {
               subtext={`${parceladosStats.lateCount} parcelas`}
               icon={<AlertTriangle className="text-red-600" size={20} />}
               bg="bg-red-50"
+              onClick={() => {
+                const { start, end } = parceladosDateRange === 'ALL' && parceladosStartDate && parceladosEndDate
+                  ? { start: parceladosStartDate, end: parceladosEndDate }
+                  : getDateRange(parceladosDateRange);
+                setView('installments', 'LATE', { start, end });
+              }}
             />
             <StatCard
               title="Ativos"
@@ -550,12 +568,24 @@ export const DashboardHome: React.FC = () => {
               value={formatCurrency(jurosStats.received)}
               icon={<TrendingUp className="text-emerald-600" size={20} />}
               bg="bg-emerald-50"
+              onClick={() => {
+                const { start, end } = jurosDateRange === 'ALL' && jurosStartDate && jurosEndDate
+                  ? { start: jurosStartDate, end: jurosEndDate }
+                  : getDateRange(jurosDateRange);
+                setView('installments', 'PAID', { start, end });
+              }}
             />
             <StatCard
               title="A Receber"
               value={formatCurrency(jurosStats.receivable)}
               icon={<TrendingDown className="text-blue-600" size={20} />}
               bg="bg-blue-50"
+              onClick={() => {
+                const { start, end } = jurosDateRange === 'ALL' && jurosStartDate && jurosEndDate
+                  ? { start: jurosStartDate, end: jurosEndDate }
+                  : getDateRange(jurosDateRange);
+                setView('installments', 'PENDING', { start, end });
+              }}
             />
             <StatCard
               title="Em Atraso"
@@ -563,6 +593,12 @@ export const DashboardHome: React.FC = () => {
               subtext={`${jurosStats.lateCount} parcelas`}
               icon={<AlertTriangle className="text-red-600" size={20} />}
               bg="bg-red-50"
+              onClick={() => {
+                const { start, end } = jurosDateRange === 'ALL' && jurosStartDate && jurosEndDate
+                  ? { start: jurosStartDate, end: jurosEndDate }
+                  : getDateRange(jurosDateRange);
+                setView('installments', 'LATE', { start, end });
+              }}
             />
             <StatCard
               title="Ativos"
@@ -650,15 +686,20 @@ const StatCard = ({
   value, 
   subtext, 
   icon, 
-  bg 
+  bg,
+  onClick
 }: { 
   title: string; 
   value: string; 
   subtext?: string; 
   icon: React.ReactNode; 
   bg: string;
+  onClick?: () => void;
 }) => (
-  <div className={`p-4 rounded-xl border border-slate-200 ${bg}`}>
+  <div 
+    className={`p-4 rounded-xl border border-slate-200 ${bg} ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+    onClick={onClick}
+  >
     <div className="flex items-center justify-between mb-2">
       <p className="text-xs uppercase font-semibold text-slate-500">{title}</p>
       {icon}
