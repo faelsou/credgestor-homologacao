@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
-import { Plus, Calculator, Pencil, Trash2, FileText, Clock8, Search } from 'lucide-react';
+import { Plus, Calculator, Pencil, Trash2, FileText, Clock8, Search, RotateCcw } from 'lucide-react';
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, generateNoteHash, getTodayDateString } from '@/utils';
 import { LoanStatus, Installment, InstallmentStatus, UserRole, Loan, PromissoryNote, IndicationType, Client, LoanModel } from '@/types';
@@ -10,7 +10,7 @@ interface LoansViewProps {
 }
 
 export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit }) => {
-  const { loans, clients, installments, addLoan, updateLoan, deleteLoan, user, scheduleFuturePayment } = useContext(AppContext);
+  const { loans, clients, installments, addLoan, updateLoan, deleteLoan, user, scheduleFuturePayment, reopenLoan } = useContext(AppContext);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
   const [promiseModal, setPromiseModal] = useState<{ loan: Loan; installment: Installment } | null>(null);
@@ -594,6 +594,16 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                           aria-label="Agendar recebimento"
                         >
                           <Clock8 size={18} />
+                        </button>
+                      )}
+                      {loan.status === LoanStatus.PAID && (
+                        <button
+                          onClick={() => reopenLoan(loan.id)}
+                          className="p-2 rounded-lg hover:bg-blue-50 text-blue-600"
+                          aria-label="Reabrir empréstimo"
+                          title="Reabrir empréstimo finalizado"
+                        >
+                          <RotateCcw size={18} />
                         </button>
                       )}
                       <button
