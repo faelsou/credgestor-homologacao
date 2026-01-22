@@ -2779,41 +2779,6 @@ const App: React.FC = () => {
       setInstallments(prev => prev.map(inst => inst.id === id ? updatedInstallment : inst));
     }
 
-    // Função auxiliar para calcular valor em aberto
-    const calculateOutstandingAmount = (loan: Loan, relatedInstallments: Installment[]): number => {
-      if (relatedInstallments.length === 0) {
-        return loan.totalAmount;
-      }
-      
-      // Para empréstimos "somente juros", calcular capital + juros pendentes
-      if (loan.model === LoanModel.INTEREST_ONLY) {
-        let totalOutstanding = 0;
-        
-        // Soma todo o capital pendente
-        for (const inst of relatedInstallments) {
-          const principal = inst.principalAmount ?? 0;
-          if (principal > 0) {
-            totalOutstanding += principal;
-          }
-        }
-        
-        // Soma todos os juros pendentes
-        for (const inst of relatedInstallments) {
-          const interest = inst.interestAmount ?? 0;
-          if (interest > 0) {
-            totalOutstanding += interest;
-          }
-        }
-        
-        return Number(totalOutstanding.toFixed(2));
-      }
-      
-      // Para outros modelos, calcular valor total menos o que já foi pago
-      const totalPaid = relatedInstallments.reduce((sum, inst) => sum + (inst.amountPaid || 0), 0);
-      const outstanding = Math.max(0, loan.totalAmount - totalPaid);
-      return Number(outstanding.toFixed(2));
-    };
-
     // Atualizar status do empréstimo e valor em aberto
     setLoans(prevLoans => prevLoans.map(l => {
       const related = installments.filter(inst => inst.loanId === l.id);
