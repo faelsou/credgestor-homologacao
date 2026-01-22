@@ -2,7 +2,7 @@ import React, { useContext, useState, useMemo, useCallback } from 'react';
 import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Pencil } from 'lucide-react';
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, getTodayDateString, isLate } from '@/utils';
-import { InstallmentStatus, Installment, UserRole } from '@/types';
+import { InstallmentStatus, Installment, UserRole, LoanModel } from '@/types';
 
 export const InstallmentsView: React.FC = () => {
   const { installments, clients, loans, payInstallment, updateInstallment, scheduleFuturePayment, user, installmentsInitialFilter, setInstallmentsInitialFilter, installmentsDateRange, setInstallmentsDateRange } = useContext(AppContext);
@@ -227,8 +227,64 @@ export const InstallmentsView: React.FC = () => {
       return;
     }
 
-    // Validar valor mínimo (pelo menos o valor dos juros baseado na taxa do empréstimo)
     const loan = loans.find(l => l.id === selectedInstallment.loanId);
+    if (!loan) return;
+
+    // Calcular valor total em aberto do empréstimo
+    const allLoanInstallments = installments.filter(inst => inst.loanId === loan.id);
+    
+    const calculateOutstandingAmount = (): number => {
+      if (allLoanInstallments.length === 0) {
+        return loan.totalAmount;
+      }
+      
+      // Para empréstimos "somente juros", calcular capital + juros pendentes
+      if (loan.model === LoanModel.INTEREST_ONLY) {
+        let capitalAmount = 0;
+        let totalInterest = 0;
+        
+        // IMPORTANTE: No modelo "somente juros", o capital é compartilhado entre todas as parcelas
+        // Não devemos somar o capital de todas as parcelas, mas sim pegar o capital de UMA parcela pendente
+        // (todas as parcelas têm o mesmo capital)
+        for (const inst of allLoanInstallments) {
+          if (inst.status !== InstallmentStatus.PAID) {
+            const principal = inst.principalAmount ?? 0;
+            if (principal > 0 && capitalAmount === 0) {
+              capitalAmount = principal; // Capital é o mesmo para todas as parcelas
+            }
+            
+            // Soma todos os juros pendentes
+            const interest = inst.interestAmount ?? 0;
+            if (interest > 0) {
+              totalInterest += interest;
+            }
+          }
+        }
+        
+        const totalOutstanding = capitalAmount + totalInterest;
+        return Number(totalOutstanding.toFixed(2));
+      }
+      
+      // Para outros modelos, calcular valor total menos o que já foi pago
+      const totalPaid = allLoanInstallments.reduce((sum, inst) => sum + (inst.amountPaid || 0), 0);
+      const outstanding = Math.max(0, loan.totalAmount - totalPaid);
+      return Number(outstanding.toFixed(2));
+    };
+
+    const outstandingAmount = calculateOutstandingAmount();
+
+    // Se o pagamento for igual ou maior que o valor total em aberto, é um pagamento total
+    // Nesse caso, não validar valor mínimo de juros
+    if (paymentAmount >= outstandingAmount && outstandingAmount > 0) {
+      // Pagamento total - permitir sem validação de mínimo
+      payInstallment(selectedInstallment.id, paymentAmount, paymentDate);
+      setSelectedInstallment(null);
+      setPaymentAmount(0);
+      setPaymentDate(getTodayDateString());
+      return;
+    }
+
+    // Para pagamentos parciais, validar valor mínimo (pelo menos o valor dos juros)
     let interestAmount = selectedInstallment.interestAmount ?? 0;
     
     // Se não houver interestAmount, calcular baseado na taxa do empréstimo
@@ -237,7 +293,7 @@ export const InstallmentsView: React.FC = () => {
       interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
     }
     
-    // Sempre validar que o pagamento seja pelo menos o valor dos juros
+    // Validar que o pagamento seja pelo menos o valor dos juros (apenas para pagamentos parciais)
     if (interestAmount > 0 && paymentAmount < interestAmount) {
       alert(`O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${loan?.interestRate ?? 0}% do empréstimo).`);
       return;
