@@ -5,8 +5,23 @@ import { formatCurrency, formatDate, getTodayDateString, isLate } from '@/utils'
 import { InstallmentStatus, Installment, UserRole } from '@/types';
 
 export const InstallmentsView: React.FC = () => {
-  const { installments, clients, loans, payInstallment, updateInstallment, scheduleFuturePayment, user } = useContext(AppContext);
-  const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'LATE' | 'PAID' | 'PARTIAL'>('ALL');
+  const { installments, clients, loans, payInstallment, updateInstallment, scheduleFuturePayment, user, installmentsInitialFilter, setInstallmentsInitialFilter, installmentsDateRange, setInstallmentsDateRange } = useContext(AppContext);
+  const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'LATE' | 'PAID' | 'PARTIAL'>(installmentsInitialFilter || 'ALL');
+  const [dateFilterStart, setDateFilterStart] = useState<string | null>(installmentsDateRange?.start || null);
+  const [dateFilterEnd, setDateFilterEnd] = useState<string | null>(installmentsDateRange?.end || null);
+  
+  // Limpar filtro inicial após usar
+  React.useEffect(() => {
+    if (installmentsInitialFilter) {
+      setFilter(installmentsInitialFilter);
+      setInstallmentsInitialFilter(null);
+    }
+    if (installmentsDateRange) {
+      setDateFilterStart(installmentsDateRange.start);
+      setDateFilterEnd(installmentsDateRange.end);
+      setInstallmentsDateRange(null);
+    }
+  }, [installmentsInitialFilter, setInstallmentsInitialFilter, installmentsDateRange, setInstallmentsDateRange]);
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [paymentDate, setPaymentDate] = useState(getTodayDateString());
@@ -72,6 +87,14 @@ export const InstallmentsView: React.FC = () => {
     return true;
   }, []);
 
+  // Função auxiliar para normalizar data para comparação
+  const normalizeDateString = (dateStr: string): string => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    if (dateStr.includes('T')) return dateStr.split('T')[0];
+    if (dateStr.includes(' ')) return dateStr.split(' ')[0];
+    return dateStr;
+  };
+
   const filtered = useMemo(() => {
     let result = installments.filter(inst => {
       if (filter === 'ALL') return true;
@@ -80,6 +103,16 @@ export const InstallmentsView: React.FC = () => {
       if (filter === 'PARTIAL') return inst.status === InstallmentStatus.PARTIAL;
       return inst.status === filter;
     });
+
+    // Aplicar filtro de data se fornecido
+    if (dateFilterStart && dateFilterEnd) {
+      const startNormalized = normalizeDateString(dateFilterStart);
+      const endNormalized = normalizeDateString(dateFilterEnd);
+      result = result.filter(inst => {
+        const dueNormalized = normalizeDateString(inst.dueDate);
+        return dueNormalized >= startNormalized && dueNormalized <= endNormalized;
+      });
+    }
 
     // Aplicar busca por nome do cliente ou número da parcela
     if (searchTerm.trim()) {
@@ -93,7 +126,7 @@ export const InstallmentsView: React.FC = () => {
     }
 
     return result.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
-  }, [installments, filter, searchTerm, clients]);
+  }, [installments, filter, searchTerm, clients, dateFilterStart, dateFilterEnd, isActuallyLate]);
 
   const handleWhatsapp = (inst: Installment) => {
     const client = getClient(inst.clientId);
