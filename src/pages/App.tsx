@@ -1558,6 +1558,7 @@ export const AppContext = React.createContext<{
   updateInstallment: (id: string, installment: Installment) => Promise<void>;
   scheduleFuturePayment: (id: string, reason: string, amount: number, date?: string) => Promise<void>;
   startEditingLoan: (loanId: string) => void;
+  reopenLoan: (loanId: string) => Promise<void>;
   addUser: (newUser: User) => Promise<User | null>;
   removeUser: (id: string) => Promise<void>;
   view: string;
@@ -2345,6 +2346,53 @@ const App: React.FC = () => {
     setView('loans');
   };
 
+  const reopenLoan = useCallback(async (loanId: string) => {
+    if (user?.role !== UserRole.ADMIN) {
+      alert("Acesso restrito: apenas administradores podem reabrir empréstimos.");
+      return;
+    }
+
+    const loan = loans.find(l => l.id === loanId);
+    if (!loan) return;
+
+    if (loan.status !== LoanStatus.PAID) {
+      alert("Apenas empréstimos finalizados podem ser reabertos.");
+      return;
+    }
+
+    if (!confirm('Deseja reabrir este empréstimo? O status será alterado de "Finalizado" para "Em Aberto".')) {
+      return;
+    }
+
+    // Reabrir empréstimo: mudar status de PAID para ACTIVE
+    const updatedLoan = {
+      ...loan,
+      status: LoanStatus.ACTIVE
+    };
+
+    // Atualizar no backend se configurado
+    if (isBackendConfiguredValue && session?.accessToken) {
+      try {
+        const { updateBackendLoan } = await import('@/services/backendApi');
+        await updateBackendLoan(
+          session.accessToken,
+          requireTenantId(session.tenantId, 'reabrir empréstimo'),
+          loanId,
+          updatedLoan
+        );
+      } catch (error) {
+        console.error('Erro ao reabrir empréstimo no backend', error);
+        alert('Erro ao reabrir empréstimo. Tente novamente.');
+        return;
+      }
+    }
+
+    // Atualizar estado local
+    setLoans(prev => prev.map(l => l.id === loanId ? updatedLoan : l));
+    
+    alert('Empréstimo reaberto com sucesso!');
+  }, [loans, user?.role, isBackendConfiguredValue, session]);
+
   const payInstallment = useCallback(async (id: string, amount?: number, paymentDate?: string) => {
     if (user?.role === UserRole.COLLECTION) {
       alert("Acesso restrito: Cobradores não podem baixar pagamentos, apenas visualizar.");
@@ -3022,6 +3070,7 @@ const App: React.FC = () => {
     updateInstallment,
     scheduleFuturePayment,
     startEditingLoan,
+    reopenLoan,
     addUser,
     removeUser,
     view,
@@ -3032,7 +3081,7 @@ const App: React.FC = () => {
     setInstallmentsInitialFilter,
     installmentsDateRange,
     setInstallmentsDateRange
-  }), [user, usersList, clients, loans, installments, session, setSession, isBackendConfiguredValue, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, updateInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setViewWithFilter, installmentsInitialFilter, installmentsDateRange]);
+  }), [user, usersList, clients, loans, installments, session, setSession, isBackendConfiguredValue, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, updateInstallment, scheduleFuturePayment, startEditingLoan, reopenLoan, addLoan, updateLoan, setTheme, setViewWithFilter, installmentsInitialFilter, installmentsDateRange]);
 
   useEffect(() => {
     const body = document.body;
