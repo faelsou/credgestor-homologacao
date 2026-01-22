@@ -1561,9 +1561,13 @@ export const AppContext = React.createContext<{
   addUser: (newUser: User) => Promise<User | null>;
   removeUser: (id: string) => Promise<void>;
   view: string;
-  setView: (v: string) => void;
+  setView: (v: string, filter?: 'ALL' | 'PENDING' | 'LATE' | 'PAID' | 'PARTIAL', dateRange?: { start: string; end: string }) => void;
   theme: ThemeOption;
   setTheme: (theme: ThemeOption) => void;
+  installmentsInitialFilter: 'ALL' | 'PENDING' | 'LATE' | 'PAID' | 'PARTIAL' | null;
+  setInstallmentsInitialFilter: (filter: 'ALL' | 'PENDING' | 'LATE' | 'PAID' | 'PARTIAL' | null) => void;
+  installmentsDateRange: { start: string; end: string } | null;
+  setInstallmentsDateRange: (range: { start: string; end: string } | null) => void;
 }>({} as any);
 
 const App: React.FC = () => {
@@ -1581,6 +1585,8 @@ const App: React.FC = () => {
 
   const [user, setUser] = useState<User | null>(() => shouldUseLocalPersistence ? storedState.user ?? null : null);
   const [view, setView] = useState(storedState.view ?? 'home');
+  const [installmentsInitialFilter, setInstallmentsInitialFilter] = useState<'ALL' | 'PENDING' | 'LATE' | 'PAID' | 'PARTIAL' | null>(null);
+  const [installmentsDateRange, setInstallmentsDateRange] = useState<{ start: string; end: string } | null>(null);
 
   // REGRA IMPORTANTE: Não carregar dados do localStorage quando usa backend
   // localStorage é compartilhado entre usuários no mesmo navegador
@@ -2264,7 +2270,7 @@ const App: React.FC = () => {
     };
 
     const promisedPaymentHistory = [...(installment.promisedPaymentHistory ?? []), entry];
-    
+
     // Encontrar a data mais recente do histórico (incluindo o novo agendamento)
     // A data de vencimento deve ser sempre a data mais recente do histórico de agendamentos
     const allDates = [...promisedPaymentHistory.map(e => e.date), scheduledDate];
@@ -2355,6 +2361,176 @@ const App: React.FC = () => {
     // Usar a data fornecida ou a data de hoje como padrão
     const actualPaymentDate = paymentDate || getTodayDateString();
 
+    // Função auxiliar para calcular valor em aberto do empréstimo
+    const calculateOutstandingAmount = (loan: Loan, relatedInstallments: Installment[]): number => {
+      if (relatedInstallments.length === 0) {
+        return loan.totalAmount;
+      }
+      
+      // Para empréstimos "somente juros", calcular capital + juros pendentes
+      if (loan.model === LoanModel.INTEREST_ONLY) {
+        let totalOutstanding = 0;
+        
+        // Soma todo o capital pendente
+        for (const inst of relatedInstallments) {
+          const principal = inst.principalAmount ?? 0;
+          if (principal > 0 && inst.status !== InstallmentStatus.PAID) {
+            totalOutstanding += principal;
+          }
+        }
+        
+        // Soma todos os juros pendentes
+        for (const inst of relatedInstallments) {
+          const interest = inst.interestAmount ?? 0;
+          if (interest > 0 && inst.status !== InstallmentStatus.PAID) {
+            totalOutstanding += interest;
+          }
+        }
+        
+        return Number(totalOutstanding.toFixed(2));
+      }
+      
+      // Para outros modelos, calcular valor total menos o que já foi pago
+      const totalPaid = relatedInstallments.reduce((sum, inst) => sum + (inst.amountPaid || 0), 0);
+      const outstanding = Math.max(0, loan.totalAmount - totalPaid);
+      return Number(outstanding.toFixed(2));
+    };
+
+    // Verificar se o pagamento é igual ou maior que o valor total em aberto
+    // Se for, marcar todas as parcelas como pagas
+    const allLoanInstallments = installments.filter(inst => inst.loanId === loan.id);
+    const outstandingAmount = calculateOutstandingAmount(loan, allLoanInstallments);
+    
+    if (paymentValue >= outstandingAmount && outstandingAmount > 0) {
+      // Pagamento total do empréstimo - marcar todas as parcelas como pagas
+      const updatedInstallments: Installment[] = [];
+      let remainingPayment = paymentValue;
+      
+      for (const inst of allLoanInstallments) {
+        if (inst.status === InstallmentStatus.PAID) {
+          updatedInstallments.push(inst);
+          continue;
+        }
+
+        // Calcular quanto falta pagar nesta parcela
+        const pendingAmount = inst.amount - (inst.amountPaid || 0);
+        
+        if (pendingAmount <= 0) {
+          // Parcela já está paga
+          updatedInstallments.push(inst);
+          continue;
+        }
+
+        let pendingInterest = inst.interestAmount ?? 0;
+        let pendingPrincipal = inst.principalAmount ?? 0;
+        
+        // Se não houver valores definidos, calcular baseado no modelo
+        if (loan.model === LoanModel.INTEREST_ONLY) {
+          // Para somente juros, calcular juros baseado no capital se não estiver definido
+          if (pendingInterest === 0 && pendingPrincipal > 0) {
+            pendingInterest = Number((pendingPrincipal * (loan.interestRate / 100)).toFixed(2));
+          }
+          // Se ainda não tiver principal, usar o amount como base
+          if (pendingPrincipal === 0 && pendingInterest === 0) {
+            pendingPrincipal = inst.amount;
+            pendingInterest = Number((pendingPrincipal * (loan.interestRate / 100)).toFixed(2));
+          }
+        } else {
+          // Para outros modelos, se não tiver valores separados, usar o amount pendente
+          if (pendingInterest === 0 && pendingPrincipal === 0) {
+            pendingPrincipal = pendingAmount;
+          }
+        }
+
+        const totalPending = pendingInterest + pendingPrincipal;
+        
+        if (totalPending > 0 && remainingPayment > 0) {
+          // Abater o que falta nesta parcela
+          const interestPaid = Math.min(remainingPayment, pendingInterest);
+          remainingPayment -= interestPaid;
+          const principalPaid = Math.min(remainingPayment, pendingPrincipal);
+          remainingPayment -= principalPaid;
+          
+          const totalPaidForThis = interestPaid + principalPaid;
+          
+          // Registrar pagamento no histórico
+          const paymentHistoryEntry = {
+            amount: totalPaidForThis,
+            interestPaid: interestPaid,
+            principalPaid: principalPaid,
+            paymentDate: actualPaymentDate,
+            createdAt: new Date().toISOString()
+          };
+          const existingHistory = inst.paymentHistory || [];
+          const updatedPaymentHistory = [...existingHistory, paymentHistoryEntry];
+
+          const updatedInst: Installment = {
+            ...inst,
+            amount: inst.amount, // Preservar valor original
+            interestAmount: 0,
+            principalAmount: 0,
+            amountPaid: inst.amount, // Marcar como totalmente pago
+            paymentHistory: updatedPaymentHistory,
+            status: InstallmentStatus.PAID,
+            paidDate: actualPaymentDate
+          };
+          
+          updatedInstallments.push(updatedInst);
+        } else {
+          updatedInstallments.push(inst);
+        }
+      }
+
+      // Atualizar parcelas no backend se configurado
+      if (isBackendConfiguredValue && session?.accessToken) {
+        try {
+          const { updateBackendInstallment } = await import('@/services/backendApi');
+          for (const inst of updatedInstallments) {
+            if (inst.status === InstallmentStatus.PAID) {
+              await updateBackendInstallment(
+                session.accessToken,
+                requireTenantId(session.tenantId, 'operar com parcelas'),
+                inst.id,
+                inst
+              );
+            }
+          }
+        } catch (error) {
+          console.error('Erro ao atualizar parcelas no backend', error);
+        }
+      }
+
+      // Atualizar todas as parcelas
+      setInstallments(prev => {
+        const updatedMap = new Map(updatedInstallments.map(inst => [inst.id, inst]));
+        return prev.map(inst => updatedMap.get(inst.id) || inst);
+      });
+
+      // Atualizar status do empréstimo
+      setLoans(prevLoans => prevLoans.map(l => {
+        if (l.id === loan.id) {
+          const updatedLoan = { ...l, status: LoanStatus.PAID, outstandingAmount: 0 };
+          
+          // Atualizar no backend se configurado
+          if (isBackendConfiguredValue && session?.accessToken) {
+            (async () => {
+              try {
+                const { updateBackendLoan } = await import('@/services/backendApi');
+                await updateBackendLoan(session.accessToken, session.tenantId || '', l.id, updatedLoan);
+              } catch (error) {
+                console.error('Erro ao atualizar empréstimo no backend', error);
+              }
+            })();
+          }
+          
+          return updatedLoan;
+        }
+        return l;
+      }));
+
+      return; // Sair da função após processar pagamento total
+    }
+
     // Função auxiliar para adicionar meses a uma data
     const addMonths = (dateString: string, months: number) => {
       // Parse a data no formato YYYY-MM-DD evitando problemas de fuso horário
@@ -2396,12 +2572,8 @@ const App: React.FC = () => {
 
       // Para empréstimos "somente juros", o amount é apenas os juros, não juros + principal
       // O status é PAID quando não há mais juros nem principal pendentes
-      // IMPORTANTE: O amount deve sempre ser pelo menos o valor mínimo dos juros baseado no capital restante
-      const rateDecimal = loan.interestRate / 100;
-      // Calcular valor mínimo dos juros baseado no capital restante
-      const minInterestFromPrincipal = updatedPrincipal > 0 ? Number((updatedPrincipal * rateDecimal).toFixed(2)) : 0;
-      // O amount deve ser pelo menos o valor mínimo dos juros, mesmo que os juros atuais sejam menores ou zero
-      const remainingBalance = Math.max(updatedInterest, minInterestFromPrincipal);
+      // IMPORTANTE: Para pagamentos retroativos, o amount original deve ser preservado
+      // Não recalcular o amount baseado no capital restante para manter o valor inicial
       const newStatus = (updatedInterest <= 0 && updatedPrincipal <= 0) ? InstallmentStatus.PAID : 
                        (updatedInterest <= 0 && updatedPrincipal <= 0) ? InstallmentStatus.PARTIAL : InstallmentStatus.PARTIAL;
       
@@ -2419,9 +2591,12 @@ const App: React.FC = () => {
       const existingHistory = installment.paymentHistory || [];
       const updatedPaymentHistory = [...existingHistory, paymentHistoryEntry];
 
+      // IMPORTANTE: Preservar o amount original da parcela para não alterar o valor inicial
+      // Isso é especialmente importante para pagamentos retroativos
+      // Apenas atualizar interestAmount e principalAmount, mantendo o amount original
       const updatedInstallment = {
         ...installment,
-        amount: remainingBalance, // Sempre pelo menos o valor mínimo dos juros baseado no capital restante
+        amount: installment.amount, // Preservar o valor original da parcela
         interestAmount: updatedInterest,
         principalAmount: updatedPrincipal,
         amountPaid: Number(((installment.amountPaid || 0) + appliedToThisInstallment).toFixed(2)),
@@ -2833,6 +3008,21 @@ const App: React.FC = () => {
     setUsersList(prev => prev.filter(u => u.id !== id));
   }, [user?.id, isBackendConfiguredValue]);
 
+  const setViewWithFilter = useCallback((v: string, filter?: 'ALL' | 'PENDING' | 'LATE' | 'PAID' | 'PARTIAL', dateRange?: { start: string; end: string }) => {
+    setView(v);
+    if (v === 'installments' && filter) {
+      setInstallmentsInitialFilter(filter);
+      if (dateRange) {
+        setInstallmentsDateRange(dateRange);
+      } else {
+        setInstallmentsDateRange(null);
+      }
+    } else if (v !== 'installments') {
+      setInstallmentsInitialFilter(null);
+      setInstallmentsDateRange(null);
+    }
+  }, []);
+
   const value = useMemo(() => ({
     user,
     usersList,
@@ -2857,10 +3047,14 @@ const App: React.FC = () => {
     addUser,
     removeUser,
     view,
-    setView,
+    setView: setViewWithFilter,
     theme,
-    setTheme
-  }), [user, usersList, clients, loans, installments, session, setSession, isBackendConfiguredValue, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, updateInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setView]);
+    setTheme,
+    installmentsInitialFilter,
+    setInstallmentsInitialFilter,
+    installmentsDateRange,
+    setInstallmentsDateRange
+  }), [user, usersList, clients, loans, installments, session, setSession, isBackendConfiguredValue, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, updateInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setViewWithFilter, installmentsInitialFilter, installmentsDateRange]);
 
   useEffect(() => {
     const body = document.body;
