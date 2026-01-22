@@ -1,11 +1,11 @@
 import React, { useContext, useMemo, useState } from 'react';
-import { Search, CalendarRange, Pencil, Clock8 } from 'lucide-react';
+import { Search, CalendarRange, Pencil, Clock8, RotateCcw } from 'lucide-react';
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, getTodayDateString } from '@/utils';
 import { Installment, InstallmentStatus, LoanStatus, LoanModel } from '@/types';
 
 export const LoanHistoryView: React.FC = () => {
-  const { loans, clients, installments, scheduleFuturePayment, startEditingLoan } = useContext(AppContext);
+  const { loans, clients, installments, scheduleFuturePayment, startEditingLoan, reopenLoan } = useContext(AppContext);
   const [nameFilter, setNameFilter] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -287,6 +287,15 @@ export const LoanHistoryView: React.FC = () => {
                             className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-100 rounded-lg hover:bg-purple-100"
                           >
                             <Clock8 size={14} /> Agendar recebimento
+                          </button>
+                        )}
+                        {correctStatus === LoanStatus.PAID && (
+                          <button
+                            onClick={() => reopenLoan(loan.id)}
+                            className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100"
+                            title="Reabrir empréstimo finalizado"
+                          >
+                            <RotateCcw size={14} /> Reabrir
                           </button>
                         )}
                         <button
