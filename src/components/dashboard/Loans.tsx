@@ -828,28 +828,30 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       </div>
 
       {/* Filtros: Busca e Status */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <input
-            type="text"
-            className="w-full pl-10 pr-4 py-3 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors text-slate-700"
-            placeholder="Buscar por nome do cliente..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-          />
-        </div>
-        <div>
-          <select
-            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors text-slate-700"
-            value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value as LoanStatus | 'ALL')}
-          >
-            <option value="ALL">Todos os status</option>
-            <option value={LoanStatus.ACTIVE}>Em Aberto</option>
-            <option value={LoanStatus.PAID}>Finalizado</option>
-            <option value={LoanStatus.DEFAULTED}>Em Atraso</option>
-          </select>
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input
+              type="text"
+              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:border-emerald-500 transition-colors text-slate-700"
+              placeholder="Buscar por nome do cliente..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div>
+            <select
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:border-emerald-500 transition-colors text-slate-700"
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as LoanStatus | 'ALL')}
+            >
+              <option value="ALL">Todos os status</option>
+              <option value={LoanStatus.ACTIVE}>Em Aberto</option>
+              <option value={LoanStatus.PAID}>Finalizado</option>
+              <option value={LoanStatus.DEFAULTED}>Em Atraso</option>
+            </select>
+          </div>
         </div>
       </div>
 
