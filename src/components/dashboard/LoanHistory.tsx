@@ -9,6 +9,7 @@ export const LoanHistoryView: React.FC = () => {
   const [nameFilter, setNameFilter] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [statusFilter, setStatusFilter] = useState<LoanStatus | 'ALL'>('ALL');
   const [promiseModal, setPromiseModal] = useState<{ loanId: string; installment: Installment } | null>(null);
   const [promiseReason, setPromiseReason] = useState('');
   const [promiseAmount, setPromiseAmount] = useState(0);
@@ -90,11 +91,15 @@ export const LoanHistoryView: React.FC = () => {
         const loanDate = new Date(loan.startDate);
         const afterStart = startDate ? loanDate >= new Date(startDate) : true;
         const beforeEnd = endDate ? loanDate <= new Date(endDate) : true;
+        
+        // Calcular status correto para filtrar
+        const correctStatus = calculateLoanStatus(loan);
+        const matchesStatus = statusFilter === 'ALL' || correctStatus === statusFilter;
 
-        return matchesName && afterStart && beforeEnd;
+        return matchesName && afterStart && beforeEnd && matchesStatus;
       })
       .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
-  }, [clients, endDate, loans, nameFilter, startDate]);
+  }, [clients, endDate, loans, nameFilter, startDate, statusFilter]);
 
   const statusBadge = (status: LoanStatus) => {
     switch (status) {
@@ -206,7 +211,7 @@ export const LoanHistoryView: React.FC = () => {
       </div>
 
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input
@@ -232,6 +237,18 @@ export const LoanHistoryView: React.FC = () => {
               value={endDate}
               onChange={e => setEndDate(e.target.value)}
             />
+          </div>
+          <div>
+            <select
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-colors"
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as LoanStatus | 'ALL')}
+            >
+              <option value="ALL">Todos os status</option>
+              <option value={LoanStatus.ACTIVE}>Em Aberto</option>
+              <option value={LoanStatus.PAID}>Finalizado</option>
+              <option value={LoanStatus.DEFAULTED}>Em Atraso</option>
+            </select>
           </div>
           <div className="flex items-center justify-end text-sm text-slate-500">
             {filteredLoans.length} empréstimo(s) encontrado(s)
