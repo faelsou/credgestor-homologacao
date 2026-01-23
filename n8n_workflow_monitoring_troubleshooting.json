@@ -1,0 +1,594 @@
+{
+  "name": "CredGestor - Monitoramento e Troubleshooting Automatizado",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Verificação Periódica",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "notes": "Executa a cada 15 minutos para verificar a saúde da aplicação"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://credgestor.app.br/api/health",
+        "options": {
+          "timeout": 10000,
+          "redirect": {
+            "followRedirects": true
+          }
+        }
+      },
+      "id": "health-check-api",
+      "name": "Health Check API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://credgestor.app.br/api/metrics",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "metrics-check",
+      "name": "Verificar Métricas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 480]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://credgestor.app.br",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "frontend-check",
+      "name": "Health Check Frontend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 660]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Agregar resultados de todas as verificações\nconst healthApi = $('Health Check API').item.json;\nconst metrics = $('Verificar Métricas').item.json;\nconst frontend = $('Frontend Check').item.json;\n\nconst timestamp = new Date().toISOString();\n\n// Analisar status da API\nconst apiStatus = {\n  status: healthApi.statusCode === 200 ? 'healthy' : 'unhealthy',\n  statusCode: healthApi.statusCode,\n  response: healthApi.body || healthApi.data || {},\n  timestamp: timestamp\n};\n\n// Analisar métricas\nlet metricsData = {};\nif (metrics.statusCode === 200) {\n  const metricsText = typeof metrics.body === 'string' ? metrics.body : JSON.stringify(metrics.body);\n  // Extrair métricas importantes\n  const httpRequestsMatch = metricsText.match(/http_requests_total\\{.*?\\} (\\d+)/g);\n  const httpDurationMatch = metricsText.match(/http_request_duration_seconds_bucket\\{.*?\\} ([\\d.]+)/g);\n  \n  metricsData = {\n    status: 'available',\n    hasData: true,\n    raw: metricsText.substring(0, 1000) // Primeiros 1000 caracteres\n  };\n} else {\n  metricsData = {\n    status: 'unavailable',\n    hasData: false\n  };\n}\n\n// Analisar frontend\nconst frontendStatus = {\n  status: frontend.statusCode === 200 ? 'healthy' : 'unhealthy',\n  statusCode: frontend.statusCode,\n  timestamp: timestamp\n};\n\n// Determinar se há problemas\nconst issues = [];\nif (apiStatus.status === 'unhealthy') {\n  issues.push({\n    type: 'api',\n    severity: 'critical',\n    message: `API retornou status ${apiStatus.statusCode}`,\n    component: 'backend'\n  });\n}\n\nif (metricsData.status === 'unavailable') {\n  issues.push({\n    type: 'metrics',\n    severity: 'warning',\n    message: 'Métricas não estão disponíveis',\n    component: 'monitoring'\n  });\n}\n\nif (frontendStatus.status === 'unhealthy') {\n  issues.push({\n    type: 'frontend',\n    severity: 'critical',\n    message: `Frontend retornou status ${frontendStatus.statusCode}`,\n    component: 'frontend'\n  });\n}\n\nreturn [{\n  json: {\n    timestamp: timestamp,\n    api: apiStatus,\n    metrics: metricsData,\n    frontend: frontendStatus,\n    issues: issues,\n    hasIssues: issues.length > 0,\n    issueCount: issues.length\n  }\n}];"
+      },
+      "id": "aggregate-results",
+      "name": "Agregar Resultados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 480]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-issues",
+              "leftValue": "={{ $json.hasIssues }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-issues",
+      "name": "Verificar Problemas",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 480]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Separar problemas por tipo para análise especializada\nconst data = $input.item.json;\nconst issues = data.issues || [];\n\nconst infraIssues = issues.filter(i => \n  i.type === 'api' || \n  i.component === 'backend' || \n  i.component === 'monitoring'\n);\n\nconst devIssues = issues.filter(i => \n  i.type === 'frontend' || \n  (i.type === 'api' && i.message.includes('code') || i.message.includes('error'))\n);\n\nconst results = [];\n\n// Se houver problemas de infra\nif (infraIssues.length > 0) {\n  results.push({\n    json: {\n      specialist: 'infra',\n      issues: infraIssues,\n      context: {\n        api: data.api,\n        metrics: data.metrics,\n        timestamp: data.timestamp\n      },\n      requiresAnalysis: true\n    }\n  });\n}\n\n// Se houver problemas de desenvolvimento\nif (devIssues.length > 0) {\n  results.push({\n    json: {\n      specialist: 'developer',\n      issues: devIssues,\n      context: {\n        frontend: data.frontend,\n        api: data.api,\n        timestamp: data.timestamp\n      },\n      requiresAnalysis: true\n    }\n  });\n}\n\n// Se não houver problemas específicos mas houver algum problema geral\nif (results.length === 0 && issues.length > 0) {\n  results.push({\n    json: {\n      specialist: 'infra',\n      issues: issues,\n      context: data,\n      requiresAnalysis: true\n    }\n  });\n}\n\nreturn results.length > 0 ? results : [{ json: { skip: true, message: 'Nenhum problema detectado' } }];"
+      },
+      "id": "route-to-specialists",
+      "name": "Rotear para Especialistas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 480]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-infra",
+              "leftValue": "={{ $json.specialist }}",
+              "rightValue": "infra",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-infra",
+      "name": "Rotear Infra",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 380]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-dev",
+              "leftValue": "={{ $json.specialist }}",
+              "rightValue": "developer",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-dev",
+      "name": "Rotear Dev",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 580]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar prompt para Claude AI\nconst data = $input.item.json;\nconst promptTemplate = $env.PROMPT_INFRA_SPECIALIST || '';\n\n// Substituir placeholders no prompt\nlet prompt = promptTemplate\n  .replace(/\\{\\{issues\\}\\}/g, JSON.stringify(data.issues, null, 2))\n  .replace(/\\{\\{context\\}\\}/g, JSON.stringify(data.context, null, 2));\n\nreturn [{\n  json: {\n    ...data,\n    prompt: prompt,\n    model: $env.LLM_MODEL || 'claude-3-5-sonnet-20241022'\n  }\n}];"
+      },
+      "id": "prepare-infra-prompt",
+      "name": "Preparar Prompt Infra",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 280]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({\n  model: $json.model,\n  max_tokens: 4000,\n  temperature: 0.3,\n  messages: [{\n    role: 'user',\n    content: $json.prompt\n  }]\n}) }}",
+        "options": {}
+      },
+      "id": "llm-infra-analysis",
+      "name": "Análise Especialista Infra",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 280],
+      "notes": "Usa Claude AI via HTTP Request. Configure PROMPT_INFRA_SPECIALIST e ANTHROPIC_API_KEY nas variáveis de ambiente."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar prompt para Claude AI\nconst data = $input.item.json;\nconst promptTemplate = $env.PROMPT_DEV_SPECIALIST || '';\n\n// Substituir placeholders no prompt\nlet prompt = promptTemplate\n  .replace(/\\{\\{issues\\}\\}/g, JSON.stringify(data.issues, null, 2))\n  .replace(/\\{\\{context\\}\\}/g, JSON.stringify(data.context, null, 2));\n\nreturn [{\n  json: {\n    ...data,\n    prompt: prompt,\n    model: $env.LLM_MODEL || 'claude-3-5-sonnet-20241022'\n  }\n}];"
+      },
+      "id": "prepare-dev-prompt",
+      "name": "Preparar Prompt Dev",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 680]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({\n  model: $json.model,\n  max_tokens: 4000,\n  temperature: 0.3,\n  messages: [{\n    role: 'user',\n    content: $json.prompt\n  }]\n}) }}",
+        "options": {}
+      },
+      "id": "llm-dev-analysis",
+      "name": "Análise Especialista Dev",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 680],
+      "notes": "Usa Claude AI via HTTP Request. Configure PROMPT_DEV_SPECIALIST e ANTHROPIC_API_KEY nas variáveis de ambiente."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar resposta do LLM e extrair diagnóstico e plano de ação\nconst llmResponse = $input.item.json;\n\n// Determinar qual especialista chamou (infra ou dev)\nlet originalData;\ntry {\n  originalData = $('Rotear para Especialistas').item.json;\n} catch (e) {\n  // Se não conseguir, tentar pegar do nó anterior\n  try {\n    originalData = $('Preparar Prompt Infra').item.json;\n  } catch (e2) {\n    originalData = $('Preparar Prompt Dev').item.json;\n  }\n}\n\n// Extrair texto da resposta do LLM (formato Anthropic API via HTTP Request)\nlet analysisText = '';\n\n// HTTP Request retorna body como string ou objeto\nlet responseBody = llmResponse.body || llmResponse;\nif (typeof responseBody === 'string') {\n  try {\n    responseBody = JSON.parse(responseBody);\n  } catch (e) {\n    responseBody = { content: [{ type: 'text', text: responseBody }] };\n  }\n}\n\n// Extrair conteúdo da resposta Anthropic\nif (responseBody.content && Array.isArray(responseBody.content)) {\n  const textContent = responseBody.content.find(c => c.type === 'text');\n  analysisText = textContent ? textContent.text : JSON.stringify(responseBody.content);\n} else if (responseBody.text) {\n  analysisText = responseBody.text;\n} else if (responseBody.message) {\n  analysisText = responseBody.message.content || responseBody.message;\n} else {\n  analysisText = JSON.stringify(responseBody);\n}\n\n// Tentar extrair JSON estruturado se presente\nlet diagnosis = {};\nlet actionPlan = [];\nlet requiresApproval = false;\nlet severity = 'medium';\n\ntry {\n  // Tentar encontrar JSON na resposta\n  const jsonMatch = analysisText.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    const parsed = JSON.parse(jsonMatch[0]);\n    diagnosis = parsed.diagnosis || parsed.analysis || {};\n    actionPlan = parsed.actionPlan || parsed.actions || [];\n    requiresApproval = parsed.requiresApproval !== false;\n    severity = parsed.severity || severity;\n  } else {\n    // Se não houver JSON, criar estrutura a partir do texto\n    diagnosis = {\n      summary: analysisText.substring(0, 500),\n      rootCause: 'A ser determinado pela análise completa',\n      impact: 'Médio'\n    };\n    \n    // Extrair ações do texto\n    const actionMatches = analysisText.match(/\\d+\\.\\s*([^\\n]+)/g);\n    if (actionMatches) {\n      actionPlan = actionMatches.map((match, idx) => ({\n        id: idx + 1,\n        description: match.replace(/^\\d+\\.\\s*/, ''),\n        type: 'manual',\n        requiresApproval: true\n      }));\n    }\n    \n    requiresApproval = true;\n  }\n} catch (e) {\n  // Se falhar, usar texto completo\n  diagnosis = {\n    summary: analysisText,\n    error: 'Não foi possível parsear resposta estruturada'\n  };\n  actionPlan = [{\n    id: 1,\n    description: 'Revisar análise manualmente',\n    type: 'manual',\n    requiresApproval: true\n  }];\n}\n\n// Determinar se há ações que requerem execução\nconst executableActions = actionPlan.filter(a => \n  a.type === 'automated' || \n  a.type === 'script' || \n  (a.commands && a.commands.length > 0)\n);\n\nreturn [{\n  json: {\n    specialist: originalData.specialist,\n    timestamp: new Date().toISOString(),\n    issues: originalData.issues,\n    diagnosis: diagnosis,\n    actionPlan: actionPlan,\n    executableActions: executableActions,\n    requiresApproval: requiresApproval || executableActions.length > 0,\n    severity: severity,\n    rawAnalysis: analysisText.substring(0, 2000), // Limitar tamanho\n    context: originalData.context\n  }\n}];"
+      },
+      "id": "process-analysis",
+      "name": "Processar Análise",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 480]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO troubleshooting_reports (\n  id,\n  timestamp,\n  specialist_type,\n  issues,\n  diagnosis,\n  action_plan,\n  severity,\n  status,\n  created_at\n) VALUES (\n  gen_random_uuid(),\n  '{{ $json.timestamp }}',\n  '{{ $json.specialist }}',\n  '{{ JSON.stringify($json.issues) }}'::jsonb,\n  '{{ JSON.stringify($json.diagnosis) }}'::jsonb,\n  '{{ JSON.stringify($json.actionPlan) }}'::jsonb,\n  '{{ $json.severity }}',\n  'pending_approval',\n  NOW()\n) RETURNING id, timestamp, status;",
+        "options": {}
+      },
+      "id": "save-report",
+      "name": "Salvar Relatório",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2000, 480],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      },
+      "notes": "Salva o relatório no banco de dados. A tabela troubleshooting_reports deve existir."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatar mensagem para aprovação\nconst report = $input.item.json;\nconst savedReport = $('Salvar Relatório').item.json;\n\nconst severityEmoji = {\n  'critical': '🔴',\n  'high': '🟠',\n  'medium': '🟡',\n  'low': '🟢'\n}[report.severity] || '⚪';\n\nlet message = `${severityEmoji} *ALERTA: Problema Detectado no CredGestor*\\n\\n`;\nmessage += `*Especialista:* ${report.specialist === 'infra' ? 'Infraestrutura' : 'Desenvolvimento'}\\n`;\nmessage += `*Severidade:* ${report.severity.toUpperCase()}\\n`;\nmessage += `*Data/Hora:* ${new Date(report.timestamp).toLocaleString('pt-BR')}\\n\\n`;\n\nmessage += `*📋 PROBLEMAS DETECTADOS:*\\n`;\nfor (const issue of report.issues) {\n  message += `• ${issue.type}: ${issue.message}\\n`;\n}\n\nmessage += `\\n*🔍 DIAGNÓSTICO:*\\n`;\nif (report.diagnosis.summary) {\n  message += `${report.diagnosis.summary.substring(0, 300)}...\\n`;\n}\n\nmessage += `\\n*📝 PLANO DE AÇÃO:*\\n`;\nfor (let i = 0; i < Math.min(report.actionPlan.length, 5); i++) {\n  const action = report.actionPlan[i];\n  message += `${i + 1}. ${action.description}\\n`;\n}\nif (report.actionPlan.length > 5) {\n  message += `... e mais ${report.actionPlan.length - 5} ações\\n`;\n}\n\nmessage += `\\n*⚠️ AÇÕES REQUEREM APROVAÇÃO*\\n`;\nmessage += `ID do Relatório: ${savedReport.id || 'N/A'}\\n\\n`;\n\nmessage += `*Para aprovar e executar:*\\n`;\nmessage += `Responda: APROVAR ${savedReport.id || 'REPORT_ID'}\\n\\n`;\nmessage += `*Para rejeitar:*\\n`;\nmessage += `Responda: REJEITAR ${savedReport.id || 'REPORT_ID'}\\n`;\n\nreturn [{\n  json: {\n    message: message,\n    reportId: savedReport.id,\n    report: report,\n    channel: '#credgestor-alerts',\n    thread_ts: null\n  }\n}];"
+      },
+      "id": "format-approval-message",
+      "name": "Formatar Mensagem Aprovação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 480]
+    },
+    {
+      "parameters": {
+        "channel": "={{ $json.channel || '#credgestor-alerts' }}",
+        "text": "={{ $json.message }}",
+        "otherOptions": {
+          "thread_ts": "={{ $json.thread_ts }}"
+        }
+      },
+      "id": "send-slack",
+      "name": "Enviar Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [2440, 380],
+      "credentials": {
+        "slackApi": {
+          "id": "1",
+          "name": "Slack API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.ALERT_EMAIL_FROM || 'noreply@credgestor.app.br' }}",
+        "toEmail": "={{ $env.ALERT_EMAIL_TO || 'admin@credgestor.app.br' }}",
+        "subject": "={{ '🚨 Alerta CredGestor - ' + $json.report.severity.toUpperCase() + ' - ' + new Date($json.report.timestamp).toLocaleString('pt-BR') }}",
+        "emailType": "html",
+        "message": "={{ $json.message.replace(/\\n/g, '<br>').replace(/\\*/g, '<strong>').replace(/\\*/g, '</strong>') }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Enviar Email Gmail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [2440, 580],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "1",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Resumo final da execução\nconst report = $('Processar Análise').item.json;\nconst savedReport = $('Salvar Relatório').item.json;\n\nreturn [{\n  json: {\n    executionTime: new Date().toISOString(),\n    reportId: savedReport.id,\n    specialist: report.specialist,\n    issuesFound: report.issues.length,\n    severity: report.severity,\n    actionsGenerated: report.actionPlan.length,\n    requiresApproval: report.requiresApproval,\n    status: 'completed'\n  }\n}];"
+      },
+      "id": "execution-summary",
+      "name": "Resumo Execução",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2660, 480]
+    }
+  ],
+  "connections": {
+    "Verificação Periódica": {
+      "main": [
+        [
+          {
+            "node": "Health Check API",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Verificar Métricas",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Health Check Frontend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health Check API": {
+      "main": [
+        [
+          {
+            "node": "Agregar Resultados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Métricas": {
+      "main": [
+        [
+          {
+            "node": "Agregar Resultados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health Check Frontend": {
+      "main": [
+        [
+          {
+            "node": "Agregar Resultados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agregar Resultados": {
+      "main": [
+        [
+          {
+            "node": "Verificar Problemas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Problemas": {
+      "main": [
+        [
+          {
+            "node": "Rotear para Especialistas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resumo Execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rotear para Especialistas": {
+      "main": [
+        [
+          {
+            "node": "Rotear Infra",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Rotear Dev",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rotear Infra": {
+      "main": [
+        [
+          {
+            "node": "Preparar Prompt Infra",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rotear Dev": {
+      "main": [
+        [
+          {
+            "node": "Preparar Prompt Dev",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Prompt Infra": {
+      "main": [
+        [
+          {
+            "node": "Análise Especialista Infra",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Prompt Dev": {
+      "main": [
+        [
+          {
+            "node": "Análise Especialista Dev",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Análise Especialista Infra": {
+      "main": [
+        [
+          {
+            "node": "Processar Análise",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Análise Especialista Dev": {
+      "main": [
+        [
+          {
+            "node": "Processar Análise",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Análise": {
+      "main": [
+        [
+          {
+            "node": "Salvar Relatório",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar Relatório": {
+      "main": [
+        [
+          {
+            "node": "Formatar Mensagem Aprovação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar Mensagem Aprovação": {
+      "main": [
+        [
+          {
+            "node": "Enviar Slack",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Enviar Email Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Slack": {
+      "main": [
+        [
+          {
+            "node": "Resumo Execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Email Gmail": {
+      "main": [
+        [
+          {
+            "node": "Resumo Execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-20T00:00:00.000Z",
+  "versionId": "1"
+}

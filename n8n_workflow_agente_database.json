@@ -1,0 +1,316 @@
+{
+  "name": "CredGestor - Agente de Banco de Dados",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agente-database",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Receber Tarefa",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 400],
+      "webhookId": "agente-database",
+      "notes": "Sub-agente especializado em Banco de Dados. Recebe tarefas do Agente Orquestrador."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Agente de Banco de Dados - Inicialização\n// Especialista em: PostgreSQL, Supabase, Queries, Performance, Índices\n\nconst payload = $input.item.json.body || $input.item.json;\n\nreturn [{\n  json: {\n    agent: {\n      name: 'Agente de Banco de Dados',\n      version: '1.0',\n      specialization: ['PostgreSQL', 'Supabase', 'SQL', 'Queries', 'Performance', 'Índices', 'Locks'],\n      role: 'Diagnóstico e resolução de problemas de banco de dados'\n    },\n    sessionId: payload.sessionId,\n    timestamp: payload.timestamp,\n    issues: payload.issues || [],\n    context: payload.context || {},\n    orchestratorDecision: payload.orchestratorDecision || {},\n    status: 'analyzing'\n  }\n}];"
+      },
+      "id": "agent-init",
+      "name": "Inicializar Agente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  COUNT(*) as total_connections,\n  COUNT(*) FILTER (WHERE state = 'active') as active_connections,\n  COUNT(*) FILTER (WHERE state = 'idle') as idle_connections,\n  COUNT(*) FILTER (WHERE state = 'idle in transaction') as idle_in_transaction,\n  MAX(EXTRACT(EPOCH FROM (now() - query_start))) as longest_query_seconds,\n  AVG(EXTRACT(EPOCH FROM (now() - query_start))) as avg_query_seconds\nFROM pg_stat_activity\nWHERE datname = 'postgres';",
+        "options": {}
+      },
+      "id": "check-connections",
+      "name": "Verificar Conexões",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [680, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  schemaname,\n  tablename,\n  pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size,\n  pg_total_relation_size(schemaname||'.'||tablename) as size_bytes,\n  n_live_tup as row_count\nFROM pg_stat_user_tables\nORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC\nLIMIT 10;",
+        "options": {}
+      },
+      "id": "check-table-sizes",
+      "name": "Verificar Tamanhos Tabelas",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [680, 400],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  pid,\n  usename,\n  application_name,\n  client_addr,\n  state,\n  query,\n  EXTRACT(EPOCH FROM (now() - query_start)) as duration_seconds\nFROM pg_stat_activity\nWHERE datname = 'postgres' \n  AND state != 'idle'\n  AND query_start < now() - interval '5 seconds'\nORDER BY query_start\nLIMIT 10;",
+        "options": {}
+      },
+      "id": "check-slow-queries",
+      "name": "Verificar Queries Lentas",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [680, 500],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  COUNT(*) as lock_count,\n  mode,\n  locktype\nFROM pg_locks\nGROUP BY mode, locktype\nORDER BY lock_count DESC;",
+        "options": {}
+      },
+      "id": "check-locks",
+      "name": "Verificar Locks",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [680, 600],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Agregar dados coletados para análise\nconst agentData = $('Inicializar Agente').item.json;\nconst connections = $('Verificar Conexões').item.json[0] || {};\nconst tableSizes = $('Verificar Tamanhos Tabelas').item.json || [];\nconst slowQueries = $('Verificar Queries Lentas').item.json || [];\nconst locks = $('Verificar Locks').item.json || [];\n\nconst collectedData = {\n  connections: connections,\n  tableSizes: tableSizes,\n  slowQueries: slowQueries,\n  locks: locks,\n  hasIssues: {\n    tooManyConnections: parseInt(connections.total_connections || 0) > 50,\n    hasSlowQueries: slowQueries.length > 0,\n    hasLocks: locks.length > 0,\n    largeTables: tableSizes.some(t => parseFloat(t.size_bytes || 0) > 1073741824) // > 1GB\n  }\n};\n\nreturn [{\n  json: {\n    ...agentData,\n    collectedData: collectedData,\n    readyForAnalysis: true\n  }\n}];"
+      },
+      "id": "aggregate-data",
+      "name": "Agregar Dados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar prompt para Claude AI\nconst data = $input.item.json;\nconst promptTemplate = $env.PROMPT_DB_SPECIALIST || $env.PROMPT_INFRA_SPECIALIST || '';\n\n// Substituir placeholders no prompt\nlet prompt = promptTemplate\n  .replace(/\\{\\{issues\\}\\}/g, JSON.stringify(data.issues, null, 2))\n  .replace(/\\{\\{context\\}\\}/g, JSON.stringify({\n    ...data.context,\n    collectedData: data.collectedData\n  }, null, 2));\n\n// Adicionar contexto do agente\nprompt = `Você é o Agente de Banco de Dados do CredGestor, especializado em PostgreSQL e Supabase.\\n\\n` + prompt;\n\nreturn [{\n  json: {\n    ...data,\n    prompt: prompt,\n    model: $env.LLM_MODEL || 'claude-3-5-sonnet-20241022'\n  }\n}];"
+      },
+      "id": "prepare-prompt",
+      "name": "Preparar Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({\n  model: $json.model,\n  max_tokens: 4000,\n  temperature: 0.3,\n  messages: [{\n    role: 'user',\n    content: $json.prompt\n  }]\n}) }}",
+        "options": {}
+      },
+      "id": "llm-analysis",
+      "name": "Análise com Claude AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar resposta do LLM\nconst agentData = $('Agregar Dados').item.json;\nconst llmResponse = $input.item.json;\n\n// Extrair texto da resposta\nlet analysisText = '';\nlet responseBody = llmResponse.body || llmResponse;\nif (typeof responseBody === 'string') {\n  try {\n    responseBody = JSON.parse(responseBody);\n  } catch (e) {\n    responseBody = { content: [{ type: 'text', text: responseBody }] };\n  }\n}\n\nif (responseBody.content && Array.isArray(responseBody.content)) {\n  const textContent = responseBody.content.find(c => c.type === 'text');\n  analysisText = textContent ? textContent.text : JSON.stringify(responseBody.content);\n} else {\n  analysisText = JSON.stringify(responseBody);\n}\n\n// Parsear JSON da resposta\nlet diagnosis = {};\nlet actionPlan = [];\nlet severity = 'medium';\nlet requiresApproval = true;\n\ntry {\n  const jsonMatch = analysisText.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    const parsed = JSON.parse(jsonMatch[0]);\n    diagnosis = parsed.diagnosis || parsed.analysis || {};\n    actionPlan = parsed.actionPlan || parsed.actions || [];\n    requiresApproval = parsed.requiresApproval !== false;\n    severity = parsed.severity || severity;\n  } else {\n    diagnosis = {\n      summary: analysisText.substring(0, 500),\n      rootCause: 'A ser determinado',\n      impact: 'Médio'\n    };\n    requiresApproval = true;\n  }\n} catch (e) {\n  diagnosis = {\n    summary: analysisText,\n    error: 'Erro ao parsear resposta'\n  };\n}\n\nreturn [{\n  json: {\n    agent: agentData.agent,\n    sessionId: agentData.sessionId,\n    timestamp: new Date().toISOString(),\n    issues: agentData.issues,\n    diagnosis: diagnosis,\n    actionPlan: actionPlan,\n    severity: severity,\n    requiresApproval: requiresApproval,\n    hasIssues: agentData.issues.length > 0,\n    rawAnalysis: analysisText.substring(0, 2000)\n  }\n}];"
+      },
+      "id": "process-analysis",
+      "name": "Processar Análise",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Responder ao Orquestrador",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1780, 400]
+    }
+  ],
+  "connections": {
+    "Webhook - Receber Tarefa": {
+      "main": [
+        [
+          {
+            "node": "Inicializar Agente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inicializar Agente": {
+      "main": [
+        [
+          {
+            "node": "Verificar Conexões",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Verificar Tamanhos Tabelas",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Verificar Queries Lentas",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Verificar Locks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Conexões": {
+      "main": [
+        [
+          {
+            "node": "Agregar Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Tamanhos Tabelas": {
+      "main": [
+        [
+          {
+            "node": "Agregar Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Queries Lentas": {
+      "main": [
+        [
+          {
+            "node": "Agregar Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Locks": {
+      "main": [
+        [
+          {
+            "node": "Agregar Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agregar Dados": {
+      "main": [
+        [
+          {
+            "node": "Preparar Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Prompt": {
+      "main": [
+        [
+          {
+            "node": "Análise com Claude AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Análise com Claude AI": {
+      "main": [
+        [
+          {
+            "node": "Processar Análise",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Análise": {
+      "main": [
+        [
+          {
+            "node": "Responder ao Orquestrador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-12-20T00:00:00.000Z",
+  "versionId": "1"
+}
