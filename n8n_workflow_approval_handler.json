@@ -1,0 +1,359 @@
+{
+  "name": "CredGestor - Handler de Aprovação",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ]
+      },
+      "id": "slack-trigger",
+      "name": "Slack - Nova Mensagem",
+      "type": "n8n-nodes-base.slackTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "credentials": {
+        "slackApi": {
+          "id": "1",
+          "name": "Slack API"
+        }
+      },
+      "notes": "Monitora mensagens no canal #credgestor-alerts para comandos de aprovação"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar mensagem do Slack e extrair comando\nconst message = $input.item.json;\nconst text = (message.text || '').toUpperCase().trim();\n\n// Padrões: APROVAR <ID> ou REJEITAR <ID>\nconst approveMatch = text.match(/APROVAR\\s+([A-F0-9\\-]+)/i);\nconst rejectMatch = text.match(/REJEITAR\\s+([A-F0-9\\-]+)/i);\n\nlet action = null;\nlet reportId = null;\n\nif (approveMatch) {\n  action = 'approve';\n  reportId = approveMatch[1];\n} else if (rejectMatch) {\n  action = 'reject';\n  reportId = rejectMatch[1];\n}\n\nif (!action || !reportId) {\n  return [{ json: { skip: true, reason: 'Comando não reconhecido' } }];\n}\n\nreturn [{\n  json: {\n    action: action,\n    reportId: reportId,\n    userId: message.user || message.user_id,\n    userName: message.user_name || 'Unknown',\n    channel: message.channel || message.channel_id,\n    timestamp: message.ts || new Date().toISOString(),\n    originalMessage: message.text\n  }\n}];"
+      },
+      "id": "parse-command",
+      "name": "Processar Comando",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "not-skip",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "not"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-valid",
+      "name": "Verificar Válido",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  id,\n  timestamp,\n  specialist_type,\n  issues,\n  diagnosis,\n  action_plan,\n  severity,\n  status\nFROM troubleshooting_reports\nWHERE id = '{{ $json.reportId }}'::uuid\n  AND status = 'pending_approval';",
+        "options": {}
+      },
+      "id": "get-report",
+      "name": "Buscar Relatório",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [900, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-report",
+              "leftValue": "={{ $json.length }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "largerEqual"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-report-exists",
+      "name": "Relatório Existe?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-approve",
+              "leftValue": "={{ $('Processar Comando').item.json.action }}",
+              "rightValue": "approve",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-action",
+      "name": "Rotear Ação",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE troubleshooting_reports\nSET \n  status = 'approved',\n  approved_by = '{{ $('Processar Comando').item.json.userName }} ({{ $('Processar Comando').item.json.userId }})',\n  approved_at = NOW(),\n  updated_at = NOW()\nWHERE id = '{{ $('Processar Comando').item.json.reportId }}'::uuid\nRETURNING id, status, approved_by, approved_at;",
+        "options": {}
+      },
+      "id": "approve-report",
+      "name": "Aprovar Relatório",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1560, 200],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE troubleshooting_reports\nSET \n  status = 'rejected',\n  approved_by = '{{ $('Processar Comando').item.json.userName }} ({{ $('Processar Comando').item.json.userId }})',\n  approved_at = NOW(),\n  updated_at = NOW()\nWHERE id = '{{ $('Processar Comando').item.json.reportId }}'::uuid\nRETURNING id, status, approved_by, approved_at;",
+        "options": {}
+      },
+      "id": "reject-report",
+      "name": "Rejeitar Relatório",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1560, 400],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatar mensagem de confirmação\nconst command = $('Processar Comando').item.json;\nconst report = $('Buscar Relatório').item.json[0];\nconst update = $input.item.json;\n\nconst action = command.action === 'approve' ? 'APROVADO' : 'REJEITADO';\nconst emoji = command.action === 'approve' ? '✅' : '❌';\n\nlet message = `${emoji} *Relatório ${action}*\\n\\n`;\nmessage += `*ID:* ${command.reportId}\\n`;\nmessage += `*Aprovado por:* ${command.userName}\\n`;\nmessage += `*Data/Hora:* ${new Date().toLocaleString('pt-BR')}\\n\\n`;\n\nif (report) {\n  message += `*Especialista:* ${report.specialist_type === 'infra' ? 'Infraestrutura' : 'Desenvolvimento'}\\n`;\n  message += `*Severidade:* ${report.severity.toUpperCase()}\\n`;\n  \n  if (command.action === 'approve') {\n    const actionPlan = typeof report.action_plan === 'string' \n      ? JSON.parse(report.action_plan) \n      : report.action_plan;\n    \n    message += `\\n*📋 Ações a serem executadas:*\\n`;\n    if (Array.isArray(actionPlan)) {\n      for (let i = 0; i < Math.min(actionPlan.length, 5); i++) {\n        message += `${i + 1}. ${actionPlan[i].description || 'Ação'}\\n`;\n      }\n      if (actionPlan.length > 5) {\n        message += `... e mais ${actionPlan.length - 5} ações\\n`;\n      }\n    }\n    \n    message += `\\n⚠️ *Ações requerem execução manual ou workflow adicional*\\n`;\n  }\n}\n\nreturn [{\n  json: {\n    message: message,\n    channel: command.channel || '#credgestor-alerts',\n    thread_ts: null\n  }\n}];"
+      },
+      "id": "format-confirmation",
+      "name": "Formatar Confirmação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "channel": "={{ $json.channel || '#credgestor-alerts' }}",
+        "text": "={{ $json.message }}",
+        "otherOptions": {
+          "thread_ts": "={{ $json.thread_ts }}"
+        }
+      },
+      "id": "send-confirmation",
+      "name": "Enviar Confirmação",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [2000, 300],
+      "credentials": {
+        "slackApi": {
+          "id": "1",
+          "name": "Slack API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Resumo da execução\nconst command = $('Processar Comando').item.json;\nconst update = $input.item.json;\n\nreturn [{\n  json: {\n    executionTime: new Date().toISOString(),\n    action: command.action,\n    reportId: command.reportId,\n    status: update.status || 'processed',\n    processedBy: command.userName\n  }\n}];"
+      },
+      "id": "execution-summary",
+      "name": "Resumo Execução",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 300]
+    }
+  ],
+  "connections": {
+    "Slack - Nova Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Processar Comando",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Comando": {
+      "main": [
+        [
+          {
+            "node": "Verificar Válido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Válido": {
+      "main": [
+        [
+          {
+            "node": "Buscar Relatório",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resumo Execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Relatório": {
+      "main": [
+        [
+          {
+            "node": "Relatório Existe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Relatório Existe?": {
+      "main": [
+        [
+          {
+            "node": "Rotear Ação",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Formatar Confirmação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rotear Ação": {
+      "main": [
+        [
+          {
+            "node": "Aprovar Relatório",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rejeitar Relatório",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aprovar Relatório": {
+      "main": [
+        [
+          {
+            "node": "Formatar Confirmação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rejeitar Relatório": {
+      "main": [
+        [
+          {
+            "node": "Formatar Confirmação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar Confirmação": {
+      "main": [
+        [
+          {
+            "node": "Enviar Confirmação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Confirmação": {
+      "main": [
+        [
+          {
+            "node": "Resumo Execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-20T00:00:00.000Z",
+  "versionId": "1"
+}

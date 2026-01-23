@@ -204,3 +204,100 @@ export const generateNoteHash = () => {
 
   return `${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 6)}`;
 };
+
+/**
+ * Converte um número para extenso em português brasileiro
+ * Usado para notas promissórias e documentos oficiais
+ */
+export const numberToWords = (value: number): string => {
+  const unidades = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove'];
+  const dezAteDezenove = ['dez', 'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
+  const dezenas = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
+  const centenas = ['', 'cento', 'duzentos', 'trezentos', 'quatrocentos', 'quinhentos', 'seiscentos', 'setecentos', 'oitocentos', 'novecentos'];
+
+  const converterGrupo = (num: number): string => {
+    if (num === 0) return '';
+    if (num === 100) return 'cem';
+    
+    const c = Math.floor(num / 100);
+    const resto = num % 100;
+    const d = Math.floor(resto / 10);
+    const u = resto % 10;
+    
+    let resultado = '';
+    
+    if (c > 0) {
+      resultado += centenas[c];
+      if (resto > 0) resultado += ' e ';
+    }
+    
+    if (resto > 0) {
+      if (resto < 10) {
+        resultado += unidades[resto];
+      } else if (resto < 20) {
+        resultado += dezAteDezenove[resto - 10];
+      } else {
+        resultado += dezenas[d];
+        if (u > 0) resultado += ' e ' + unidades[u];
+      }
+    }
+    
+    return resultado;
+  };
+
+  // Separar parte inteira e decimal
+  const partes = value.toFixed(2).split('.');
+  const inteiro = parseInt(partes[0]);
+  const centavos = parseInt(partes[1]);
+
+  if (inteiro === 0 && centavos === 0) return 'zero reais';
+
+  let resultado = '';
+
+  // Milhões
+  const milhoes = Math.floor(inteiro / 1000000);
+  if (milhoes > 0) {
+    resultado += converterGrupo(milhoes);
+    resultado += milhoes === 1 ? ' milhão' : ' milhões';
+    const resto = inteiro % 1000000;
+    if (resto > 0) resultado += ' ';
+  }
+
+  // Milhares
+  const milhares = Math.floor((inteiro % 1000000) / 1000);
+  if (milhares > 0) {
+    if (milhares === 1) {
+      resultado += 'mil';
+    } else {
+      resultado += converterGrupo(milhares) + ' mil';
+    }
+    const resto = inteiro % 1000;
+    if (resto > 0) resultado += ' ';
+  }
+
+  // Centenas, dezenas e unidades
+  const resto = inteiro % 1000;
+  if (resto > 0 || inteiro === 0) {
+    resultado += converterGrupo(resto);
+  }
+
+  // Reais
+  if (inteiro === 1) {
+    resultado += ' real';
+  } else if (inteiro > 1) {
+    resultado += ' reais';
+  }
+
+  // Centavos
+  if (centavos > 0) {
+    if (inteiro > 0) resultado += ' e ';
+    resultado += converterGrupo(centavos);
+    if (centavos === 1) {
+      resultado += ' centavo';
+    } else {
+      resultado += ' centavos';
+    }
+  }
+
+  return resultado.trim();
+};
