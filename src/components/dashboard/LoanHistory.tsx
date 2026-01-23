@@ -211,36 +211,36 @@ export const LoanHistoryView: React.FC = () => {
       </div>
 
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input
               type="text"
               placeholder="Filtrar por nome do cliente"
-              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:bg-white"
+              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:border-emerald-500 transition-colors"
               value={nameFilter}
               onChange={e => setNameFilter(e.target.value)}
             />
           </div>
           <div className="flex items-center gap-2">
-            <CalendarRange size={18} className="text-slate-500" />
+            <CalendarRange size={18} className="text-slate-500 flex-shrink-0" />
             <input
               type="date"
-              className="flex-1 px-3 py-2 border border-slate-200 rounded-lg"
+              className="flex-1 px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
               value={startDate}
               onChange={e => setStartDate(e.target.value)}
             />
-            <span className="text-slate-500 text-sm">até</span>
+            <span className="text-slate-500 text-sm flex-shrink-0">até</span>
             <input
               type="date"
-              className="flex-1 px-3 py-2 border border-slate-200 rounded-lg"
+              className="flex-1 px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
               value={endDate}
               onChange={e => setEndDate(e.target.value)}
             />
           </div>
           <div>
             <select
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-colors"
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:border-emerald-500 transition-colors text-slate-700"
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as LoanStatus | 'ALL')}
             >
@@ -251,7 +251,7 @@ export const LoanHistoryView: React.FC = () => {
             </select>
           </div>
           <div className="flex items-center justify-end text-sm text-slate-500">
-            {filteredLoans.length} empréstimo(s) encontrado(s)
+            <span className="font-medium">{filteredLoans.length}</span> empréstimo(s) encontrado(s)
           </div>
         </div>
 
