@@ -8,16 +8,16 @@ global:
     cluster: 'credgestor-production'
     environment: 'production'
 
-# Configuração de alertas (opcional)
-# alerting:
-#   alertmanagers:
-#     - static_configs:
-#         - targets:
-#           # - alertmanager:9093
+# Configuração de alertas
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
 
-# Regras de alerta (opcional)
-# rule_files:
-#   - "alert_rules.yml"
+# Regras de alerta
+rule_files:
+  - "alert_rules.yml"
 
 scrape_configs:
   # ============================================

@@ -78,6 +78,11 @@ services:
         - prometheus.io/port=8000
         - prometheus.io/path=/metrics
         - prometheus.io/job=credgestor-api
+        
+        # Labels para auto-scaling
+        - com.docker.swarm.autoscale.min=1
+        - com.docker.swarm.autoscale.max=5
+        - com.docker.swarm.autoscale.target=80  # CPU %
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

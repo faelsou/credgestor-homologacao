@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    # Porta removida - acesso via Traefik em prometheus.credgestor.app.br
+    # Se precisar de acesso direto, use uma porta diferente: "9092:9090"
+    ports:
+      - "9092:9090"  # Porta alternativa para evitar conflito
+    volumes:
+      # Montar o arquivo de configuração
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Montar regras de alerta
+      - ./alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      # Volume para persistência de dados
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - prometheus_net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.credgestor.app.br`)"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls.certresolver=letsencrypt"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+    depends_on:
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      # Montar configuração do Alertmanager
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # Montar script de configuração
+      - ./scripts/setup-alertmanager.sh:/scripts/setup-alertmanager.sh:ro
+      # Volume para persistência de dados do Alertmanager
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://alertmanager.credgestor.app.br'
+    env_file:
+      # Carrega variáveis de ambiente do arquivo .env
+      - .env
+    environment:
+      # URL do webhook do Slack - Configure via .env ou diretamente aqui
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+    networks:
+      - prometheus_net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alertmanager.rule=Host(`alertmanager.credgestor.app.br`)"
+      - "traefik.http.routers.alertmanager.entrypoints=websecure"
+      - "traefik.http.routers.alertmanager.tls.certresolver=letsencrypt"
+      - "traefik.http.services.alertmanager.loadbalancer.server.port=9093"
+
+volumes:
+  prometheus_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+
+networks:
+  prometheus_net:
+    driver: bridge
+    # Se quiser conectar à rede do CredGestor, descomente:
+    # external: true
+    # name: credgestor_default

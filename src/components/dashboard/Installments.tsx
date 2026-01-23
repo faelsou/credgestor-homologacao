@@ -1,5 +1,5 @@
 import React, { useContext, useState, useMemo, useCallback } from 'react';
-import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Pencil } from 'lucide-react';
+import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Pencil, FileSpreadsheet } from 'lucide-react';
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, getTodayDateString, isLate } from '@/utils';
 import { InstallmentStatus, Installment, UserRole, LoanModel } from '@/types';
@@ -433,9 +433,118 @@ export const InstallmentsView: React.FC = () => {
 
   const paymentHistoryByClient = getPaymentHistoryByClient();
 
+  // Função de exportação para Excel
+  const exportToExcel = () => {
+    const data = filtered.map(inst => {
+      const client = getClient(inst.clientId);
+      const loan = loans.find(l => l.id === inst.loanId);
+      const late = isActuallyLate(inst);
+      const interestAmount = inst.interestAmount ?? Math.max(0, inst.amount - (inst.principalAmount ?? inst.amount));
+      const principalAmount = inst.principalAmount ?? Math.max(0, inst.amount - interestAmount);
+      
+      // Status formatado
+      let status = '';
+      if (inst.status === InstallmentStatus.PAID) {
+        status = 'Pago';
+      } else if (inst.status === InstallmentStatus.PARTIAL) {
+        status = 'Parcial';
+      } else if (late) {
+        status = 'Atrasada';
+      } else {
+        status = 'A Vencer';
+      }
+
+      // Histórico de pagamentos formatado
+      const paymentHistory = inst.paymentHistory && inst.paymentHistory.length > 0
+        ? inst.paymentHistory.map(p => 
+            `${formatDate(p.paymentDate)}: ${formatCurrency(p.amount)} (Juros: ${formatCurrency(p.interestPaid)}, Capital: ${formatCurrency(p.principalPaid)})`
+          ).join(' | ')
+        : '';
+
+      // Histórico de promessas formatado
+      const promiseHistory = inst.promisedPaymentHistory && inst.promisedPaymentHistory.length > 0
+        ? inst.promisedPaymentHistory.map(p => 
+            `${formatDate(p.date)}: ${formatCurrency(p.amount)} - ${p.reason}`
+          ).join(' | ')
+        : '';
+
+      return {
+        'Data Vencimento': formatDate(inst.dueDate),
+        'Cliente': client?.name || 'Cliente não encontrado',
+        'CPF': client?.cpf || '',
+        'Telefone': client?.phone || '',
+        'Email': client?.email || '',
+        'Número Parcela': inst.number,
+        'Valor Total': inst.amount,
+        'Capital': principalAmount,
+        'Juros': interestAmount,
+        'Valor Pago': inst.amountPaid || 0,
+        'Valor Pendente': inst.amount - (inst.amountPaid || 0),
+        'Status': status,
+        'Data Pagamento': inst.paidDate ? formatDate(inst.paidDate) : '',
+        'Histórico Pagamentos': paymentHistory,
+        'Promessa Pagamento': inst.promisedPaymentReason || '',
+        'Valor Prometido': inst.promisedPaymentAmount || '',
+        'Data Prometida': inst.promisedPaymentDate ? formatDate(inst.promisedPaymentDate) : '',
+        'Histórico Promessas': promiseHistory,
+        'ID Empréstimo': inst.loanId,
+        'Taxa Juros Empréstimo': loan ? `${loan.interestRate}%` : '',
+        'Modelo Empréstimo': loan?.model === LoanModel.PRICE ? 'Tabela Price' : loan?.model === LoanModel.INTEREST_ONLY ? 'Somente Juros' : ''
+      };
+    });
+
+    if (data.length === 0) {
+      alert('Nenhum registro encontrado para exportar. Ajuste os filtros e tente novamente.');
+      return;
+    }
+
+    // Criar cabeçalhos
+    const headers = Object.keys(data[0]);
+    
+    // Criar linhas de dados
+    const rows = data.map(row => headers.map(header => {
+      const value = row[header as keyof typeof row];
+      // Converter para string e escapar aspas
+      if (value === null || value === undefined) return '';
+      return String(value).replace(/"/g, '""');
+    }));
+
+    // Criar conteúdo CSV (separado por ponto e vírgula para Excel)
+    const csvContent = [
+      headers.map(h => `"${h.replace(/"/g, '""')}"`).join(';'),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(';'))
+    ].join('\n');
+
+    // Adicionar BOM para UTF-8 (garante acentuação correta no Excel)
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // Nome do arquivo com filtros aplicados
+    const filterName = filter === 'ALL' ? 'Todas' : filter === 'PENDING' ? 'A_Vencer' : filter === 'LATE' ? 'Atrasadas' : filter === 'PARTIAL' ? 'Parciais' : 'Pagas';
+    const dateRange = dateFilterStart && dateFilterEnd 
+      ? `_${dateFilterStart}_${dateFilterEnd}` 
+      : '';
+    link.download = `parcelas_${filterName}${dateRange}_${new Date().toISOString().split('T')[0]}.csv`;
+    
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-slate-800">Controle de Parcelas</h2>
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-slate-800">Controle de Parcelas</h2>
+        <button
+          onClick={exportToExcel}
+          className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold flex items-center gap-2 hover:bg-emerald-700 transition shadow-sm"
+          title="Exportar dados filtrados para Excel"
+        >
+          <FileSpreadsheet size={18} /> Exportar Excel
+        </button>
+      </div>
 
       {/* Histórico por Cliente */}
       {Object.keys(paymentHistoryByClient).length > 0 && (
@@ -488,6 +597,45 @@ export const InstallmentsView: React.FC = () => {
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
         />
+      </div>
+
+      {/* Filtros de Data */}
+      <div className="flex flex-wrap gap-4 mb-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+        <div className="flex-1 min-w-[200px]">
+          <label className="block text-sm font-medium text-slate-700 mb-2">
+            Data Início
+          </label>
+          <input
+            type="date"
+            className="w-full border border-slate-300 rounded-lg p-2 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            value={dateFilterStart || ''}
+            onChange={e => setDateFilterStart(e.target.value || null)}
+          />
+        </div>
+        <div className="flex-1 min-w-[200px]">
+          <label className="block text-sm font-medium text-slate-700 mb-2">
+            Data Fim
+          </label>
+          <input
+            type="date"
+            className="w-full border border-slate-300 rounded-lg p-2 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            value={dateFilterEnd || ''}
+            onChange={e => setDateFilterEnd(e.target.value || null)}
+          />
+        </div>
+        {(dateFilterStart || dateFilterEnd) && (
+          <div className="flex items-end">
+            <button
+              onClick={() => {
+                setDateFilterStart(null);
+                setDateFilterEnd(null);
+              }}
+              className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-300 transition"
+            >
+              Limpar Filtros
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
