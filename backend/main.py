@@ -914,6 +914,20 @@ def create_tenant_resource(
     return _insert_row(table, body)
 
 
+@app.put("/tenants/{tenant_id}/{resource}/{record_id}")
+def update_tenant_resource(
+    tenant_id: str,
+    resource: str,
+    record_id: str,
+    payload: Dict[str, Any] = Body(...),
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    table = _validate_tenant_table(resource)
+    column = TENANT_TABLES[table]
+    return _update_row(table, record_id, payload, (column, tenant_id))
+
+
 @app.delete("/tenants/{tenant_id}/{resource}/{record_id}")
 def delete_tenant_resource(
     tenant_id: str,
