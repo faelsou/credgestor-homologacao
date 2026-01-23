@@ -1,0 +1,193 @@
+{
+  "name": "CredGestor - Resolutor de Infraestrutura",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "resolutor-infra",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Receber Plano de Ação",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 400],
+      "webhookId": "resolutor-infra",
+      "notes": "Agente Resolutor de Infraestrutura. Recebe plano de ação do Orquestrador após troubleshooting."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Resolutor de Infraestrutura - Inicialização\n// Executa ações corretivas em infraestrutura\n\nconst payload = $input.item.json.body || $input.item.json;\n\nreturn [{\n  json: {\n    resolver: {\n      name: 'Resolutor de Infraestrutura',\n      version: '1.0',\n      specialization: ['Linux', 'Docker', 'Traefik', 'Rede'],\n      role: 'Executar ações corretivas em infraestrutura'\n    },\n    sessionId: payload.sessionId || payload.troubleshootingSessionId,\n    timestamp: new Date().toISOString(),\n    actionPlan: payload.actionPlan || payload.consolidatedActionPlan || [],\n    diagnosis: payload.diagnosis || {},\n    issues: payload.issues || [],\n    context: payload.context || {},\n    status: 'ready'\n  }\n}];"
+      },
+      "id": "resolver-init",
+      "name": "Inicializar Resolutor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar prompt para Claude AI com plano de ação\nconst data = $input.item.json;\n\nconst prompt = `Você é o Resolutor de Infraestrutura do CredGestor, especializado em executar ações corretivas em Linux, Docker Swarm, Traefik e infraestrutura.
+
+CONTEXTO DA APLICAÇÃO:
+- VPS: 167.235.76.26
+- Stack: Docker Swarm, Traefik, FastAPI, React
+- Serviços: credgestor_api, credgestor_site
+- Rede: network_public
+
+DIAGNÓSTICO DO TROUBLESHOOTING:
+${JSON.stringify(data.diagnosis, null, 2)}
+
+PLANO DE AÇÃO RECEBIDO:
+${JSON.stringify(data.actionPlan, null, 2)}
+
+PROBLEMAS IDENTIFICADOS:
+${JSON.stringify(data.issues, null, 2)}
+
+SUA TAREFA:
+1. Analisar o plano de ação recebido
+2. Validar cada ação antes de executar
+3. Priorizar ações seguras e não-destrutivas
+4. Gerar comandos específicos para execução na VPS
+5. Incluir verificações pós-execução
+6. Documentar todas as ações executadas
+
+FORMATO DE RESPOSTA (JSON OBRIGATÓRIO):
+{
+  \"validation\": {\n    \"safeToExecute\": true,\n    \"risks\": [\"risco1\", \"risco2\"],\n    \"recommendations\": [\"recomendação1\", \"recomendação2\"]\n  },\n  \"executionPlan\": [\n    {\n      \"id\": 1,\n      \"actionId\": \"id_do_plano_original\",\n      \"description\": \"Descrição da ação\",\n      \"commands\": [\"comando1\", \"comando2\"],\n      \"sshCommands\": [\"comando para executar via SSH\"],\n      \"expectedResult\": \"Resultado esperado\",\n      \"verification\": \"Como verificar sucesso\",\n      \"rollback\": \"Como reverter se falhar\",\n      \"priority\": \"immediate|high|medium|low\"\n    }\n  ],\n  \"vpsConnection\": {\n    \"host\": \"167.235.76.26\",\n    \"user\": \"root\",\n    \"instructions\": \"Instruções detalhadas de conexão SSH\"\n  },\n  \"requiresApproval\": true\n}`;
+
+return [{\n  json: {\n    ...data,\n    prompt: prompt,\n    model: $env.LLM_MODEL || 'claude-3-5-sonnet-20241022'\n  }\n}];"
+      },
+      "id": "prepare-prompt",
+      "name": "Preparar Prompt Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({\n  model: $json.model,\n  max_tokens: 4000,\n  temperature: 0.2,\n  messages: [{\n    role: 'user',\n    content: $json.prompt\n  }]\n}) }}",
+        "options": {}
+      },
+      "id": "claude-analysis",
+      "name": "Análise com Claude AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar resposta do Claude AI\nconst resolverData = $('Inicializar Resolutor').item.json;\nconst llmResponse = $input.item.json;\n\n// Extrair texto da resposta\nlet analysisText = '';\nlet responseBody = llmResponse.body || llmResponse;\nif (typeof responseBody === 'string') {\n  try {\n    responseBody = JSON.parse(responseBody);\n  } catch (e) {\n    responseBody = { content: [{ type: 'text', text: responseBody }] };\n  }\n}\n\nif (responseBody.content && Array.isArray(responseBody.content)) {\n  const textContent = responseBody.content.find(c => c.type === 'text');\n  analysisText = textContent ? textContent.text : JSON.stringify(responseBody.content);\n} else {\n  analysisText = JSON.stringify(responseBody);\n}\n\n// Parsear JSON da resposta\nlet executionPlan = {};\nlet validation = {};\nlet vpsConnection = {};\n\ntry {\n  const jsonMatch = analysisText.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    const parsed = JSON.parse(jsonMatch[0]);\n    executionPlan = parsed.executionPlan || [];\n    validation = parsed.validation || {};\n    vpsConnection = parsed.vpsConnection || {};\n  } else {\n    executionPlan = [];\n    validation = { safeToExecute: false, error: 'Não foi possível parsear resposta' };\n  }\n} catch (e) {\n  executionPlan = [];\n  validation = { safeToExecute: false, error: e.message };\n}\n\nreturn [{\n  json: {\n    resolver: resolverData.resolver,\n    sessionId: resolverData.sessionId,\n    timestamp: new Date().toISOString(),\n    validation: validation,\n    executionPlan: executionPlan,\n    vpsConnection: vpsConnection,\n    requiresApproval: validation.safeToExecute !== false,\n    rawResponse: analysisText.substring(0, 2000)\n  }\n}];"
+      },
+      "id": "process-response",
+      "name": "Processar Resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 400]
+    }
+  ],
+  "connections": {
+    "Webhook - Receber Plano de Ação": {
+      "main": [
+        [
+          {
+            "node": "Inicializar Resolutor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inicializar Resolutor": {
+      "main": [
+        [
+          {
+            "node": "Preparar Prompt Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Prompt Claude": {
+      "main": [
+        [
+          {
+            "node": "Análise com Claude AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Análise com Claude AI": {
+      "main": [
+        [
+          {
+            "node": "Processar Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Resposta": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-12-20T00:00:00.000Z",
+  "versionId": "1"
+}
