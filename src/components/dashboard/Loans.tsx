@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
-import { Plus, Calculator, Pencil, Trash2, FileText, Clock8, Search, RotateCcw } from 'lucide-react';
+import { Plus, Calculator, Pencil, Trash2, FileText, Clock8, Search, RotateCcw, Scale } from 'lucide-react';
 import { AppContext } from '@/pages/App';
-import { formatCurrency, formatDate, generateNoteHash, getTodayDateString } from '@/utils';
+import { formatCurrency, formatDate, generateNoteHash, getTodayDateString, numberToWords, formatCpf, formatCep } from '@/utils';
 import { LoanStatus, Installment, InstallmentStatus, UserRole, Loan, PromissoryNote, IndicationType, Client, LoanModel } from '@/types';
 
 interface LoansViewProps {
@@ -485,6 +485,322 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     printable.print();
   };
 
+  /**
+   * Gera nota promissória no formato oficial aceito por cartórios para protesto
+   * Formato baseado nos requisitos legais brasileiros
+   */
+  const generateOfficialPromissoryNote = (
+    safeClientName: string,
+    client: Client,
+    loan: Loan,
+    issuerName: string,
+    issuerData?: {
+      name?: string;
+      cnpj?: string;
+      address?: string;
+      city?: string;
+      state?: string;
+      cep?: string;
+    }
+  ) => {
+    if (!loan.promissoryNote) {
+      alert('Nota promissória não encontrada para este empréstimo.');
+      return;
+    }
+
+    const printable = window.open('', '_blank', 'width=800,height=1100');
+    const fileName = `Nota_Promissoria_${safeClientName || 'cliente'}.pdf`;
+
+    if (!printable) {
+      alert('Não foi possível abrir o gerador de PDF. Verifique o bloqueio de pop-ups.');
+      return;
+    }
+
+    const { promissoryNote } = loan;
+    
+    // Dados do credor (empresa)
+    const creditorName = issuerData?.name || issuerName || 'Empresa Credora';
+    const creditorCnpj = issuerData?.cnpj || 'CNPJ não informado';
+    const creditorAddress = issuerData?.address || 'Endereço não informado';
+    const creditorCity = issuerData?.city || 'Cidade não informada';
+    const creditorState = issuerData?.state || 'Estado não informado';
+    const creditorCep = issuerData?.cep || 'CEP não informado';
+    
+    // Dados do devedor (cliente)
+    const debtorName = client.name;
+    const debtorCpf = client.cpf || 'CPF não informado';
+    const debtorAddress = `${client.street || ''}${client.complement ? ', ' + client.complement : ''}${client.neighborhood ? ' - ' + client.neighborhood : ''}`.trim() || 'Endereço não informado';
+    const debtorCity = client.city || 'Cidade não informada';
+    const debtorState = client.state || 'Estado não informado';
+    const debtorCep = client.cep || 'CEP não informado';
+    
+    // Valor da nota promissória (valor total do empréstimo)
+    const noteValue = loan.totalAmount;
+    const noteValueWords = numberToWords(noteValue);
+    
+    // Data de emissão e vencimento
+    const issueDate = formatDate(promissoryNote.issueDate);
+    const dueDate = formatDate(promissoryNote.dueDate);
+    
+    // Local de pagamento (cidade e estado do credor)
+    const paymentLocation = `${creditorCity}/${creditorState}`;
+
+    printable.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>${fileName}</title>
+          <style>
+            @media print {
+              @page {
+                size: A4;
+                margin: 2cm;
+              }
+            }
+            body {
+              font-family: 'Times New Roman', serif;
+              font-size: 12pt;
+              line-height: 1.6;
+              color: #000;
+              padding: 40px;
+              max-width: 800px;
+              margin: 0 auto;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 30px;
+              border-bottom: 2px solid #000;
+              padding-bottom: 15px;
+            }
+            .header h1 {
+              font-size: 18pt;
+              font-weight: bold;
+              margin: 0;
+              text-transform: uppercase;
+              letter-spacing: 1px;
+            }
+            .document-number {
+              text-align: right;
+              font-size: 10pt;
+              margin-bottom: 20px;
+              color: #666;
+            }
+            .section {
+              margin-bottom: 20px;
+            }
+            .section-title {
+              font-weight: bold;
+              font-size: 11pt;
+              margin-bottom: 8px;
+              text-transform: uppercase;
+            }
+            .section-content {
+              text-align: justify;
+              margin-bottom: 15px;
+              line-height: 1.8;
+            }
+            .value-box {
+              border: 2px solid #000;
+              padding: 15px;
+              margin: 20px 0;
+              text-align: center;
+              background: #f9f9f9;
+            }
+            .value-box .label {
+              font-weight: bold;
+              font-size: 11pt;
+              margin-bottom: 8px;
+            }
+            .value-box .amount {
+              font-size: 14pt;
+              font-weight: bold;
+              margin: 5px 0;
+            }
+            .value-box .amount-words {
+              font-size: 11pt;
+              font-style: italic;
+              margin-top: 8px;
+            }
+            .parties {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 30px;
+              margin: 25px 0;
+            }
+            .party {
+              border: 1px solid #000;
+              padding: 15px;
+            }
+            .party-title {
+              font-weight: bold;
+              font-size: 11pt;
+              margin-bottom: 10px;
+              text-transform: uppercase;
+              border-bottom: 1px solid #000;
+              padding-bottom: 5px;
+            }
+            .party-info {
+              font-size: 10pt;
+              line-height: 1.6;
+            }
+            .party-info p {
+              margin: 5px 0;
+            }
+            .signatures {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 40px;
+              margin-top: 60px;
+              margin-bottom: 30px;
+            }
+            .signature-box {
+              text-align: center;
+              border-top: 1px solid #000;
+              padding-top: 10px;
+              min-height: 80px;
+            }
+            .signature-name {
+              font-weight: bold;
+              margin-top: 10px;
+            }
+            .signature-label {
+              font-size: 10pt;
+              margin-top: 5px;
+              color: #666;
+            }
+            .footer {
+              margin-top: 40px;
+              font-size: 9pt;
+              text-align: center;
+              color: #666;
+              border-top: 1px solid #ccc;
+              padding-top: 10px;
+            }
+            .terms {
+              margin-top: 20px;
+              font-size: 10pt;
+              text-align: justify;
+              line-height: 1.6;
+            }
+            .terms p {
+              margin: 8px 0;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Nota Promissória</h1>
+          </div>
+          
+          <div class="document-number">
+            <strong>Número:</strong> ${promissoryNote.numberHash}
+          </div>
+
+          <div class="section">
+            <div class="section-content">
+              <p>
+                Por esta única via de <strong>NOTA PROMISSÓRIA</strong>, de pleno e livre arbítrio, 
+                eu, <strong>${debtorName}</strong>, ${debtorCpf ? 'CPF ' + formatCpf(debtorCpf) : 'CPF não informado'}, 
+                residente e domiciliado(a) em ${debtorAddress}, ${debtorCity}/${debtorState}, 
+                CEP ${formatCep(debtorCep)}, prometo pagar a <strong>${creditorName}</strong>, 
+                ${creditorCnpj ? 'CNPJ ' + creditorCnpj : 'CNPJ não informado'}, 
+                estabelecida em ${creditorAddress}, ${creditorCity}/${creditorState}, 
+                CEP ${creditorCep ? formatCep(creditorCep) : 'não informado'}, ou à sua ordem, 
+                a quantia abaixo especificada.
+              </p>
+            </div>
+          </div>
+
+          <div class="value-box">
+            <div class="label">VALOR DA NOTA PROMISSÓRIA</div>
+            <div class="amount">${formatCurrency(noteValue)}</div>
+            <div class="amount-words">(${noteValueWords})</div>
+          </div>
+
+          <div class="section">
+            <div class="section-content">
+              <p>
+                <strong>Data de Emissão:</strong> ${issueDate}
+              </p>
+              <p>
+                <strong>Data de Vencimento:</strong> ${dueDate}
+              </p>
+              <p>
+                <strong>Local de Pagamento:</strong> ${paymentLocation}
+              </p>
+              ${promissoryNote.observation ? `<p><strong>Observações:</strong> ${promissoryNote.observation}</p>` : ''}
+            </div>
+          </div>
+
+          <div class="parties">
+            <div class="party">
+              <div class="party-title">Credor</div>
+              <div class="party-info">
+                <p><strong>Nome/Razão Social:</strong> ${creditorName}</p>
+                <p><strong>CNPJ:</strong> ${creditorCnpj}</p>
+                <p><strong>Endereço:</strong> ${creditorAddress}</p>
+                <p><strong>Cidade/Estado:</strong> ${creditorCity}/${creditorState}</p>
+                <p><strong>CEP:</strong> ${creditorCep ? formatCep(creditorCep) : 'não informado'}</p>
+              </div>
+            </div>
+            <div class="party">
+              <div class="party-title">Devedor</div>
+              <div class="party-info">
+                <p><strong>Nome:</strong> ${debtorName}</p>
+                <p><strong>CPF:</strong> ${debtorCpf ? formatCpf(debtorCpf) : 'não informado'}</p>
+                <p><strong>Endereço:</strong> ${debtorAddress}</p>
+                <p><strong>Cidade/Estado:</strong> ${debtorCity}/${debtorState}</p>
+                <p><strong>CEP:</strong> ${debtorCep ? formatCep(debtorCep) : 'não informado'}</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="terms">
+            <p>
+              <strong>Cláusula de Protesto:</strong> Esta nota promissória está sujeita ao protesto 
+              em caso de não pagamento no vencimento, nos termos da legislação vigente.
+            </p>
+            <p>
+              <strong>Cláusula de Renúncia:</strong> O devedor renuncia ao benefício de ordem, 
+              bem como ao de excussão, ficando desde já autorizado o protesto desta nota promissória 
+              em caso de inadimplemento.
+            </p>
+            <p>
+              <strong>Foro:</strong> Fica eleito o foro da comarca de ${creditorCity}/${creditorState} 
+              para dirimir quaisquer controvérsias oriundas desta nota promissória.
+            </p>
+          </div>
+
+          <div class="signatures">
+            <div class="signature-box">
+              <div class="signature-name">${debtorName}</div>
+              <div class="signature-label">Devedor</div>
+            </div>
+            <div class="signature-box">
+              <div class="signature-name">${creditorName}</div>
+              <div class="signature-label">Credor</div>
+            </div>
+          </div>
+
+          <div class="footer">
+            <p>
+              Documento gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}
+            </p>
+            <p>
+              Este documento possui validade legal para protesto em cartório conforme legislação vigente.
+            </p>
+          </div>
+        </body>
+      </html>
+    `);
+    
+    printable.document.title = fileName;
+    printable.document.close();
+    printable.focus();
+    printable.print();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -584,8 +900,25 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                         }
                         className="p-2 rounded-lg hover:bg-emerald-50 text-emerald-600"
                         aria-label="Gerar PDF da nota"
+                        title="Gerar resumo do empréstimo"
                       >
                         <FileText size={18} />
+                      </button>
+                      <button
+                        onClick={() =>
+                          loanClient &&
+                          generateOfficialPromissoryNote(
+                            clientName,
+                            loanClient,
+                            loan,
+                            user?.name || 'Empresa credora'
+                          )
+                        }
+                        className="p-2 rounded-lg hover:bg-blue-50 text-blue-600"
+                        aria-label="Gerar Nota Promissória Oficial"
+                        title="Gerar Nota Promissória no formato oficial para cartório"
+                      >
+                        <Scale size={18} />
                       </button>
                       {loan.status !== LoanStatus.PAID && (
                         <button
