@@ -1,8 +1,9 @@
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Tuple
 
-from fastapi import Body, Depends, FastAPI, HTTPException, status
+from fastapi import Body, Depends, FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
@@ -13,6 +14,21 @@ from .supabase_client import (
     get_supabase_admin_client,
     get_supabase_anon_client,
     get_supabase_client,
+)
+from .supabase_helpers import test_supabase_connection
+
+# Importar métricas de banco de dados no nível do módulo para garantir que sejam registradas
+# no registry do Prometheus e expostas no endpoint /metrics
+from .db_metrics import (
+    db_connection_errors_total,
+    db_connection_status,
+    db_connection_duration_seconds,
+    db_query_duration_seconds,
+    db_query_errors_total,
+    db_timeouts_total,
+    db_last_successful_query_timestamp,
+    db_last_failed_query_timestamp,
+    DatabaseMetrics,
 )
 
 app = FastAPI(title="CredGestor Supabase backend", version="0.1.0")
@@ -85,9 +101,14 @@ class AuthContext:
 
 @app.on_event("startup")
 def ensure_client() -> None:
-    """Warm up the Supabase client on startup."""
+    """Warm up the Supabase client on startup e registra métricas."""
     try:
+        # Warm up do cliente Supabase
         get_supabase_client()
+        
+        # Inicializar status de conexão
+        DatabaseMetrics.record_connection_success(0.0)  # Marcar como conectado
+        
     except Exception as e:
         # Log error but don't crash the server - allows healthcheck to work
         print(
@@ -108,23 +129,26 @@ def _format_error(error: Any) -> str:
 
 def _apply_filters(table: str, filters: List[Tuple[str, Any]] | None = None):
     try:
-        supabase = get_supabase_admin_client()
-        query = supabase.table(table).select("*")
-        # DEBUG: Log dos filtros aplicados
-        if filters:
-            print(f"🔍 [DEBUG] Aplicando filtros na tabela '{table}':")
-            for column, value in filters:
-                print(f"   - {column} = {value}")
-            query = query.eq(column, value)
-        else:
-            print(f"⚠️  [DEBUG] ATENÇÃO: Nenhum filtro aplicado na tabela '{table}'!")
-        response = query.execute()
-        error = getattr(response, "error", None)
-        if error:
-            raise HTTPException(status_code=500, detail=_format_error(error))
-        result_count = len(response.data or [])
-        print(f"✅ [DEBUG] Retornando {result_count} registros da tabela '{table}'")
-        return response.data or []
+        from .supabase_helpers import db_operation_metrics
+        
+        with db_operation_metrics(table=table, operation="select"):
+            supabase = get_supabase_admin_client()
+            query = supabase.table(table).select("*")
+            # DEBUG: Log dos filtros aplicados
+            if filters:
+                print(f"🔍 [DEBUG] Aplicando filtros na tabela '{table}':")
+                for column, value in filters:
+                    print(f"   - {column} = {value}")
+                query = query.eq(column, value)
+            else:
+                print(f"⚠️  [DEBUG] ATENÇÃO: Nenhum filtro aplicado na tabela '{table}'!")
+            response = query.execute()
+            error = getattr(response, "error", None)
+            if error:
+                raise HTTPException(status_code=500, detail=_format_error(error))
+            result_count = len(response.data or [])
+            print(f"✅ [DEBUG] Retornando {result_count} registros da tabela '{table}'")
+            return response.data or []
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
     except Exception as e:
@@ -135,15 +159,25 @@ def _apply_filters(table: str, filters: List[Tuple[str, Any]] | None = None):
 
 def _insert_row(table: str, payload: Dict[str, Any]):
     try:
-        supabase = get_supabase_admin_client()
-        response = supabase.table(table).insert(payload).execute()
-        error = getattr(response, "error", None)
-        if error:
-            raise HTTPException(status_code=400, detail=_format_error(error))
-        return response.data or []
+        from .supabase_helpers import db_operation_metrics
+        
+        with db_operation_metrics(table=table, operation="insert"):
+            supabase = get_supabase_admin_client()
+            response = supabase.table(table).insert(payload).execute()
+            error = getattr(response, "error", None)
+            if error:
+                error_type = type(error).__name__ if hasattr(error, '__class__') else "database_error"
+                DatabaseMetrics.record_crud_error(table, "insert", error_type, 400)
+                raise HTTPException(status_code=400, detail=_format_error(error))
+            return response.data or []
+    except HTTPException:
+        raise
     except RuntimeError as e:
+        DatabaseMetrics.record_crud_error(table, "insert", "configuration_error", 500)
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
     except Exception as e:
+        error_type = type(e).__name__
+        DatabaseMetrics.record_crud_error(table, "insert", error_type, 500)
         raise HTTPException(
             status_code=500, detail=f"Erro ao inserir no banco de dados: {str(e)}"
         )
@@ -156,23 +190,33 @@ def _update_row(
     tenant_filter: Tuple[str, Any] | None = None,
 ):
     try:
-        supabase = get_supabase_admin_client()
-        query = supabase.table(table).update(payload).eq("id", record_id)
+        from .supabase_helpers import db_operation_metrics
+        
+        with db_operation_metrics(table=table, operation="update"):
+            supabase = get_supabase_admin_client()
+            query = supabase.table(table).update(payload).eq("id", record_id)
 
-        if tenant_filter:
-            column, value = tenant_filter
-            query = query.eq(column, value)
+            if tenant_filter:
+                column, value = tenant_filter
+                query = query.eq(column, value)
 
-        response = query.execute()
+            response = query.execute()
 
-        error = getattr(response, "error", None)
-        if error:
-            raise HTTPException(status_code=400, detail=_format_error(error))
+            error = getattr(response, "error", None)
+            if error:
+                error_type = type(error).__name__ if hasattr(error, '__class__') else "database_error"
+                DatabaseMetrics.record_crud_error(table, "update", error_type, 400)
+                raise HTTPException(status_code=400, detail=_format_error(error))
 
-        return response.data or []
+            return response.data or []
+    except HTTPException:
+        raise
     except RuntimeError as e:
+        DatabaseMetrics.record_crud_error(table, "update", "configuration_error", 500)
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
     except Exception as e:
+        error_type = type(e).__name__
+        DatabaseMetrics.record_crud_error(table, "update", error_type, 500)
         raise HTTPException(
             status_code=500, detail=f"Erro ao atualizar no banco de dados: {str(e)}"
         )
@@ -182,23 +226,33 @@ def _delete_row(
     table: str, record_id: str, tenant_filter: Tuple[str, Any] | None = None
 ):
     try:
-        supabase = get_supabase_admin_client()
-        query = supabase.table(table).delete().eq("id", record_id)
+        from .supabase_helpers import db_operation_metrics
+        
+        with db_operation_metrics(table=table, operation="delete"):
+            supabase = get_supabase_admin_client()
+            query = supabase.table(table).delete().eq("id", record_id)
 
-        if tenant_filter:
-            column, value = tenant_filter
-            query = query.eq(column, value)
+            if tenant_filter:
+                column, value = tenant_filter
+                query = query.eq(column, value)
 
-        response = query.execute()
+            response = query.execute()
 
-        error = getattr(response, "error", None)
-        if error:
-            raise HTTPException(status_code=400, detail=_format_error(error))
+            error = getattr(response, "error", None)
+            if error:
+                error_type = type(error).__name__ if hasattr(error, '__class__') else "database_error"
+                DatabaseMetrics.record_crud_error(table, "delete", error_type, 400)
+                raise HTTPException(status_code=400, detail=_format_error(error))
 
-        return response.data or []
+            return response.data or []
+    except HTTPException:
+        raise
     except RuntimeError as e:
+        DatabaseMetrics.record_crud_error(table, "delete", "configuration_error", 500)
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
     except Exception as e:
+        error_type = type(e).__name__
+        DatabaseMetrics.record_crud_error(table, "delete", error_type, 500)
         raise HTTPException(
             status_code=500, detail=f"Erro ao deletar do banco de dados: {str(e)}"
         )
@@ -584,12 +638,24 @@ def _authenticate_user(payload: LoginRequest):
             )
 
         supabase = get_supabase_anon_client()
-        auth_response = supabase.auth.sign_in_with_password(
-            {"email": payload.email, "password": payload.senha}
-        )
+        try:
+            auth_response = supabase.auth.sign_in_with_password(
+                {"email": payload.email, "password": payload.senha}
+            )
+        except Exception as e:
+            # Erro de conexão durante login
+            error_type = type(e).__name__
+            DatabaseMetrics.record_login_connection_error(error_type)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro ao conectar ao servidor de autenticação: {str(e)}"
+            )
+        
         error = getattr(auth_response, "error", None)
         if error:
-            raise HTTPException(status_code=401, detail=_format_error(error))
+            error_msg = _format_error(error)
+            DatabaseMetrics.record_login_error("authentication_error", 401)
+            raise HTTPException(status_code=401, detail=error_msg)
 
         user = getattr(auth_response, "user", None)
         session = getattr(auth_response, "session", None)
@@ -598,15 +664,18 @@ def _authenticate_user(payload: LoginRequest):
             session = session or auth_response.get("session")
 
         if not user or not session:
+            DatabaseMetrics.record_login_error("session_error", 401)
             raise HTTPException(status_code=401, detail="Falha ao autenticar usuário.")
 
         user_id = _get_user_id(user)
         if not user_id:
+            DatabaseMetrics.record_login_error("invalid_user", 401)
             raise HTTPException(status_code=401, detail="Usuário inválido.")
 
         resolved_tenant_id = _resolve_tenant_id(user, tenant_id)
         print(f"🔍 [DEBUG] _authenticate_user: resolved_tenant_id={resolved_tenant_id}")
         if not resolved_tenant_id:
+            DatabaseMetrics.record_login_error("tenant_not_found", 400)
             raise HTTPException(
                 status_code=400,
                 detail="tenant_id não informado ou não identificado para o usuário. Entre em contato com o administrador.",
@@ -660,16 +729,19 @@ def _authenticate_user(payload: LoginRequest):
             "refresh_expires_at": refresh_expires_at.isoformat(),
             "usuario": user_payload,
         }
-    except HTTPException:
-        # Re-raise HTTPExceptions (já têm status code apropriado)
+    except HTTPException as e:
+        # Registrar métrica de erro de login
+        DatabaseMetrics.record_login_error("http_exception", e.status_code)
         raise
     except Exception as e:
         # Captura qualquer outra exceção não tratada e retorna erro 500 com detalhes
         import traceback
         error_details = str(e)
         traceback_str = traceback.format_exc()
+        error_type = type(e).__name__
         print(f"❌ Erro inesperado no login: {error_details}")
         print(f"📋 Traceback: {traceback_str}")
+        DatabaseMetrics.record_login_error(error_type, 500)
         raise HTTPException(
             status_code=500,
             detail=f"Erro interno ao processar login: {error_details}"
@@ -678,8 +750,49 @@ def _authenticate_user(payload: LoginRequest):
 
 @app.get("/health")
 def healthcheck():
+    """Health check endpoint que verifica conectividade com Supabase"""
     settings = get_settings()
-    return {"status": "ok", "supabase_url": settings.supabase_url}
+    
+    health_status = {
+        "status": "ok",
+        "supabase_url": settings.supabase_url,
+        "database": {
+            "connected": False,
+            "response_time_ms": None,
+            "error": None
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    
+    # Testar conexão com banco de dados
+    try:
+        supabase = get_supabase_admin_client()
+        db_test = test_supabase_connection(supabase)
+        
+        health_status["database"] = {
+            "connected": db_test["connected"],
+            "response_time_ms": db_test["response_time_ms"],
+            "error": db_test.get("error")
+        }
+        
+        # Se não conseguir conectar, marcar status como degradado
+        if not db_test["connected"]:
+            health_status["status"] = "degraded"
+            health_status["message"] = "API funcionando mas banco de dados inacessível"
+    except Exception as e:
+        health_status["status"] = "degraded"
+        health_status["database"]["error"] = str(e)
+        health_status["message"] = f"Erro ao verificar conexão com banco: {e}"
+    
+    # Retornar código HTTP apropriado
+    status_code = 200 if health_status["status"] == "ok" else 503
+    
+    from fastapi import Response
+    return Response(
+        content=json.dumps(health_status),
+        media_type="application/json",
+        status_code=status_code
+    )
 
 
 @app.get("/tables")
