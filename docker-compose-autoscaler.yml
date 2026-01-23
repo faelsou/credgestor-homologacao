@@ -1,0 +1,68 @@
+version: '3.9'
+
+services:
+  # Docker Swarm Autoscaler
+  # Monitora métricas de CPU via Prometheus e ajusta réplicas automaticamente
+  autoscaler:
+    # Usar imagem customizada com script Python
+    # Build: docker build -f Dockerfile.autoscaler -t credgestor-autoscaler:latest .
+    image: credgestor-autoscaler:latest
+    environment:
+      # URL do Prometheus (ajuste conforme sua configuração)
+      # Se o Prometheus estiver em outro stack, use o nome do serviço completo
+      - PROMETHEUS_URL=http://prometheus_prometheus:9090
+      # Intervalo de verificação (em segundos)
+      - CHECK_INTERVAL=30
+      # Cooldown entre escalonamentos (em segundos) - evita oscilações
+      - COOLDOWN_PERIOD=60
+      # Métrica de CPU a ser monitorada
+      - METRIC_NAME=container_cpu_usage_seconds_total
+    volumes:
+      # Acesso ao socket do Docker para gerenciar serviços
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - network_public
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      labels:
+        - "traefik.enable=false"
+
+networks:
+  network_public:
+    external: true
+
+# ===================================================================
+# INSTRUÇÕES DE USO
+# ===================================================================
+#
+# 1. Deploy do autoscaler:
+#    docker stack deploy -c docker-compose-autoscaler.yml autoscaler
+#
+# 2. Verificar status:
+#    docker service ps autoscaler_autoscaler
+#
+# 3. Ver logs:
+#    docker service logs -f autoscaler_autoscaler
+#
+# 4. O autoscaler lerá os labels dos serviços:
+#    - com.docker.swarm.autoscale.min
+#    - com.docker.swarm.autoscale.max
+#    - com.docker.swarm.autoscale.target
+#
+# ===================================================================
+# NOTAS
+# ===================================================================
+#
+# - O autoscaler precisa ter acesso ao Prometheus na mesma rede
+# - Ajuste PROMETHEUS_URL conforme sua configuração
+# - Se usar Portainer, o auto-scaling pode ser configurado via interface
+# - Alternativa: usar script Python customizado (ver autoscaler.py)
+#
+# ===================================================================

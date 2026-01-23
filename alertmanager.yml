@@ -1,0 +1,182 @@
+global:
+  # Slack webhook URL - Configure diretamente aqui ou use o script setup-alertmanager.sh
+  # Para usar variável de ambiente, execute: ./scripts/setup-alertmanager.sh
+  # Ou substitua ${SLACK_WEBHOOK_URL} manualmente pela URL do webhook
+  resolve_timeout: 5m
+
+# Templates para formatação de mensagens
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Roteamento de alertas
+route:
+  receiver: 'slack-default'
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  routes:
+    # Alertas críticos vão direto para o canal crítico
+    - match:
+        severity: critical
+      receiver: 'slack-critical'
+      continue: true
+    
+    # Alertas de login
+    - match:
+        component: authentication
+      receiver: 'slack-auth'
+      group_wait: 5s
+      group_interval: 5s
+      repeat_interval: 1h
+    
+    # Alertas de CRUD
+    - match:
+        component: crud
+      receiver: 'slack-crud'
+      group_wait: 5s
+      group_interval: 5s
+      repeat_interval: 1h
+    
+    # Alertas de banco de dados
+    - match:
+        component: database
+      receiver: 'slack-database'
+      group_wait: 5s
+      group_interval: 5s
+      repeat_interval: 1h
+
+# Inibição de alertas (evita spam)
+inhibit_rules:
+  # Se houver erro crítico de conexão, não alertar sobre erros específicos
+  - source_match:
+      severity: critical
+      component: database
+    target_match:
+      component: crud
+    equal: ['instance']
+  
+  # Se houver erro crítico de login, não alertar sobre erros específicos de CRUD
+  - source_match:
+      severity: critical
+      component: authentication
+    target_match:
+      component: crud
+    equal: ['instance']
+
+# Receivers (destinos dos alertas)
+receivers:
+  # Receiver padrão
+  - name: 'slack-default'
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#credgestor-alerts'
+        title: '🚨 Alerta CredGestor'
+        text: >-
+          {{ range .Alerts }}
+          *{{ .Annotations.summary }}*
+          
+          {{ .Annotations.description }}
+          
+          *Severidade:* {{ .Labels.severity }}
+          *Componente:* {{ .Labels.component }}
+          {{ if .Labels.resource }}*Recurso:* {{ .Labels.resource }}{{ end }}
+          {{ if .Labels.operation }}*Operação:* {{ .Labels.operation }}{{ end }}
+          {{ if .Labels.error_type }}*Tipo de Erro:* {{ .Labels.error_type }}{{ end }}
+          
+          {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
+          {{ end }}
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+        footer: 'CredGestor Monitoring'
+
+  # Receiver para alertas críticos
+  - name: 'slack-critical'
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#credgestor-alerts-critical'
+        title: '🔴 ALERTA CRÍTICO - CredGestor'
+        text: >-
+          {{ range .Alerts }}
+          *🔴 {{ .Annotations.summary }}*
+          
+          {{ .Annotations.description }}
+          
+          *Severidade:* {{ .Labels.severity }}
+          *Componente:* {{ .Labels.component }}
+          {{ if .Labels.resource }}*Recurso:* {{ .Labels.resource }}{{ end }}
+          {{ if .Labels.operation }}*Operação:* {{ .Labels.operation }}{{ end }}
+          {{ if .Labels.error_type }}*Tipo de Erro:* {{ .Labels.error_type }}{{ end }}
+          
+          *Ação Requerida:* Investigação imediata
+          {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
+          {{ end }}
+        send_resolved: true
+        color: 'danger'
+        footer: 'CredGestor Monitoring - Crítico'
+
+  # Receiver para alertas de autenticação
+  - name: 'slack-auth'
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#credgestor-alerts'
+        title: '🔐 Erro de Autenticação - CredGestor'
+        text: >-
+          {{ range .Alerts }}
+          *{{ .Annotations.summary }}*
+          
+          {{ .Annotations.description }}
+          
+          *Tipo:* {{ .Labels.error_type }}
+          *Código:* {{ .Labels.error_code }}
+          
+          {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
+          {{ end }}
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+        footer: 'CredGestor - Autenticação'
+
+  # Receiver para alertas de CRUD
+  - name: 'slack-crud'
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#credgestor-alerts'
+        title: '💾 Erro de CRUD - CredGestor'
+        text: >-
+          {{ range .Alerts }}
+          *{{ .Annotations.summary }}*
+          
+          {{ .Annotations.description }}
+          
+          {{ if .Labels.resource }}*Recurso:* {{ .Labels.resource }}{{ end }}
+          {{ if .Labels.operation }}*Operação:* {{ .Labels.operation }}{{ end }}
+          {{ if .Labels.error_type }}*Tipo de Erro:* {{ .Labels.error_type }}{{ end }}
+          {{ if .Labels.error_code }}*Código:* {{ .Labels.error_code }}{{ end }}
+          
+          {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
+          {{ end }}
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+        footer: 'CredGestor - CRUD Operations'
+
+  # Receiver para alertas de banco de dados
+  - name: 'slack-database'
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#credgestor-alerts'
+        title: '🗄️ Erro de Banco de Dados - CredGestor'
+        text: >-
+          {{ range .Alerts }}
+          *{{ .Annotations.summary }}*
+          
+          {{ .Annotations.description }}
+          
+          {{ if .Labels.table }}*Tabela:* {{ .Labels.table }}{{ end }}
+          {{ if .Labels.operation }}*Operação:* {{ .Labels.operation }}{{ end }}
+          {{ if .Labels.error_type }}*Tipo de Erro:* {{ .Labels.error_type }}{{ end }}
+          
+          {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
+          {{ end }}
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+        footer: 'CredGestor - Database'
