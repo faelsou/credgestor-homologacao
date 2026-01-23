@@ -91,13 +91,95 @@
     },
     {
       "parameters": {
-        "jsCode": "// Agente Orquestrador - Análise e Decisão\n// Analisa resultados e decide quais sub-agentes chamar\n\nconst orchestratorData = $('Inicializar Orquestrador').item.json;\nconst healthApi = $('Health Check API').item.json;\nconst metrics = $('Verificar Métricas').item.json;\nconst frontend = $('Health Check Frontend').item.json;\nconst dbConnections = $('Verificar Conexões DB').item.json[0] || {};\n\nconst timestamp = new Date().toISOString();\n\n// Analisar status de cada componente\nconst analysis = {\n  api: {\n    status: healthApi.statusCode === 200 ? 'healthy' : 'unhealthy',\n    statusCode: healthApi.statusCode,\n    response: healthApi.body || {}\n  },\n  metrics: {\n    status: metrics.statusCode === 200 ? 'available' : 'unavailable',\n    hasData: metrics.statusCode === 200\n  },\n  frontend: {\n    status: frontend.statusCode === 200 ? 'healthy' : 'unhealthy',\n    statusCode: frontend.statusCode\n  },\n  database: {\n    totalConnections: parseInt(dbConnections.total_connections || 0),\n    activeConnections: parseInt(dbConnections.active_connections || 0),\n    idleConnections: parseInt(dbConnections.idle_connections || 0),\n    status: 'healthy' // Pode ser melhorado com mais verificações\n  }\n};\n\n// Detectar problemas e decidir quais agentes chamar\nconst issues = [];\nconst agentsToCall = [];\n\n// Problemas de Infraestrutura\nif (analysis.api.status === 'unhealthy' || analysis.metrics.status === 'unavailable') {\n  issues.push({\n    type: 'infrastructure',\n    severity: 'critical',\n    component: 'backend',\n    message: `API ou métricas com problemas`\n  });\n  agentsToCall.push('infra');\n}\n\nif (analysis.database.totalConnections > 50 || analysis.database.activeConnections > 30) {\n  issues.push({\n    type: 'database',\n    severity: 'warning',\n    component: 'database',\n    message: `Muitas conexões ativas: ${analysis.database.activeConnections}`\n  });\n  agentsToCall.push('database');\n}\n\n// Problemas de Desenvolvimento\nif (analysis.frontend.status === 'unhealthy') {\n  issues.push({\n    type: 'frontend',\n    severity: 'critical',\n    component: 'frontend',\n    message: `Frontend retornou status ${analysis.frontend.statusCode}`\n  });\n  agentsToCall.push('developer');\n}\n\n// Se API está unhealthy, pode ser problema de código também\nif (analysis.api.status === 'unhealthy' && analysis.api.statusCode >= 500) {\n  agentsToCall.push('developer');\n}\n\n// Remover duplicatas\nconst uniqueAgents = [...new Set(agentsToCall)];\n\nreturn [{\n  json: {\n    ...orchestratorData,\n    analysis: analysis,\n    issues: issues,\n    agentsToCall: uniqueAgents,\n    decision: {\n      timestamp: timestamp,\n      reasoning: `Detectados ${issues.length} problemas. Chamando agentes: ${uniqueAgents.join(', ')}`,\n      priority: issues.some(i => i.severity === 'critical') ? 'high' : 'medium'\n    },\n    status: issues.length > 0 ? 'issues_detected' : 'healthy'\n  }\n}];"
+        "jsCode": "// Agente Orquestrador - Análise Inicial\n// Coleta dados e prepara para análise com Claude AI\n\nconst orchestratorData = $('Inicializar Orquestrador').item.json;\nconst healthApi = $('Health Check API').item.json;\nconst metrics = $('Verificar Métricas').item.json;\nconst frontend = $('Health Check Frontend').item.json;\nconst dbConnections = $('Verificar Conexões DB').item.json[0] || {};\n\nconst timestamp = new Date().toISOString();\n\n// Analisar status de cada componente\nconst analysis = {\n  api: {\n    status: healthApi.statusCode === 200 ? 'healthy' : 'unhealthy',\n    statusCode: healthApi.statusCode,\n    response: healthApi.body || {}\n  },\n  metrics: {\n    status: metrics.statusCode === 200 ? 'available' : 'unavailable',\n    hasData: metrics.statusCode === 200\n  },\n  frontend: {\n    status: frontend.statusCode === 200 ? 'healthy' : 'unhealthy',\n    statusCode: frontend.statusCode\n  },\n  database: {\n    totalConnections: parseInt(dbConnections.total_connections || 0),\n    activeConnections: parseInt(dbConnections.active_connections || 0),\n    idleConnections: parseInt(dbConnections.idle_connections || 0),\n    status: 'healthy'\n  }\n};\n\n// Detectar problemas iniciais\nconst issues = [];\n\nif (analysis.api.status === 'unhealthy' || analysis.metrics.status === 'unavailable') {\n  issues.push({\n    type: 'infrastructure',\n    severity: 'critical',\n    component: 'backend',\n    message: `API ou métricas com problemas`\n  });\n}\n\nif (analysis.database.totalConnections > 50 || analysis.database.activeConnections > 30) {\n  issues.push({\n    type: 'database',\n    severity: 'warning',\n    component: 'database',\n    message: `Muitas conexões ativas: ${analysis.database.activeConnections}`\n  });\n}\n\nif (analysis.frontend.status === 'unhealthy') {\n  issues.push({\n    type: 'frontend',\n    severity: 'critical',\n    component: 'frontend',\n    message: `Frontend retornou status ${analysis.frontend.statusCode}`\n  });\n}\n\nreturn [{\n  json: {\n    ...orchestratorData,\n    analysis: analysis,\n    issues: issues,\n    readyForClaude: true\n  }\n}];"
+      },
+      "id": "orchestrator-analysis",
+      "name": "Análise Inicial",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar prompt para Claude AI - Decisão do Orquestrador\nconst data = $input.item.json;\n\nconst prompt = `Você é o Agente Orquestrador do CredGestor, responsável por coordenar sub-agentes especializados em troubleshooting.
+
+CONTEXTO DA APLICAÇÃO:
+- Aplicação: CredGestor - Sistema de Gestão de Crédito Multi-Tenancy
+- Stack: Frontend (React + Vite), Backend (FastAPI + Python 3.11)
+- Infraestrutura: Docker Swarm, Traefik, Supabase (PostgreSQL)
+- URLs: https://credgestor.app.br (Frontend), https://credgestor.app.br/api (Backend)
+
+DADOS COLETADOS:
+${JSON.stringify(data.analysis, null, 2)}
+
+PROBLEMAS DETECTADOS:
+${JSON.stringify(data.issues, null, 2)}
+
+SUA TAREFA:
+Analise os dados coletados e decida quais sub-agentes especializados devem ser chamados:
+- Agente de Infraestrutura: Para problemas de Linux, Docker, Traefik, Rede
+- Agente de Banco de Dados: Para problemas de PostgreSQL, queries, performance
+- Agente de Desenvolvimento: Para problemas de código, frontend, backend, API
+
+FORMATO DE RESPOSTA (JSON OBRIGATÓRIO):
+{
+  \"agentsToCall\": [\"infra\", \"database\", \"developer\"],
+  \"reasoning\": \"Explicação detalhada de por que cada agente foi escolhido\",
+  \"priority\": \"high|medium|low\",
+  \"estimatedTime\": \"tempo estimado para resolução\"
+}`;
+
+return [{\n  json: {\n    ...data,\n    prompt: prompt,\n    model: $env.LLM_MODEL || 'claude-3-5-sonnet-20241022'\n  }\n}];"
+      },
+      "id": "prepare-claude-prompt",
+      "name": "Preparar Prompt Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({\n  model: $json.model,\n  max_tokens: 2000,\n  temperature: 0.3,\n  messages: [{\n    role: 'user',\n    content: $json.prompt\n  }]\n}) }}",
+        "options": {}
+      },
+      "id": "claude-decision",
+      "name": "Decisão com Claude AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar decisão do Claude AI\nconst analysisData = $('Análise Inicial').item.json;\nconst llmResponse = $input.item.json;\n\n// Extrair texto da resposta\nlet decisionText = '';\nlet responseBody = llmResponse.body || llmResponse;\nif (typeof responseBody === 'string') {\n  try {\n    responseBody = JSON.parse(responseBody);\n  } catch (e) {\n    responseBody = { content: [{ type: 'text', text: responseBody }] };\n  }\n}\n\nif (responseBody.content && Array.isArray(responseBody.content)) {\n  const textContent = responseBody.content.find(c => c.type === 'text');\n  decisionText = textContent ? textContent.text : JSON.stringify(responseBody.content);\n} else {\n  decisionText = JSON.stringify(responseBody);\n}\n\n// Parsear JSON da resposta\nlet agentsToCall = [];\nlet reasoning = 'Análise automática';\nlet priority = 'medium';\n\ntry {\n  const jsonMatch = decisionText.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    const parsed = JSON.parse(jsonMatch[0]);\n    agentsToCall = parsed.agentsToCall || [];\n    reasoning = parsed.reasoning || reasoning;\n    priority = parsed.priority || priority;\n  }\n} catch (e) {\n  // Fallback: decidir baseado em problemas detectados\n  if (analysisData.issues.some(i => i.type === 'infrastructure')) agentsToCall.push('infra');\n  if (analysisData.issues.some(i => i.type === 'database')) agentsToCall.push('database');\n  if (analysisData.issues.some(i => i.type === 'frontend')) agentsToCall.push('developer');\n}\n\n// Remover duplicatas\nconst uniqueAgents = [...new Set(agentsToCall)];\n\nreturn [{\n  json: {\n    ...analysisData,\n    agentsToCall: uniqueAgents,\n    decision: {\n      timestamp: new Date().toISOString(),\n      reasoning: reasoning,\n      priority: priority,\n      claudeDecision: true\n    },\n    status: analysisData.issues.length > 0 ? 'issues_detected' : 'healthy'\n  }\n}];"
       },
       "id": "orchestrator-decision",
       "name": "Decisão do Orquestrador",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 400]
+      "position": [1560, 400]
     },
     {
       "parameters": {
@@ -327,13 +409,13 @@
     },
     {
       "parameters": {
-        "jsCode": "// Formatar mensagem de notificação consolidada\nconst consolidated = $('Consolidar Resultados').item.json;\nconst savedReport = $('Salvar Relatório Consolidado').item.json[0];\n\nconst severity = consolidated.issues.some(i => i.severity === 'critical') ? 'critical' : 'medium';\nconst severityEmoji = {\n  'critical': '🔴',\n  'high': '🟠',\n  'medium': '🟡',\n  'low': '🟢'\n}[severity] || '⚪';\n\nlet message = `${severityEmoji} *ALERTA MULTI-AGENTE: Problema Detectado no CredGestor*\\n\\n`;\nmessage += `*Agente Orquestrador* coordenou ${consolidated.summary.totalAgentsCalled} sub-agente(s)\\n`;\nmessage += `*Severidade:* ${severity.toUpperCase()}\\n`;\nmessage += `*Data/Hora:* ${new Date(consolidated.timestamp).toLocaleString('pt-BR')}\\n\\n`;\n\nmessage += `*📋 PROBLEMAS DETECTADOS:*\\n`;\nfor (const issue of consolidated.issues) {\n  message += `• ${issue.type}: ${issue.message} (${issue.severity})\\n`;\n}\n\nmessage += `\\n*🤖 ANÁLISES DOS SUB-AGENTES:*\\n`;\nfor (const agentAnalysis of consolidated.agentAnalyses) {\n  if (agentAnalysis.response && agentAnalysis.response.diagnosis) {\n    const summary = agentAnalysis.response.diagnosis.summary || 'Análise concluída';\n    message += `\\n*${agentAnalysis.agentName}:*\\n`;\n    message += `${summary.substring(0, 200)}...\\n`;\n  }\n}\n\nmessage += `\\n*📝 PLANO DE AÇÃO CONSOLIDADO:*\\n`;\nfor (let i = 0; i < Math.min(consolidated.consolidatedActionPlan.length, 5); i++) {\n  const action = consolidated.consolidatedActionPlan[i];\n  message += `${i + 1}. [${action.agent}] ${action.description}\\n`;\n}\nif (consolidated.consolidatedActionPlan.length > 5) {\n  message += `... e mais ${consolidated.consolidatedActionPlan.length - 5} ações\\n`;\n}\n\nmessage += `\\n*⚠️ AÇÕES REQUEREM APROVAÇÃO*\\n`;\nmessage += `ID do Relatório: ${savedReport.id || 'N/A'}\\n\\n`;\n\nmessage += `*Para aprovar e executar:*\\n`;\nmessage += `Responda: APROVAR ${savedReport.id || 'REPORT_ID'}\\n\\n`;\nmessage += `*Para rejeitar:*\\n`;\nmessage += `Responda: REJEITAR ${savedReport.id || 'REPORT_ID'}\\n`;\n\nreturn [{\n  json: {\n    message: message,\n    reportId: savedReport.id,\n    consolidated: consolidated,\n    channel: '#credgestor-alerts',\n    thread_ts: null\n  }\n}];"
+        "jsCode": "// Formatar mensagem de notificação consolidada com planos dos resolutores\nconst aggregated = $('Agregar Respostas Resolutores').item.json;\nconst consolidated = aggregated.troubleshooting;\nconst savedReport = aggregated.reportId;\nconst resolvers = aggregated.resolvers;\n\nconst severity = consolidated.issues.some(i => i.severity === 'critical') ? 'critical' : 'medium';\nconst severityEmoji = {\n  'critical': '🔴',\n  'high': '🟠',\n  'medium': '🟡',\n  'low': '🟢'\n}[severity] || '⚪';\n\nlet message = `${severityEmoji} *ALERTA MULTI-AGENTE: Problema Detectado no CredGestor*\\n\\n`;\nmessage += `*Agente Orquestrador* coordenou ${consolidated.summary.totalAgentsCalled} sub-agente(s) de troubleshooting\\n`;\nmessage += `*Severidade:* ${severity.toUpperCase()}\\n`;\nmessage += `*Data/Hora:* ${new Date(consolidated.timestamp).toLocaleString('pt-BR')}\\n\\n`;\n\nmessage += `*📋 PROBLEMAS DETECTADOS:*\\n`;\nfor (const issue of consolidated.issues) {\n  message += `• ${issue.type}: ${issue.message} (${issue.severity})\\n`;\n}\n\nmessage += `\\n*🤖 ANÁLISES DOS SUB-AGENTES (TROUBLESHOOTING):*\\n`;\nfor (const agentAnalysis of consolidated.agentAnalyses) {\n  if (agentAnalysis.response && agentAnalysis.response.diagnosis) {\n    const summary = agentAnalysis.response.diagnosis.summary || 'Análise concluída';\n    message += `\\n*${agentAnalysis.agentName}:*\\n`;\n    message += `${summary.substring(0, 200)}...\\n`;\n  }\n}\n\nmessage += `\\n*📝 PLANO DE AÇÃO CONSOLIDADO:*\\n`;\nfor (let i = 0; i < Math.min(consolidated.consolidatedActionPlan.length, 5); i++) {\n  const action = consolidated.consolidatedActionPlan[i];\n  message += `${i + 1}. [${action.agent}] ${action.description}\\n`;\n}\nif (consolidated.consolidatedActionPlan.length > 5) {\n  message += `... e mais ${consolidated.consolidatedActionPlan.length - 5} ações\\n`;\n}\n\nmessage += `\\n*🔧 PLANOS DE EXECUÇÃO DOS RESOLUTORES:*\\n`;\nfor (const resolver of resolvers.resolvers) {\n  if (resolver.response && resolver.response.executionPlan) {\n    message += `\\n*${resolver.resolverName}:*\\n`;\n    const plan = resolver.response.executionPlan;\n    for (let i = 0; i < Math.min(plan.length, 3); i++) {\n      message += `${i + 1}. ${plan[i].description}\\n`;\n    }\n    if (plan.length > 3) {\n      message += `... e mais ${plan.length - 3} ações\\n`;\n    }\n    if (resolver.response.vpsConnection) {\n      message += `\\n📡 Instruções de conexão VPS incluídas no relatório\\n`;\n    }\n  }\n}\n\nmessage += `\\n*⚠️ AÇÕES REQUEREM APROVAÇÃO*\\n`;\nmessage += `ID do Relatório: ${savedReport || 'N/A'}\\n\\n`;\n\nmessage += `*Para aprovar e executar:*\\n`;\nmessage += `Responda: APROVAR ${savedReport || 'REPORT_ID'}\\n\\n`;\nmessage += `*Para rejeitar:*\\n`;\nmessage += `Responda: REJEITAR ${savedReport || 'REPORT_ID'}\\n`;\n\nreturn [{\n  json: {\n    message: message,\n    reportId: savedReport,\n    consolidated: consolidated,\n    resolvers: resolvers,\n    channel: '#credgestor-alerts',\n    thread_ts: null\n  }\n}];"
       },
       "id": "format-consolidated-notification",
       "name": "Formatar Notificação",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2880, 400]
+      "position": [4200, 400]
     },
     {
       "parameters": {
@@ -429,7 +511,7 @@
       "main": [
         [
           {
-            "node": "Decisão do Orquestrador",
+            "node": "Análise Inicial",
             "type": "main",
             "index": 0
           }
@@ -440,7 +522,7 @@
       "main": [
         [
           {
-            "node": "Decisão do Orquestrador",
+            "node": "Análise Inicial",
             "type": "main",
             "index": 0
           }
@@ -451,7 +533,7 @@
       "main": [
         [
           {
-            "node": "Decisão do Orquestrador",
+            "node": "Análise Inicial",
             "type": "main",
             "index": 0
           }
@@ -459,6 +541,39 @@
       ]
     },
     "Verificar Conexões DB": {
+      "main": [
+        [
+          {
+            "node": "Análise Inicial",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Análise Inicial": {
+      "main": [
+        [
+          {
+            "node": "Preparar Prompt Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Prompt Claude": {
+      "main": [
+        [
+          {
+            "node": "Decisão com Claude AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decisão com Claude AI": {
       "main": [
         [
           {
@@ -596,6 +711,126 @@
         ]
       ]
     },
+    "Preparar Envio para Resolutores": {
+      "main": [
+        [
+          {
+            "node": "Processar Chamadas Resolutores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Chamadas Resolutores": {
+      "main": [
+        [
+          {
+            "node": "Chamar Resolutor Infra",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Chamar Resolutor DB",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Chamar Resolutor Dev",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar Resolutor Infra": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Resolutor Infra",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar Resolutor DB": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Resolutor DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar Resolutor Dev": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Resolutor Dev",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Resolutor Infra": {
+      "main": [
+        [
+          {
+            "node": "Processar Resposta Resolutor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Resolutor DB": {
+      "main": [
+        [
+          {
+            "node": "Processar Resposta Resolutor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Resolutor Dev": {
+      "main": [
+        [
+          {
+            "node": "Processar Resposta Resolutor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Resposta Resolutor": {
+      "main": [
+        [
+          {
+            "node": "Agregar Respostas Resolutores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agregar Respostas Resolutores": {
+      "main": [
+        [
+          {
+            "node": "Formatar Notificação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Processar Resposta Agente": {
       "main": [
         [
@@ -622,12 +857,191 @@
       "main": [
         [
           {
-            "node": "Formatar Notificação",
+            "node": "Preparar Envio para Resolutores",
             "type": "main",
             "index": 0
           }
         ]
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar envio de plano de ação para agentes resolutores\nconst consolidated = $('Consolidar Resultados').item.json;\nconst savedReport = $('Salvar Relatório Consolidado').item.json[0];\n\n// Agrupar ações por tipo de agente\nconst actionsByAgent = {\n  infra: consolidated.consolidatedActionPlan.filter(a => a.agent === 'infra'),\n  database: consolidated.consolidatedActionPlan.filter(a => a.agent === 'database'),\n  developer: consolidated.consolidatedActionPlan.filter(a => a.agent === 'developer')\n};\n\n// Preparar chamadas para resolutores\nconst resolverCalls = [];\n\nif (actionsByAgent.infra.length > 0) {\n  resolverCalls.push({\n    resolverType: 'infra',\n    resolverName: 'Resolutor de Infraestrutura',\n    endpoint: $env.WORKFLOW_RESOLUTOR_INFRA_URL || 'http://localhost:5678/webhook/resolutor-infra',\n    payload: {\n      troubleshootingSessionId: consolidated.sessionId,\n      sessionId: `resolver_${Date.now()}_infra`,\n      timestamp: new Date().toISOString(),\n      actionPlan: actionsByAgent.infra,\n      diagnosis: consolidated.agentAnalyses.find(a => a.agentType === 'infra')?.response?.diagnosis || {},\n      issues: consolidated.issues.filter(i => i.type === 'infrastructure' || i.component === 'backend'),\n      context: consolidated.agentAnalyses.find(a => a.agentType === 'infra')?.response || {}\n    }\n  });\n}\n\nif (actionsByAgent.database.length > 0) {\n  resolverCalls.push({\n    resolverType: 'database',\n    resolverName: 'Resolutor de Banco de Dados',\n    endpoint: $env.WORKFLOW_RESOLUTOR_DB_URL || 'http://localhost:5678/webhook/resolutor-database',\n    payload: {\n      troubleshootingSessionId: consolidated.sessionId,\n      sessionId: `resolver_${Date.now()}_database`,\n      timestamp: new Date().toISOString(),\n      actionPlan: actionsByAgent.database,\n      diagnosis: consolidated.agentAnalyses.find(a => a.agentType === 'database')?.response?.diagnosis || {},\n      issues: consolidated.issues.filter(i => i.type === 'database' || i.component === 'database'),\n      context: consolidated.agentAnalyses.find(a => a.agentType === 'database')?.response || {}\n    }\n  });\n}\n\nif (actionsByAgent.developer.length > 0) {\n  resolverCalls.push({\n    resolverType: 'developer',\n    resolverName: 'Resolutor de Desenvolvimento',\n    endpoint: $env.WORKFLOW_RESOLUTOR_DEV_URL || 'http://localhost:5678/webhook/resolutor-dev',\n    payload: {\n      troubleshootingSessionId: consolidated.sessionId,\n      sessionId: `resolver_${Date.now()}_developer`,\n      timestamp: new Date().toISOString(),\n      actionPlan: actionsByAgent.developer,\n      diagnosis: consolidated.agentAnalyses.find(a => a.agentType === 'developer')?.response?.diagnosis || {},\n      issues: consolidated.issues.filter(i => i.type === 'frontend' || i.component === 'frontend'),\n      context: consolidated.agentAnalyses.find(a => a.agentType === 'developer')?.response || {}\n    }\n  });\n}\n\nreturn resolverCalls.map(call => ({ json: call }));"
+      },
+      "id": "prepare-resolver-calls",
+      "name": "Preparar Envio para Resolutores",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2880, 400]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-resolver-calls",
+      "name": "Processar Chamadas Resolutores",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [3100, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-infra-resolver",
+              "leftValue": "={{ $json.resolverType }}",
+              "rightValue": "infra",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-infra-resolver",
+      "name": "Chamar Resolutor Infra",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3320, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-db-resolver",
+              "leftValue": "={{ $json.resolverType }}",
+              "rightValue": "database",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-db-resolver",
+      "name": "Chamar Resolutor DB",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3320, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-dev-resolver",
+              "leftValue": "={{ $json.resolverType }}",
+              "rightValue": "developer",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-dev-resolver",
+      "name": "Chamar Resolutor Dev",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3320, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.endpoint }}",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "call-infra-resolver",
+      "name": "HTTP - Resolutor Infra",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3540, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.endpoint }}",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "call-db-resolver",
+      "name": "HTTP - Resolutor DB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3540, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.endpoint }}",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "call-dev-resolver",
+      "name": "HTTP - Resolutor Dev",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3540, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar resposta dos resolutores\nconst resolverCall = $('Processar Chamadas Resolutores').item.json;\nconst resolverResponse = $input.item.json;\n\n// Processar resposta\nlet response = {};\nif (resolverResponse.body) {\n  response = typeof resolverResponse.body === 'string' \n    ? JSON.parse(resolverResponse.body) \n    : resolverResponse.body;\n} else {\n  response = resolverResponse;\n}\n\nreturn [{\n  json: {\n    resolverType: resolverCall.resolverType,\n    resolverName: resolverCall.resolverName,\n    troubleshootingSessionId: resolverCall.payload.troubleshootingSessionId,\n    response: response,\n    status: resolverResponse.statusCode === 200 ? 'success' : 'error',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "process-resolver-response",
+      "name": "Processar Resposta Resolutor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3760, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Agregar respostas dos resolutores\nconst resolverResponses = $input.all();\nconst consolidated = $('Consolidar Resultados').item.json;\nconst savedReport = $('Salvar Relatório Consolidado').item.json[0];\n\nconst resolversSummary = {\n  totalResolversCalled: resolverResponses.length,\n  resolversWithPlans: resolverResponses.filter(r => r.json.response && r.json.response.executionPlan).length,\n  resolvers: resolverResponses.map(r => r.json)\n};\n\nreturn [{\n  json: {\n    troubleshooting: consolidated,\n    reportId: savedReport.id,\n    resolvers: resolversSummary,\n    readyForNotification: true\n  }\n}];"
+      },
+      "id": "aggregate-resolver-responses",
+      "name": "Agregar Respostas Resolutores",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3980, 400]
     },
     "Formatar Notificação": {
       "main": [
