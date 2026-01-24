@@ -751,6 +751,13 @@ export async function fetchBackendUsers(
   });
 
   const body = await toJson(response);
+  
+  // Tratamento especial para 404 - recurso pode não existir ou não estar disponível
+  if (response.status === 404) {
+    const errorMessage = body?.detail || body?.error || body?.message || 'Resource \'users\' is not tenant scoped or does not exist.';
+    throw new Error(errorMessage);
+  }
+  
   assertOk(response, body);
 
   const records = Array.isArray(body) ? body : body?.data || [];
