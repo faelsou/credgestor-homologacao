@@ -27,8 +27,8 @@ interface OtelConfig {
 export function setupOpenTelemetry(config: OtelConfig = {}): void {
   // Verificar se está habilitado
   const enabled = config.enabled ?? 
-    import.meta.env.VITE_OTEL_ENABLED === 'true' ||
-    import.meta.env.VITE_OTEL_EXPORTER_OTLP_ENDPOINT !== undefined;
+    (import.meta.env.VITE_OTEL_ENABLED === 'true' ||
+     import.meta.env.VITE_OTEL_EXPORTER_OTLP_ENDPOINT !== undefined);
   
   if (!enabled) {
     console.log('⚠️  OpenTelemetry desabilitado no frontend');
