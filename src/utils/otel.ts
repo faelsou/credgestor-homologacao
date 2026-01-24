@@ -3,7 +3,7 @@
  */
 import { Resource } from '@opentelemetry/resources';
 import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
-import { WebTracerProvider } from '@opentelemetry/sdk-web';
+import { WebTracerProvider } from '@opentelemetry/sdk-trace-web';
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { FetchInstrumentation } from '@opentelemetry/instrumentation-fetch';
@@ -11,6 +11,7 @@ import { XMLHttpRequestInstrumentation } from '@opentelemetry/instrumentation-xm
 import { DocumentLoadInstrumentation } from '@opentelemetry/instrumentation-document-load';
 import { UserInteractionInstrumentation } from '@opentelemetry/instrumentation-user-interaction';
 import { registerInstrumentations } from '@opentelemetry/instrumentation';
+import { trace } from '@opentelemetry/api';
 
 interface OtelConfig {
   serviceName?: string;
@@ -123,13 +124,12 @@ export function setupOpenTelemetry(config: OtelConfig = {}): void {
  * Obtém o tracer atual para criar spans customizados
  */
 export function getTracer(name: string = 'credgestor-frontend') {
-  // Dynamic import para evitar problemas de SSR
+  // Verificar se está no browser
   if (typeof window === 'undefined') {
     return null;
   }
   
   try {
-    const { trace } = require('@opentelemetry/api');
     return trace.getTracer(name);
   } catch (error) {
     console.warn('⚠️  Tracer não disponível:', error);
