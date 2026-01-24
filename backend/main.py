@@ -1469,19 +1469,33 @@ def delete_client(
         if error:
             raise HTTPException(status_code=500, detail=f"Erro ao verificar empréstimos: {_format_error(error)}")
         
+        # Usar a mesma abordagem que outros lugares do código
         loans = loans_response.data or []
+        
+        # Log para debug
+        print(f"🔍 [DEBUG delete_client] Cliente {client_id}: encontrados {len(loans)} empréstimo(s)")
+        
         if len(loans) > 0:
+            print(f"❌ [DEBUG delete_client] Bloqueando exclusão: cliente possui {len(loans)} empréstimo(s)")
             raise HTTPException(
                 status_code=409,
                 detail=f"Não é possível excluir o cliente pois ele possui {len(loans)} empréstimo(s) associado(s). Exclua os empréstimos primeiro."
             )
     except HTTPException:
+        # Re-lançar HTTPException (incluindo a de empréstimos encontrados)
         raise
     except Exception as e:
-        # Se houver erro ao verificar empréstimos, ainda tentamos deletar
-        # mas logamos o erro para debug
-        print(f"⚠️  Aviso: Erro ao verificar empréstimos antes de deletar cliente: {e}")
+        # Se houver erro inesperado ao verificar empréstimos, não tentar deletar
+        # para evitar violação de chave estrangeira
+        import traceback
+        print(f"❌ Erro ao verificar empréstimos antes de deletar cliente {client_id}: {e}")
+        print(f"📋 Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao verificar se o cliente possui empréstimos: {str(e)}"
+        )
     
+    # Só chega aqui se não houver empréstimos
     return _delete_row("clients", client_id, ("tenant_id", tenant_id))
 
 
