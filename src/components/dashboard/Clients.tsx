@@ -1125,7 +1125,7 @@ export const ClientsView: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleDeleteClient = (clientId: string) => {
+  const handleDeleteClient = async (clientId: string) => {
     const clientLoans = loans.filter(loan => loan.clientId === clientId);
     if (clientLoans.length > 0) {
       if (!confirm(`Este cliente possui ${clientLoans.length} empréstimo(s). Deseja realmente excluir?`)) {
@@ -1134,7 +1134,34 @@ export const ClientsView: React.FC = () => {
     }
 
     if (confirm('Deseja realmente excluir este cliente e seus registros?')) {
-      deleteClient(clientId);
+      try {
+        await deleteClient(clientId);
+      } catch (error: any) {
+        // Extrair mensagem de erro do backend
+        let errorMessage = 'Não foi possível excluir o cliente.';
+        
+        if (error?.message) {
+          errorMessage = error.message;
+        } else if (typeof error === 'string') {
+          errorMessage = error;
+        } else if (error?.detail) {
+          errorMessage = error.detail;
+        } else if (error?.response?.data?.detail) {
+          errorMessage = error.response.data.detail;
+        }
+        
+        // Verificar se é erro 409 (Conflict) - cliente com empréstimos
+        const isConflictError = errorMessage.includes('empréstimo') || 
+                               errorMessage.includes('empréstimos') ||
+                               error?.status === 409 ||
+                               error?.response?.status === 409;
+        
+        if (isConflictError) {
+          alert(`❌ ${errorMessage}\n\nPor favor, exclua os empréstimos do cliente antes de excluí-lo.`);
+        } else {
+          alert(`❌ Erro ao excluir cliente: ${errorMessage}`);
+        }
+      }
     }
   };
 
