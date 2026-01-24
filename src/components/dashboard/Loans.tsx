@@ -34,7 +34,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     issueDate: baseDate,
     dueDate: baseDate,
     indication: 'Sem Garantia',
-    numberHash: generateNoteHash(),
+    numberHash: '', // Será gerado automaticamente quando o cliente for selecionado
     observation: ''
   });
   const [promissoryNote, setPromissoryNote] = useState<PromissoryNote>(createDefaultPromissoryNote(startDate));
@@ -680,12 +680,6 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             .due-date {
               font-size: 9pt;
             }
-            .value-display {
-              text-align: right;
-              font-size: 11pt;
-              font-weight: bold;
-              margin-top: 5px;
-            }
             .promise-text {
               text-align: justify;
               margin: 15px 0;
@@ -744,9 +738,6 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 </div>
                 <div class="due-date">
                   <strong>Vencimento:</strong> ${dueDateWords}
-                </div>
-                <div class="value-display">
-                  ${formatCurrency(noteValue)}
                 </div>
               </div>
             </div>
