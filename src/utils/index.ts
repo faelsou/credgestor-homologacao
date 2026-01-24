@@ -206,6 +206,30 @@ export const generateNoteHash = () => {
 };
 
 /**
+ * Gera o número da nota promissória no formato #X/YYY#
+ * onde X é o número do cliente e YYY é o sequencial da nota para aquele cliente
+ */
+export const generatePromissoryNoteNumber = (
+  clientId: string,
+  clientIndex: number,
+  existingLoans: Array<{ clientId: string; promissoryNote?: { numberHash?: string } }>
+): string => {
+  // Número do cliente (usando índice + 1 para começar em 1)
+  const clientNumber = clientIndex + 1;
+  
+  // Contar quantas notas promissórias já existem para este cliente
+  const clientNotesCount = existingLoans.filter(
+    loan => loan.clientId === clientId && loan.promissoryNote?.numberHash
+  ).length;
+  
+  // Sequencial da nota (incrementa 1 para a nova nota)
+  const noteSequence = clientNotesCount + 1;
+  
+  // Formatar no padrão #X/YYY#
+  return `#${clientNumber}/${noteSequence.toString().padStart(3, '0')}#`;
+};
+
+/**
  * Converte um número para extenso em português brasileiro
  * Usado para notas promissórias e documentos oficiais
  */
