@@ -1,0 +1,857 @@
+{
+  "name": "CredGestor - AI Agents Multi-Agente v1.115",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Monitoramento Periódico",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 400],
+      "notes": "Monitora CredGestor na VPS a cada 15 minutos"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Inicialização - Monitoramento CredGestor VPS\nconst timestamp = new Date().toISOString();\nconst sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);\n\nreturn [{\n  json: {\n    sessionId: sessionId,\n    timestamp: timestamp,\n    application: 'CredGestor',\n    vps: '167.235.76.26',\n    status: 'monitoring',\n    target: 'credgestor_app_only'\n  }\n}];"
+      },
+      "id": "init-monitoring",
+      "name": "Inicializar Monitoramento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://credgestor.app.br/api/health",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "health-check",
+      "name": "Health Check API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://credgestor.app.br/api/metrics",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "metrics-check",
+      "name": "Verificar Métricas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://credgestor.app.br",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "frontend-check",
+      "name": "Health Check Frontend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  COUNT(*) as total_connections,\n  COUNT(*) FILTER (WHERE state = 'active') as active_connections,\n  COUNT(*) FILTER (WHERE state = 'idle') as idle_connections\nFROM pg_stat_activity\nWHERE datname = 'postgres';",
+        "options": {}
+      },
+      "id": "db-check",
+      "name": "Verificar Conexões DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [680, 600],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Agregar dados coletados\nconst initData = $('Inicializar Monitoramento').item.json;\nconst healthApi = $('Health Check API').item.json;\nconst metrics = $('Verificar Métricas').item.json;\nconst frontend = $('Health Check Frontend').item.json;\nconst dbConnections = $('Verificar Conexões DB').item.json[0] || {};\n\nconst analysis = {\n  api: {\n    status: healthApi.statusCode === 200 ? 'healthy' : 'unhealthy',\n    statusCode: healthApi.statusCode,\n    response: healthApi.body || {}\n  },\n  metrics: {\n    status: metrics.statusCode === 200 ? 'available' : 'unavailable',\n    hasData: metrics.statusCode === 200\n  },\n  frontend: {\n    status: frontend.statusCode === 200 ? 'healthy' : 'unhealthy',\n    statusCode: frontend.statusCode\n  },\n  database: {\n    totalConnections: parseInt(dbConnections.total_connections || 0),\n    activeConnections: parseInt(dbConnections.active_connections || 0),\n    idleConnections: parseInt(dbConnections.idle_connections || 0),\n    status: 'healthy'\n  }\n};\n\n// Detectar problemas\nconst issues = [];\nif (analysis.api.status === 'unhealthy' || analysis.metrics.status === 'unavailable') {\n  issues.push({ type: 'infrastructure', severity: 'critical', component: 'backend', message: 'API ou métricas com problemas' });\n}\nif (analysis.database.totalConnections > 50 || analysis.database.activeConnections > 30) {\n  issues.push({ type: 'database', severity: 'warning', component: 'database', message: 'Muitas conexões ativas: ' + analysis.database.activeConnections });\n}\nif (analysis.frontend.status === 'unhealthy') {\n  issues.push({ type: 'frontend', severity: 'critical', component: 'frontend', message: 'Frontend retornou status ' + analysis.frontend.statusCode });\n}\n\nreturn [{\n  json: {\n    ...initData,\n    analysis: analysis,\n    issues: issues,\n    readyForOrchestrator: issues.length > 0\n  }\n}];"
+      },
+      "id": "aggregate-data",
+      "name": "Agregar Dados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-issues",
+              "leftValue": "={{ $json.issues.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "larger"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-issues",
+      "name": "Tem Problemas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "agent": "={{ $json.sessionId }}",
+        "promptType": "define",
+        "text": "=Você é o Agente Orquestrador do CredGestor, responsável por coordenar agentes especializados para monitorar e resolver problemas na aplicação CredGestor na VPS 167.235.76.26.\n\nCONTEXTO:\n- Aplicação: CredGestor - Sistema de Gestão de Crédito Multi-Tenancy\n- VPS: 167.235.76.26\n- Stack: Docker Swarm, Traefik, FastAPI, React, Supabase\n- Serviços: credgestor_api, credgestor_site\n\nDADOS COLETADOS:\n{{ $json.analysis }}\n\nPROBLEMAS DETECTADOS:\n{{ $json.issues }}\n\nAGENTES ESPECIALIZADOS DISPONÍVEIS:\n1. Agente Containers - Especialista em Docker Swarm, containers, serviços, logs, recursos\n2. Agente Infraestrutura - Especialista em Linux, rede, Traefik, monitoramento\n3. Agente Banco de Dados - Especialista em PostgreSQL, Supabase, queries, performance\n4. Agente Fullstack - Especialista em React, FastAPI, código, integração\n\nSUA TAREFA:\nAnalise os dados e decida quais agentes especializados devem ser chamados. Cada agente fará troubleshooting E resolução.\n\nRetorne JSON:\n{\n  \"agentsToCall\": [\"containers\", \"infrastructure\", \"database\", \"fullstack\"],\n  \"reasoning\": \"Explicação detalhada\",\n  \"priority\": \"high|medium|low\"\n}",
+        "options": {}
+      },
+      "id": "ai-agent-orchestrator",
+      "name": "AI Agent - Orquestrador",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.4,
+      "position": [1340, 400],
+      "credentials": {},
+      "notes": "Orquestrador que decide quais agentes especializados chamar"
+    },
+    {
+      "parameters": {
+        "model": "={{ $env.LLM_MODEL || 'claude-3-5-sonnet-20241022' }}",
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 2000
+        }
+      },
+      "id": "chat-model-claude",
+      "name": "Chat Model Claude",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.2,
+      "position": [1340, 600],
+      "credentials": {
+        "anthropicApi": {
+          "id": "1",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "custom",
+        "sessionKey": "={{ $json.sessionId }}",
+        "contextWindowLength": 10
+      },
+      "id": "memory-buffer",
+      "name": "Memory Buffer",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.2,
+      "position": [1340, 800],
+      "notes": "Memória compartilhada entre agentes"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar decisão do orquestrador e chamar agentes especializados\nconst orchestratorResponse = $input.item.json.output || $input.item.json.text || $input.item.json;\nconst originalData = $('Agregar Dados').item.json;\n\n// Parsear resposta do orquestrador\nlet agentsToCall = [];\ntry {\n  let responseText = typeof orchestratorResponse === 'string' ? orchestratorResponse : JSON.stringify(orchestratorResponse);\n  // Tentar extrair JSON da resposta\n  const jsonMatch = responseText.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    const parsed = JSON.parse(jsonMatch[0]);\n    agentsToCall = parsed.agentsToCall || [];\n  }\n} catch (e) {\n  // Fallback baseado em problemas\n  if (originalData.issues.some(i => i.type === 'infrastructure')) agentsToCall.push('containers', 'infrastructure');\n  if (originalData.issues.some(i => i.type === 'database')) agentsToCall.push('database');\n  if (originalData.issues.some(i => i.type === 'frontend')) agentsToCall.push('fullstack');\n}\n\n// Remover duplicatas\nagentsToCall = [...new Set(agentsToCall)];\n\n// Preparar chamadas para agentes\nconst agentCalls = agentsToCall.map(agentType => ({\n  agentType: agentType,\n  sessionId: originalData.sessionId,\n  data: originalData\n}));\n\nreturn agentCalls.map(call => ({ json: call }));"
+      },
+      "id": "prepare-agent-calls",
+      "name": "Preparar Chamadas Agentes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 400]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-calls",
+      "name": "Processar Chamadas",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1780, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-containers",
+              "leftValue": "={{ $json.agentType }}",
+              "rightValue": "containers",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-containers",
+      "name": "Agente Containers",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-infrastructure",
+              "leftValue": "={{ $json.agentType }}",
+              "rightValue": "infrastructure",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-infrastructure",
+      "name": "Agente Infraestrutura",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-database",
+              "leftValue": "={{ $json.agentType }}",
+              "rightValue": "database",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-database",
+      "name": "Agente Database",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-fullstack",
+              "leftValue": "={{ $json.agentType }}",
+              "rightValue": "fullstack",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-fullstack",
+      "name": "Agente Fullstack",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 500]
+    },
+    {
+      "parameters": {
+        "agent": "={{ $json.sessionId + '_containers' }}",
+        "promptType": "define",
+        "text": "=Você é um especialista sênior em containers Docker, Docker Swarm e orquestração de containers.\\n\\nCONTEXTO DA APLICAÇÃO:\\n- Aplicação: CredGestor - Sistema de Gestão de Crédito Multi-Tenancy\\n- VPS: 167.235.76.26\\n- Infraestrutura: Docker Swarm\\n- Serviços principais: credgestor_api, credgestor_site\\n- Rede Docker: network_public\\n- Stack: Traefik, FastAPI, React, Nginx\\n\\nPROBLEMAS DETECTADOS:\\n{{ JSON.stringify($json.data.issues || []) }}\\n\\nCONTEXTO TÉCNICO:\\n{{ JSON.stringify($json.data.analysis || {}) }}\\n\\nSUA TAREFA (TROUBLESHOOTING E RESOLUÇÃO):\\n1. TROUBLESHOOTING - Analisar e diagnosticar:\\n   - Status dos serviços Docker Swarm (docker service ls)\\n   - Saúde dos containers (docker service ps)\\n   - Logs de erros (docker service logs)\\n   - Uso de recursos (CPU, memória, disco)\\n   - Problemas de rede Docker\\n   - Problemas de volumes\\n   - Configurações do Docker Swarm\\n   - Restart policies e health checks\\n\\n2. RESOLUÇÃO - Gerar plano de execução:\\n   - Comandos Docker Swarm específicos\\n   - Comandos SSH para executar na VPS 167.235.76.26\\n   - Verificações pós-execução\\n   - Planos de rollback\\n\\nRetorne JSON com troubleshooting.diagnosis, troubleshooting.actionPlan, resolution.executionPlan e resolution.vpsConnection. Foque APENAS na aplicação CredGestor na VPS 167.235.76.26.",
+        "options": {}
+      },
+      "id": "ai-agent-containers",
+      "name": "AI Agent - Containers",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.4,
+      "position": [2220, 200],
+      "credentials": {},
+      "notes": "Especialista em Docker Swarm e Containers"
+    },
+    {
+      "parameters": {
+        "agent": "={{ $json.sessionId + '_infrastructure' }}",
+        "promptType": "define",
+        "text": "=Você é um especialista sênior em infraestrutura Linux, rede, Traefik e monitoramento.\\n\\nCONTEXTO DA APLICAÇÃO:\\n- Aplicação: CredGestor - Sistema de Gestão de Crédito Multi-Tenancy\\n- VPS: 167.235.76.26\\n- Stack: Linux, Docker Swarm, Traefik, Prometheus, Grafana\\n- URLs: https://credgestor.app.br (Frontend), https://credgestor.app.br/api (Backend)\\n- Rede Docker: network_public\\n- Monitoramento: Prometheus, Grafana\\n\\nPROBLEMAS DETECTADOS:\\n{{ JSON.stringify($json.data.issues || []) }}\\n\\nCONTEXTO TÉCNICO:\\n{{ JSON.stringify($json.data.analysis || {}) }}\\n\\nSUA TAREFA (TROUBLESHOOTING E RESOLUÇÃO):\\n1. TROUBLESHOOTING - Analisar e diagnosticar:\\n   - Infraestrutura Linux (recursos do sistema, processos, logs)\\n   - Rede e conectividade (Traefik, DNS, firewall)\\n   - Configurações do Traefik (routers, middlewares, SSL)\\n   - Monitoramento (Prometheus scraping, métricas disponíveis)\\n   - Problemas de DNS e certificados SSL\\n   - Firewall e segurança\\n\\n2. RESOLUÇÃO - Gerar plano de execução:\\n   - Comandos Linux específicos\\n   - Comandos SSH para executar na VPS 167.235.76.26\\n   - Ajustes de configuração Traefik\\n   - Verificações pós-execução\\n   - Planos de rollback\\n\\nRetorne JSON com troubleshooting.diagnosis, troubleshooting.actionPlan, resolution.executionPlan e resolution.vpsConnection. Foque APENAS na aplicação CredGestor na VPS 167.235.76.26.",
+        "options": {}
+      },
+      "id": "ai-agent-infrastructure",
+      "name": "AI Agent - Infraestrutura",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.4,
+      "position": [2220, 300],
+      "credentials": {},
+      "notes": "Especialista em Infraestrutura Linux"
+    },
+    {
+      "parameters": {
+        "agent": "={{ $json.sessionId + '_database' }}",
+        "promptType": "define",
+        "text": "=Você é um especialista sênior em banco de dados PostgreSQL e Supabase.\\n\\nCONTEXTO DA APLICAÇÃO:\\n- Aplicação: CredGestor - Sistema de Gestão de Crédito Multi-Tenancy\\n- Banco: PostgreSQL (Supabase)\\n- Arquitetura: Multi-tenancy com isolamento por tenant_id\\n- String de Conexão: postgresql://postgres:****@db.aclyrcuahiujgtjuimoh.supabase.co:5432/postgres\\n\\nPROBLEMAS DETECTADOS:\\n{{ JSON.stringify($json.data.issues || []) }}\\n\\nCONTEXTO TÉCNICO:\\n{{ JSON.stringify($json.data.analysis || {}) }}\\n\\nSUA TAREFA:\\n1. Analisar problemas focando em: conexões, performance de queries, locks, tamanhos de tabelas, uso de recursos, problemas de conexão com Supabase, queries N+1, falta de índices, problemas de isolamento multi-tenant.\\n\\n2. Criar diagnóstico estruturado identificando: causa raiz, impacto, severidade, evidências, tabelas/índices afetados.\\n\\n3. Criar plano de ação com: ações imediatas, otimizações de queries, criação/modificação de índices, ajustes de configuração, limpeza de dados, monitoramento adicional, comandos SQL específicos.\\n\\nRetorne JSON com diagnosis, actionPlan (com sqlCommands), requiresApproval e severity. Foque APENAS na aplicação CredGestor. Considere limitações do Supabase (conexões máx ~100).",
+        "options": {}
+      },
+      "id": "ai-agent-database",
+      "name": "AI Agent - Database",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.4,
+      "position": [2220, 400],
+      "credentials": {},
+      "notes": "Especialista em PostgreSQL e Supabase"
+    },
+    {
+      "parameters": {
+        "agent": "={{ $json.sessionId + '_fullstack' }}",
+        "promptType": "define",
+        "text": "=Você é um especialista sênior em desenvolvimento full-stack:\\n- Frontend: React 19, TypeScript, Vite, TailwindCSS, Redux Toolkit, Supabase Client\\n- Backend: FastAPI (Python 3.11), Supabase, PostgreSQL, Pydantic\\n- Arquitetura: Multi-tenancy, API REST, Autenticação JWT, Row Level Security (RLS)\\n\\nCONTEXTO DA APLICAÇÃO:\\n- Aplicação: CredGestor - Sistema de Gestão de Crédito Multi-Tenancy\\n- Frontend: React + Vite + TypeScript, servido via Nginx\\n- Backend: FastAPI (Python 3.11), Supabase Auth + Database\\n- Arquitetura: Multi-tenancy com isolamento por tenant_id\\n- URLs: https://credgestor.app.br (Frontend), https://credgestor.app.br/api (Backend)\\n- Estrutura: backend/ (Python), src/ (React/TypeScript)\\n\\nPROBLEMAS DETECTADOS:\\n{{ JSON.stringify($json.data.issues || []) }}\\n\\nCONTEXTO TÉCNICO:\\n{{ JSON.stringify($json.data.analysis || {}) }}\\n\\nSUA TAREFA:\\n1. Analisar problemas focando em: erros de código, problemas de integração, autenticação/autorização, performance de código, lógica de negócio, problemas de API, multi-tenancy, CORS, build/deploy.\\n\\n2. Criar diagnóstico identificando: causa raiz (arquivo/função/linha), impacto, severidade, stack trace, se é frontend/backend/integração.\\n\\n3. Criar plano de ação com: correções de código, mudanças em arquivos específicos, testes necessários, deploy e rollback plan, comandos para verificação.\\n\\nRetorne JSON com diagnosis (incluindo codeLocation), actionPlan (com filesToModify, codeChanges), requiresApproval e severity. Foque APENAS na aplicação CredGestor. Sempre verifique se mudanças não violam isolamento multi-tenant.",
+        "options": {}
+      },
+      "id": "ai-agent-fullstack",
+      "name": "AI Agent - Fullstack",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.4,
+      "position": [2220, 500],
+      "credentials": {},
+      "notes": "Especialista em React e FastAPI"
+    },
+    {
+      "parameters": {
+        "model": "={{ $env.LLM_MODEL || 'claude-3-5-sonnet-20241022' }}",
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 4000
+        }
+      },
+      "id": "chat-model-anthropic-agents",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.2,
+      "position": [2220, 700],
+      "credentials": {
+        "anthropicApi": {
+          "id": "1",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "custom",
+        "sessionKey": "={{ $json.sessionId }}",
+        "contextWindowLength": 10
+      },
+      "id": "memory-buffer-agents",
+      "name": "Memory Buffer Agentes",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.2,
+      "position": [2220, 900]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Agregar respostas de todos os agentes\nconst agentResponses = $input.all();\nconst originalData = $('Agregar Dados').item.json;\n\nconst consolidated = {\n  sessionId: originalData.sessionId,\n  timestamp: originalData.timestamp,\n  application: originalData.application,\n  vps: originalData.vps,\n  issues: originalData.issues,\n  agentAnalyses: agentResponses.map(r => {\n    const response = r.json.output || r.json.text || r.json.response || r.json;\n    return {\n      agentType: r.json.agentType,\n      response: response,\n      timestamp: new Date().toISOString()\n    };\n  }),\n  summary: {\n    totalAgentsCalled: agentResponses.length,\n    agentsWithIssues: agentResponses.length\n  }\n};\n\nreturn [{\n  json: consolidated\n}];"
+      },
+      "id": "consolidate-responses",
+      "name": "Consolidar Respostas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2440, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO troubleshooting_reports (\n  id,\n  timestamp,\n  specialist_type,\n  issues,\n  diagnosis,\n  action_plan,\n  severity,\n  status,\n  created_at\n) VALUES (\n  gen_random_uuid(),\n  '{{ $json.timestamp }}',\n  'ai_agents_v115',\n  '{{ JSON.stringify($json.issues) }}'::jsonb,\n  '{{ JSON.stringify({ summary: $json.summary, agentAnalyses: $json.agentAnalyses }) }}'::jsonb,\n  '{{ JSON.stringify($json.agentAnalyses) }}'::jsonb,\n  '{{ $json.issues.some(i => i.severity === \"critical\") ? \"critical\" : \"medium\" }}',\n  'pending_approval',\n  NOW()\n) RETURNING id, timestamp, status;",
+        "options": {}
+      },
+      "id": "save-report",
+      "name": "Salvar Relatório",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2660, 400],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatar notificação\nconst consolidated = $('Consolidar Respostas').item.json;\nconst savedReport = $('Salvar Relatório').item.json[0];\n\nconst severity = consolidated.issues.some(i => i.severity === 'critical') ? 'critical' : 'medium';\nconst severityEmoji = severity === 'critical' ? '🔴' : severity === 'high' ? '🟠' : '🟡';\n\nlet message = severityEmoji + ' *ALERTA AI AGENTS: CredGestor VPS*\\n\\n';\nmessage += '*Workflow AI Agents v1.115* coordenou ' + consolidated.summary.totalAgentsCalled + ' agente(s)\\n';\nmessage += '*VPS:* 167.235.76.26\\n';\nmessage += '*Aplicação:* CredGestor\\n';\nmessage += '*Severidade:* ' + severity.toUpperCase() + '\\n\\n';\n\nmessage += '*📋 PROBLEMAS DETECTADOS:*\\n';\nfor (const issue of consolidated.issues) {\n  message += '• ' + issue.type + ': ' + issue.message + ' (' + issue.severity + ')\\n';\n}\n\nmessage += '\\n*🤖 ANÁLISES DOS AGENTES:*\\n';\nfor (const agentAnalysis of consolidated.agentAnalyses) {\n  message += '\\n*' + agentAnalysis.agentType + ':*\\n';\n  const responseText = typeof agentAnalysis.response === 'string' ? agentAnalysis.response : JSON.stringify(agentAnalysis.response);\n  message += responseText.substring(0, 300) + '...\\n';\n}\n\nmessage += '\\n*⚠️ AÇÕES REQUEREM APROVAÇÃO*\\n';\nmessage += 'ID: ' + (savedReport.id || 'N/A') + '\\n';\n\nreturn [{\n  json: {\n    message: message,\n    reportId: savedReport.id,\n    consolidated: consolidated,\n    channel: '#credgestor-alerts'\n  }\n}];"
+      },
+      "id": "format-notification",
+      "name": "Formatar Notificação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2880, 400]
+    },
+    {
+      "parameters": {
+        "channel": "={{ $json.channel || '#credgestor-alerts' }}",
+        "text": "={{ $json.message }}",
+        "otherOptions": {}
+      },
+      "id": "send-slack",
+      "name": "Enviar Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [3100, 300],
+      "credentials": {
+        "slackApi": {
+          "id": "1",
+          "name": "Slack API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.ALERT_EMAIL_FROM || 'noreply@credgestor.app.br' }}",
+        "toEmail": "={{ $env.ALERT_EMAIL_TO || 'admin@credgestor.app.br' }}",
+        "subject": "={{ '🚨 Alerta AI Agents CredGestor VPS' }}",
+        "emailType": "html",
+        "message": "={{ $json.message.replace(/\\n/g, '<br>').replace(/\\*/g, '<strong>').replace(/\\*/g, '</strong>') }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Enviar Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [3100, 500],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "1",
+          "name": "Gmail OAuth2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Monitoramento Periódico": {
+      "main": [
+        [
+          {
+            "node": "Inicializar Monitoramento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inicializar Monitoramento": {
+      "main": [
+        [
+          {
+            "node": "Health Check API",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Verificar Métricas",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Health Check Frontend",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Verificar Conexões DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health Check API": {
+      "main": [
+        [
+          {
+            "node": "Agregar Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Métricas": {
+      "main": [
+        [
+          {
+            "node": "Agregar Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health Check Frontend": {
+      "main": [
+        [
+          {
+            "node": "Agregar Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Conexões DB": {
+      "main": [
+        [
+          {
+            "node": "Agregar Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agregar Dados": {
+      "main": [
+        [
+          {
+            "node": "Tem Problemas?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Problemas?": {
+      "main": [
+        [
+          {
+            "node": "AI Agent - Orquestrador",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Formatar Notificação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent - Orquestrador": {
+      "main": [
+        [
+          {
+            "node": "Preparar Chamadas Agentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Model Claude": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent - Orquestrador",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Buffer": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent - Orquestrador",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Chamadas Agentes": {
+      "main": [
+        [
+          {
+            "node": "Processar Chamadas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Chamadas": {
+      "main": [
+        [
+          {
+            "node": "Agente Containers",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Agente Infraestrutura",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Agente Database",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Agente Fullstack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Containers": {
+      "main": [
+        [
+          {
+            "node": "AI Agent - Containers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Infraestrutura": {
+      "main": [
+        [
+          {
+            "node": "AI Agent - Infraestrutura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Database": {
+      "main": [
+        [
+          {
+            "node": "AI Agent - Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Fullstack": {
+      "main": [
+        [
+          {
+            "node": "AI Agent - Fullstack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent - Containers": {
+      "main": [
+        [
+          {
+            "node": "Consolidar Respostas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent - Infraestrutura": {
+      "main": [
+        [
+          {
+            "node": "Consolidar Respostas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent - Database": {
+      "main": [
+        [
+          {
+            "node": "Consolidar Respostas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent - Fullstack": {
+      "main": [
+        [
+          {
+            "node": "Consolidar Respostas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent - Containers",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "AI Agent - Infraestrutura",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "AI Agent - Database",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "AI Agent - Fullstack",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Buffer Agentes": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent - Containers",
+            "type": "ai_memory",
+            "index": 0
+          },
+          {
+            "node": "AI Agent - Infraestrutura",
+            "type": "ai_memory",
+            "index": 0
+          },
+          {
+            "node": "AI Agent - Database",
+            "type": "ai_memory",
+            "index": 0
+          },
+          {
+            "node": "AI Agent - Fullstack",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar Respostas": {
+      "main": [
+        [
+          {
+            "node": "Salvar Relatório",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar Relatório": {
+      "main": [
+        [
+          {
+            "node": "Formatar Notificação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar Notificação": {
+      "main": [
+        [
+          {
+            "node": "Enviar Slack",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Enviar Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-12-20T00:00:00.000Z",
+  "versionId": "1"
+}
