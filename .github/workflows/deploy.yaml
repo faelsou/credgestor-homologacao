@@ -97,7 +97,15 @@ jobs:
           cache: 'npm'
 
       - name: 📦 Install Node dependencies
-        run: npm ci
+        run: |
+          # Se package-lock.json não existir ou estiver desatualizado, usar npm install
+          if [ ! -f package-lock.json ] || [ package.json -nt package-lock.json ]; then
+            echo "⚠️  package-lock.json ausente ou desatualizado, usando npm install..."
+            npm install
+          else
+            echo "✅ Usando npm ci com package-lock.json existente..."
+            npm ci
+          fi
 
       - name: 🔍 Lint TypeScript/React
         run: |
@@ -189,7 +197,15 @@ jobs:
           cache: 'npm'
 
       - name: 📦 Install dependencies
-        run: npm ci
+        run: |
+          # Se package-lock.json não existir ou estiver desatualizado, usar npm install
+          if [ ! -f package-lock.json ] || [ package.json -nt package-lock.json ]; then
+            echo "⚠️  package-lock.json ausente ou desatualizado, usando npm install..."
+            npm install
+          else
+            echo "✅ Usando npm ci com package-lock.json existente..."
+            npm ci
+          fi
 
       - name: 🔍 Type check
         run: |
@@ -558,7 +574,15 @@ jobs:
           pip install -r backend/requirements.txt
 
       - name: 📦 Install frontend dependencies
-        run: npm ci
+        run: |
+          # Se package-lock.json não existir ou estiver desatualizado, usar npm install
+          if [ ! -f package-lock.json ] || [ package.json -nt package-lock.json ]; then
+            echo "⚠️  package-lock.json ausente ou desatualizado, usando npm install..."
+            npm install
+          else
+            echo "✅ Usando npm ci com package-lock.json existente..."
+            npm ci
+          fi
 
       - name: 🗄️ Setup local database
         run: |
