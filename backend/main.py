@@ -914,6 +914,20 @@ def create_tenant_resource(
     return _insert_row(table, body)
 
 
+@app.put("/tenants/{tenant_id}/{resource}/{record_id}")
+def update_tenant_resource(
+    tenant_id: str,
+    resource: str,
+    record_id: str,
+    payload: Dict[str, Any] = Body(...),
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    table = _validate_tenant_table(resource)
+    column = TENANT_TABLES[table]
+    return _update_row(table, record_id, payload, (column, tenant_id))
+
+
 @app.delete("/tenants/{tenant_id}/{resource}/{record_id}")
 def delete_tenant_resource(
     tenant_id: str,
@@ -1393,6 +1407,53 @@ def reset_password(payload: ResetPasswordRequest):
         raise HTTPException(status_code=500, detail=f"Erro ao conectar ao Supabase: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao resetar senha: {str(e)}")
+
+
+@app.get("/tenants/{tenant_id}/clients")
+def list_clients(
+    tenant_id: str,
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    return _apply_filters("clients", [("tenant_id", tenant_id)])
+
+
+@app.post("/tenants/{tenant_id}/clients")
+def create_client(
+    tenant_id: str,
+    payload: Dict[str, Any] = Body(...),
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    body = {**payload}
+    body.setdefault("tenant_id", tenant_id)
+    return _insert_row("clients", body)
+
+
+@app.put("/tenants/{tenant_id}/clients/{client_id}")
+def update_client(
+    tenant_id: str,
+    client_id: str,
+    payload: Dict[str, Any] = Body(...),
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    # Verificar se o cliente pertence ao tenant
+    existing = _get_single_record("clients", [("id", client_id), ("tenant_id", tenant_id)])
+    if not existing:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado.")
+    # Atualizar
+    return _update_row("clients", client_id, payload, ("tenant_id", tenant_id))
+
+
+@app.delete("/tenants/{tenant_id}/clients/{client_id}")
+def delete_client(
+    tenant_id: str,
+    client_id: str,
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    return _delete_row("clients", client_id, ("tenant_id", tenant_id))
 
 
 @app.get("/tenants/{tenant_id}/loans")
