@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Plus, Calculator, Pencil, Trash2, FileText, Clock8, Search, RotateCcw, Scale } from 'lucide-react';
 import { AppContext } from '@/pages/App';
-import { formatCurrency, formatDate, generateNoteHash, getTodayDateString, numberToWords, formatCpf, formatCep } from '@/utils';
+import { formatCurrency, formatDate, generateNoteHash, generatePromissoryNoteNumber, getTodayDateString, numberToWords, formatCpf, formatCep } from '@/utils';
 import { LoanStatus, Installment, InstallmentStatus, UserRole, Loan, PromissoryNote, IndicationType, Client, LoanModel } from '@/types';
 
 interface LoansViewProps {
@@ -190,13 +190,29 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     }
 
     const lastDueDate = generatedInstallments[generatedInstallments.length - 1]?.dueDate || startDate;
+    
+    // Gerar número da nota promissória no formato #X/YYY#
+    let noteNumber = promissoryNote.numberHash;
+    if (!noteNumber || !editingLoan) {
+      // Encontrar o índice do cliente na lista ordenada por nome
+      const sortedClients = [...clients].sort((a, b) => a.name.localeCompare(b.name));
+      const clientIndex = sortedClients.findIndex(c => c.id === selectedClientId);
+      
+      // Se estiver editando, excluir o empréstimo atual da contagem
+      const loansForCounting = editingLoan 
+        ? loans.filter(l => l.id !== editingLoan.id)
+        : loans;
+      
+      noteNumber = generatePromissoryNoteNumber(selectedClientId, clientIndex >= 0 ? clientIndex : 0, loansForCounting);
+    }
+    
     const promissoryToSave: PromissoryNote = {
       ...promissoryNote,
       capital: Number(promissoryNote.capital || amount),
       interestRate: Number(promissoryNote.interestRate || interestRate),
       issueDate: promissoryNote.issueDate || startDate,
       dueDate: promissoryNote.dueDate || lastDueDate,
-      numberHash: promissoryNote.numberHash || generateNoteHash()
+      numberHash: noteNumber
     };
 
     const loanToPersist: Loan = {
@@ -269,6 +285,20 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       deleteLoan(loan.id);
     }
   };
+
+  // Atualizar número da nota promissória quando o cliente for selecionado
+  useEffect(() => {
+    if (selectedClientId && !editingLoan) {
+      // Encontrar o índice do cliente na lista ordenada por nome
+      const sortedClients = [...clients].sort((a, b) => a.name.localeCompare(b.name));
+      const clientIndex = sortedClients.findIndex(c => c.id === selectedClientId);
+      
+      if (clientIndex >= 0) {
+        const noteNumber = generatePromissoryNoteNumber(selectedClientId, clientIndex, loans);
+        setPromissoryNote(prev => ({ ...prev, numberHash: noteNumber }));
+      }
+    }
+  }, [selectedClientId, clients, loans, editingLoan]);
 
   useEffect(() => {
     if (!editingLoanId) return;
@@ -557,6 +587,37 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     // Local de pagamento (cidade e estado do credor)
     const paymentLocation = `${creditorCity}/${creditorState}`;
 
+    // Formatar data de vencimento para texto extenso
+    const formatDateToWords = (dateStr: string): string => {
+      // Normalizar a data (pode vir em YYYY-MM-DD ou outro formato)
+      let normalizedDate = dateStr;
+      if (dateStr.includes('T')) {
+        normalizedDate = dateStr.split('T')[0];
+      } else if (dateStr.includes(' ')) {
+        normalizedDate = dateStr.split(' ')[0];
+      }
+      
+      // Parse a data no formato YYYY-MM-DD
+      const [year, month, day] = normalizedDate.split('-').map(Number);
+      
+      const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 
+                     'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+      
+      const dayWords = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove', 'dez',
+                       'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove',
+                       'vinte', 'vinte e um', 'vinte e dois', 'vinte e três', 'vinte e quatro', 'vinte e cinco',
+                       'vinte e seis', 'vinte e sete', 'vinte e oito', 'vinte e nove', 'trinta', 'trinta e um'];
+      
+      const yearWords = numberToWords(year).replace('reais', '').trim();
+      
+      const dayWord = dayWords[day] || day.toString();
+      const monthWord = months[month - 1] || '';
+      
+      return `${dayWord.toUpperCase()} de ${monthWord.toUpperCase()} de ${yearWords.toUpperCase()}`;
+    };
+
+    const dueDateWords = formatDateToWords(promissoryNote.dueDate);
+
     printable.document.write(`
       <!DOCTYPE html>
       <html>
@@ -567,241 +628,163 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             @media print {
               @page {
                 size: A4;
-                margin: 2cm;
+                margin: 1cm;
+              }
+              .note-container {
+                page-break-inside: avoid;
+                break-inside: avoid;
               }
             }
             body {
               font-family: 'Times New Roman', serif;
-              font-size: 12pt;
-              line-height: 1.6;
+              font-size: 10pt;
+              line-height: 1.4;
               color: #000;
-              padding: 40px;
-              max-width: 800px;
-              margin: 0 auto;
+              padding: 10px;
+              margin: 0;
+            }
+            .note-container {
+              border: 1px solid #000;
+              padding: 15px;
+              margin-bottom: 15px;
+              min-height: 280px;
+              position: relative;
             }
             .header {
               text-align: center;
-              margin-bottom: 30px;
-              border-bottom: 2px solid #000;
-              padding-bottom: 15px;
+              margin-bottom: 12px;
+              border-bottom: 1px solid #000;
+              padding-bottom: 8px;
             }
             .header h1 {
-              font-size: 18pt;
+              font-size: 14pt;
               font-weight: bold;
               margin: 0;
               text-transform: uppercase;
-              letter-spacing: 1px;
+              letter-spacing: 0.5px;
             }
             .document-number {
               text-align: right;
-              font-size: 10pt;
-              margin-bottom: 20px;
-              color: #666;
-            }
-            .section {
-              margin-bottom: 20px;
-            }
-            .section-title {
-              font-weight: bold;
-              font-size: 11pt;
-              margin-bottom: 8px;
-              text-transform: uppercase;
-            }
-            .section-content {
-              text-align: justify;
-              margin-bottom: 15px;
-              line-height: 1.8;
-            }
-            .value-box {
-              border: 2px solid #000;
-              padding: 15px;
-              margin: 20px 0;
-              text-align: center;
-              background: #f9f9f9;
-            }
-            .value-box .label {
-              font-weight: bold;
-              font-size: 11pt;
-              margin-bottom: 8px;
-            }
-            .value-box .amount {
-              font-size: 14pt;
-              font-weight: bold;
-              margin: 5px 0;
-            }
-            .value-box .amount-words {
-              font-size: 11pt;
-              font-style: italic;
-              margin-top: 8px;
-            }
-            .parties {
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 30px;
-              margin: 25px 0;
-            }
-            .party {
-              border: 1px solid #000;
-              padding: 15px;
-            }
-            .party-title {
-              font-weight: bold;
-              font-size: 11pt;
+              font-size: 8pt;
               margin-bottom: 10px;
-              text-transform: uppercase;
-              border-bottom: 1px solid #000;
-              padding-bottom: 5px;
+              color: #333;
             }
-            .party-info {
-              font-size: 10pt;
-              line-height: 1.6;
+            .promise-text {
+              text-align: justify;
+              margin-bottom: 12px;
+              font-size: 9.5pt;
+              line-height: 1.5;
             }
-            .party-info p {
-              margin: 5px 0;
+            .value-section {
+              border: 1px solid #000;
+              padding: 8px;
+              margin: 10px 0;
+              text-align: center;
             }
-            .signatures {
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 40px;
-              margin-top: 60px;
-              margin-bottom: 30px;
+            .value-label {
+              font-weight: bold;
+              font-size: 9pt;
+              margin-bottom: 4px;
             }
-            .signature-box {
+            .value-amount {
+              font-size: 12pt;
+              font-weight: bold;
+              margin: 4px 0;
+            }
+            .value-words {
+              font-size: 8.5pt;
+              font-style: italic;
+              margin-top: 4px;
+            }
+            .info-section {
+              margin: 10px 0;
+              font-size: 9pt;
+            }
+            .info-row {
+              margin: 4px 0;
+            }
+            .info-label {
+              font-weight: bold;
+            }
+            .issuer-section {
+              margin-top: 15px;
+              font-size: 9pt;
+            }
+            .issuer-title {
+              font-weight: bold;
+              margin-bottom: 5px;
+            }
+            .issuer-info {
+              line-height: 1.4;
+            }
+            .signature-section {
+              margin-top: 20px;
               text-align: center;
               border-top: 1px solid #000;
-              padding-top: 10px;
-              min-height: 80px;
+              padding-top: 8px;
+              min-height: 50px;
             }
             .signature-name {
               font-weight: bold;
-              margin-top: 10px;
+              margin-top: 5px;
+              font-size: 9pt;
             }
             .signature-label {
-              font-size: 10pt;
-              margin-top: 5px;
+              font-size: 8pt;
+              margin-top: 3px;
               color: #666;
-            }
-            .footer {
-              margin-top: 40px;
-              font-size: 9pt;
-              text-align: center;
-              color: #666;
-              border-top: 1px solid #ccc;
-              padding-top: 10px;
-            }
-            .terms {
-              margin-top: 20px;
-              font-size: 10pt;
-              text-align: justify;
-              line-height: 1.6;
-            }
-            .terms p {
-              margin: 8px 0;
             }
           </style>
         </head>
         <body>
-          <div class="header">
-            <h1>Nota Promissória</h1>
-          </div>
-          
-          <div class="document-number">
-            <strong>Número:</strong> ${promissoryNote.numberHash}
-          </div>
+          <div class="note-container">
+            <div class="header">
+              <h1>NOTA PROMISSÓRIA</h1>
+            </div>
+            
+            <div class="document-number">
+              <strong>Nº</strong> ${promissoryNote.numberHash}
+            </div>
 
-          <div class="section">
-            <div class="section-content">
+            <div class="promise-text">
               <p>
-                Por esta única via de <strong>NOTA PROMISSÓRIA</strong>, de pleno e livre arbítrio, 
-                eu, <strong>${debtorName}</strong>, ${debtorCpf ? 'CPF ' + formatCpf(debtorCpf) : 'CPF não informado'}, 
-                residente e domiciliado(a) em ${debtorAddress}, ${debtorCity}/${debtorState}, 
-                CEP ${formatCep(debtorCep)}, prometo pagar a <strong>${creditorName}</strong>, 
-                ${creditorCnpj ? 'CNPJ ' + creditorCnpj : 'CNPJ não informado'}, 
-                estabelecida em ${creditorAddress}, ${creditorCity}/${creditorState}, 
-                CEP ${creditorCep ? formatCep(creditorCep) : 'não informado'}, ou à sua ordem, 
-                a quantia abaixo especificada.
+                No dia <strong>${dueDateWords}</strong> pagarei por esta única via de <strong>NOTA PROMISSÓRIA</strong> 
+                a <strong>${creditorName}</strong>${creditorCnpj ? ' CNPJ ' + creditorCnpj : ''} ou à sua ordem 
+                a quantia de <strong>${noteValueWords.toUpperCase()}</strong> em moeda corrente deste país.
               </p>
             </div>
-          </div>
 
-          <div class="value-box">
-            <div class="label">VALOR DA NOTA PROMISSÓRIA</div>
-            <div class="amount">${formatCurrency(noteValue)}</div>
-            <div class="amount-words">(${noteValueWords})</div>
-          </div>
-
-          <div class="section">
-            <div class="section-content">
-              <p>
-                <strong>Data de Emissão:</strong> ${issueDate}
-              </p>
-              <p>
-                <strong>Data de Vencimento:</strong> ${dueDate}
-              </p>
-              <p>
-                <strong>Local de Pagamento:</strong> ${paymentLocation}
-              </p>
-              ${promissoryNote.observation ? `<p><strong>Observações:</strong> ${promissoryNote.observation}</p>` : ''}
+            <div class="value-section">
+              <div class="value-label">VALOR</div>
+              <div class="value-amount">${formatCurrency(noteValue)}</div>
+              <div class="value-words">(${noteValueWords})</div>
             </div>
-          </div>
 
-          <div class="parties">
-            <div class="party">
-              <div class="party-title">Credor</div>
-              <div class="party-info">
-                <p><strong>Nome/Razão Social:</strong> ${creditorName}</p>
-                <p><strong>CNPJ:</strong> ${creditorCnpj}</p>
-                <p><strong>Endereço:</strong> ${creditorAddress}</p>
-                <p><strong>Cidade/Estado:</strong> ${creditorCity}/${creditorState}</p>
-                <p><strong>CEP:</strong> ${creditorCep ? formatCep(creditorCep) : 'não informado'}</p>
+            <div class="info-section">
+              <div class="info-row">
+                <span class="info-label">Local de pagamento:</span> ${paymentLocation}
+              </div>
+              <div class="info-row">
+                <span class="info-label">Data da Emissão:</span> ${issueDate}
+              </div>
+              <div class="info-row">
+                <span class="info-label">Vencimento:</span> ${dueDate}
               </div>
             </div>
-            <div class="party">
-              <div class="party-title">Devedor</div>
-              <div class="party-info">
-                <p><strong>Nome:</strong> ${debtorName}</p>
-                <p><strong>CPF:</strong> ${debtorCpf ? formatCpf(debtorCpf) : 'não informado'}</p>
-                <p><strong>Endereço:</strong> ${debtorAddress}</p>
-                <p><strong>Cidade/Estado:</strong> ${debtorCity}/${debtorState}</p>
-                <p><strong>CEP:</strong> ${debtorCep ? formatCep(debtorCep) : 'não informado'}</p>
+
+            <div class="issuer-section">
+              <div class="issuer-title">Nome do Emitente:</div>
+              <div class="issuer-info">
+                <strong>${debtorName}</strong><br>
+                CPF: ${debtorCpf ? formatCpf(debtorCpf) : 'não informado'}<br>
+                Endereço: ${debtorAddress}, ${debtorCity}/${debtorState} - CEP: ${formatCep(debtorCep)}
               </div>
             </div>
-          </div>
 
-          <div class="terms">
-            <p>
-              <strong>Cláusula de Protesto:</strong> Esta nota promissória está sujeita ao protesto 
-              em caso de não pagamento no vencimento, nos termos da legislação vigente.
-            </p>
-            <p>
-              <strong>Cláusula de Renúncia:</strong> O devedor renuncia ao benefício de ordem, 
-              bem como ao de excussão, ficando desde já autorizado o protesto desta nota promissória 
-              em caso de inadimplemento.
-            </p>
-            <p>
-              <strong>Foro:</strong> Fica eleito o foro da comarca de ${creditorCity}/${creditorState} 
-              para dirimir quaisquer controvérsias oriundas desta nota promissória.
-            </p>
-          </div>
-
-          <div class="signatures">
-            <div class="signature-box">
+            <div class="signature-section">
               <div class="signature-name">${debtorName}</div>
-              <div class="signature-label">Devedor</div>
+              <div class="signature-label">Assinatura do Emitente</div>
             </div>
-            <div class="signature-box">
-              <div class="signature-name">${creditorName}</div>
-              <div class="signature-label">Credor</div>
-            </div>
-          </div>
-
-          <div class="footer">
-            <p>
-              Documento gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}
-            </p>
-            <p>
-              Este documento possui validade legal para protesto em cartório conforme legislação vigente.
-            </p>
           </div>
         </body>
       </html>
