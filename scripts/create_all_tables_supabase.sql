@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS public.clients (
     celular text,
     whatsapp text,
     endereco text,
+    complemento text,
+    bairro text,
     cidade text,
     estado text,
     cep text,
@@ -380,24 +382,32 @@ END;
 $$ language 'plpgsql';
 
 -- Triggers para updated_at
+-- Remove triggers existentes antes de criar (para evitar erros de duplicação)
+DROP TRIGGER IF EXISTS update_tenants_updated_at ON public.tenants;
 CREATE TRIGGER update_tenants_updated_at BEFORE UPDATE ON public.tenants
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_users_updated_at ON public.users;
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON public.users
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_clients_updated_at ON public.clients;
 CREATE TRIGGER update_clients_updated_at BEFORE UPDATE ON public.clients
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_tenant_users_updated_at ON public.tenant_users;
 CREATE TRIGGER update_tenant_users_updated_at BEFORE UPDATE ON public.tenant_users
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_produtos_updated_at ON public.produtos;
 CREATE TRIGGER update_produtos_updated_at BEFORE UPDATE ON public.produtos
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_propostas_updated_at ON public.propostas;
 CREATE TRIGGER update_propostas_updated_at BEFORE UPDATE ON public.propostas
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_parcelas_updated_at ON public.parcelas;
 CREATE TRIGGER update_parcelas_updated_at BEFORE UPDATE ON public.parcelas
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 

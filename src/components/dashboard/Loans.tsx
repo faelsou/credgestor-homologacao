@@ -450,7 +450,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
           <div class="section"><span class="label">Emitente:</span> <span class="value">${client.name}</span></div>
           <div class="section"><span class="label">CPF:</span> <span class="value">${client.cpf}</span></div>
           <div class="section"><span class="label">Contato:</span> <span class="value">${client.phone} / ${client.email || 'sem email'}</span></div>
-          <div class="section"><span class="label">Endereço:</span> <span class="value">${client.street}${client.complement ? ', ' + client.complement : ''} - ${client.neighborhood}, ${client.city}/${client.state} - CEP ${client.cep}</span></div>
+          <div class="section"><span class="label">Endereço:</span> <span class="value">${client.street}${client.complement ? ', ' + client.complement : ''}${client.neighborhood ? ' - ' + client.neighborhood : ''}, ${client.city}/${client.state} - CEP ${client.cep}</span></div>
           <div class="card">
             <div class="section"><span class="label">Capital:</span> <span class="value">${formatCurrency(promissoryNote.capital)}</span></div>
             <div class="section"><span class="label">Juros:</span> <span class="value">${promissoryNote.interestRate}%</span></div>
