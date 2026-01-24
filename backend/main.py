@@ -1469,16 +1469,14 @@ def delete_client(
         if error:
             raise HTTPException(status_code=500, detail=f"Erro ao verificar empréstimos: {_format_error(error)}")
         
-        # Verificar se a resposta tem o atributo data
-        loans = []
-        if hasattr(loans_response, "data"):
-            loans = loans_response.data or []
-        elif isinstance(loans_response, dict):
-            loans = loans_response.get("data", [])
-        elif isinstance(loans_response, list):
-            loans = loans_response
+        # Usar a mesma abordagem que outros lugares do código
+        loans = loans_response.data or []
+        
+        # Log para debug
+        print(f"🔍 [DEBUG delete_client] Cliente {client_id}: encontrados {len(loans)} empréstimo(s)")
         
         if len(loans) > 0:
+            print(f"❌ [DEBUG delete_client] Bloqueando exclusão: cliente possui {len(loans)} empréstimo(s)")
             raise HTTPException(
                 status_code=409,
                 detail=f"Não é possível excluir o cliente pois ele possui {len(loans)} empréstimo(s) associado(s). Exclua os empréstimos primeiro."
