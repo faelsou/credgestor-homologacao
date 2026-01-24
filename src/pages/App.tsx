@@ -1479,7 +1479,7 @@ const MOCK_LOANS: Loan[] = [
     totalAmount: 1100,
     startDate: '2023-10-01',
     installmentsCount: 2,
-    model: LoanModel.SIMPLE_INTEREST,
+    model: LoanModel.PRICE,
     status: LoanStatus.ACTIVE,
     promissoryNote: {
       capital: 1000,
