@@ -127,6 +127,29 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setPromissoryNote(prev => ({ ...prev, [field]: value }));
   };
 
+  // Gerar hashes sequenciais baseado na primeira hash
+  const generateSequentialHashes = (firstHash: string, count: number): string[] => {
+    const hashes: string[] = [firstHash];
+    
+    // Extrair o padrão #X/YYY# da primeira hash
+    const match = firstHash.match(/#(\d+)\/(\d+)#/);
+    if (!match) {
+      // Se não seguir o padrão, retornar apenas a primeira
+      return hashes;
+    }
+    
+    const clientNumber = match[1]; // X
+    const firstSequence = parseInt(match[2]); // YYY
+    
+    // Gerar hashes sequenciais
+    for (let i = 1; i < count; i++) {
+      const nextSequence = firstSequence + i;
+      hashes.push(`#${clientNumber}/${nextSequence.toString().padStart(3, '0')}#`);
+    }
+    
+    return hashes;
+  };
+
   const resetForm = () => {
     setSelectedClientId('');
     setAmount(1000);
@@ -295,10 +318,26 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       
       if (clientIndex >= 0) {
         const noteNumber = generatePromissoryNoteNumber(selectedClientId, clientIndex, loans);
-        setPromissoryNote(prev => ({ ...prev, numberHash: noteNumber }));
+        setPromissoryNote(prev => {
+          // Só atualiza se o campo estiver vazio
+          if (!prev.numberHash) {
+            return { ...prev, numberHash: noteNumber };
+          }
+          return prev;
+        });
       }
     }
   }, [selectedClientId, clients, loans, editingLoan]);
+
+  // Atualizar data de vencimento com a última parcela da simulação
+  useEffect(() => {
+    if (schedulePreview.length > 0 && !editingLoan) {
+      const lastInstallment = schedulePreview[schedulePreview.length - 1];
+      if (lastInstallment && lastInstallment.dueDate) {
+        setPromissoryNote(prev => ({ ...prev, dueDate: lastInstallment.dueDate }));
+      }
+    }
+  }, [schedulePreview, editingLoan]);
 
   useEffect(() => {
     if (!editingLoanId) return;
@@ -530,6 +569,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   /**
    * Gera nota promissória no formato oficial aceito por cartórios para protesto
    * Formato baseado nos requisitos legais brasileiros
+   * Gera uma nota promissória para cada parcela do empréstimo
    */
   const generateOfficialPromissoryNote = (
     safeClientName: string,
@@ -560,6 +600,16 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
 
     const { promissoryNote } = loan;
     
+    // Buscar parcelas do empréstimo e ordenar por data de vencimento
+    const loanInstallments = installments
+      .filter(inst => inst.loanId === loan.id)
+      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+    
+    // Gerar hashes sequenciais se houver múltiplas parcelas
+    const hashes = loanInstallments.length > 1 
+      ? generateSequentialHashes(promissoryNote.numberHash, loanInstallments.length)
+      : [promissoryNote.numberHash];
+    
     // Dados do credor (empresa)
     const creditorName = issuerData?.name || issuerName || 'Empresa Credora';
     const creditorCnpj = issuerData?.cnpj || 'CNPJ não informado';
@@ -575,14 +625,6 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     const debtorCity = client.city || 'Cidade não informada';
     const debtorState = client.state || 'Estado não informado';
     const debtorCep = client.cep || 'CEP não informado';
-    
-    // Valor da nota promissória (valor total do empréstimo)
-    const noteValue = loan.totalAmount;
-    const noteValueWords = numberToWords(noteValue);
-    
-    // Data de emissão e vencimento
-    const issueDate = formatDate(promissoryNote.issueDate);
-    const dueDate = formatDate(promissoryNote.dueDate);
     
     // Local de pagamento (cidade e estado do credor)
     const paymentLocation = `${creditorCity}/${creditorState}`;
@@ -616,7 +658,123 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       return `${dayWord.toUpperCase()} de ${monthWord.toUpperCase()} de ${yearWords.toUpperCase()}`;
     };
 
-    const dueDateWords = formatDateToWords(promissoryNote.dueDate);
+    // Gerar notas promissórias para cada parcela
+    const notesHtml = loanInstallments.length > 0 
+      ? loanInstallments.map((installment, index) => {
+          const installmentHash = hashes[index] || promissoryNote.numberHash;
+          const installmentDueDate = installment.dueDate;
+          const installmentDueDateWords = formatDateToWords(installmentDueDate);
+          const installmentValue = installment.amount;
+          const installmentValueWords = numberToWords(installmentValue);
+          const installmentIssueDate = formatDate(promissoryNote.issueDate);
+          const installmentDueDateFormatted = formatDate(installmentDueDate);
+          
+          return `
+            <div class="note-container">
+              <div class="header-row">
+                <div class="header-left">
+                  <h1>NOTA PROMISSÓRIA</h1>
+                </div>
+                <div class="header-right">
+                  <div class="document-number">
+                    <strong>Nº</strong> ${installmentHash}
+                  </div>
+                  <div class="due-date">
+                    <strong>Vencimento:</strong> ${installmentDueDateWords}
+                  </div>
+                </div>
+              </div>
+
+              <div class="promise-text">
+                <p>
+                  No dia <strong>${installmentDueDateWords}</strong> pagarei por esta única via de <strong>NOTA PROMISSÓRIA</strong> 
+                  a <strong>${creditorName}</strong>${creditorCnpj && creditorCnpj !== 'CNPJ não informado' ? ' CNPJ ' + creditorCnpj : ''} ou à sua ordem 
+                  a quantia de <strong>${installmentValueWords.toUpperCase()}</strong> em moeda corrente desse país.
+                </p>
+              </div>
+
+              <div class="info-section">
+                <div class="info-row">
+                  <span class="info-label">Local de pagamento:</span> ${paymentLocation}
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Data da Emissão:</span> ${installmentIssueDate}
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Parcela:</span> ${installment.number} de ${loanInstallments.length}
+                </div>
+              </div>
+
+              <div class="issuer-section">
+                <div class="issuer-title">Nome do Emitente:</div>
+                <div class="issuer-info">
+                  <strong>${debtorName}</strong><br>
+                  CPF: ${debtorCpf ? formatCpf(debtorCpf) : 'não informado'}<br>
+                  Endereço: ${debtorAddress}${debtorAddress && debtorCity ? ',' : ''}${debtorCity ? ' ' + debtorCity : ''}${debtorState ? '/' + debtorState : ''}${debtorCep ? ' - CEP:' + formatCep(debtorCep) : ''}
+                </div>
+              </div>
+
+              <div class="signature-section">
+                <div class="signature-label">Assinatura do Emitente</div>
+              </div>
+            </div>
+          `;
+        }).join('')
+      : (() => {
+          // Fallback: gerar uma única nota se não houver parcelas
+          const dueDateWords = formatDateToWords(promissoryNote.dueDate);
+          const noteValue = loan.totalAmount;
+          const noteValueWords = numberToWords(noteValue);
+          const issueDate = formatDate(promissoryNote.issueDate);
+          
+          return `
+            <div class="note-container">
+              <div class="header-row">
+                <div class="header-left">
+                  <h1>NOTA PROMISSÓRIA</h1>
+                </div>
+                <div class="header-right">
+                  <div class="document-number">
+                    <strong>Nº</strong> ${promissoryNote.numberHash}
+                  </div>
+                  <div class="due-date">
+                    <strong>Vencimento:</strong> ${dueDateWords}
+                  </div>
+                </div>
+              </div>
+
+              <div class="promise-text">
+                <p>
+                  No dia <strong>${dueDateWords}</strong> pagarei por esta única via de <strong>NOTA PROMISSÓRIA</strong> 
+                  a <strong>${creditorName}</strong>${creditorCnpj && creditorCnpj !== 'CNPJ não informado' ? ' CNPJ ' + creditorCnpj : ''} ou à sua ordem 
+                  a quantia de <strong>${noteValueWords.toUpperCase()}</strong> em moeda corrente desse país.
+                </p>
+              </div>
+
+              <div class="info-section">
+                <div class="info-row">
+                  <span class="info-label">Local de pagamento:</span> ${paymentLocation}
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Data da Emissão:</span> ${issueDate}
+                </div>
+              </div>
+
+              <div class="issuer-section">
+                <div class="issuer-title">Nome do Emitente:</div>
+                <div class="issuer-info">
+                  <strong>${debtorName}</strong><br>
+                  CPF: ${debtorCpf ? formatCpf(debtorCpf) : 'não informado'}<br>
+                  Endereço: ${debtorAddress}${debtorAddress && debtorCity ? ',' : ''}${debtorCity ? ' ' + debtorCity : ''}${debtorState ? '/' + debtorState : ''}${debtorCep ? ' - CEP:' + formatCep(debtorCep) : ''}
+                </div>
+              </div>
+
+              <div class="signature-section">
+                <div class="signature-label">Assinatura do Emitente</div>
+              </div>
+            </div>
+          `;
+        })();
 
     printable.document.write(`
       <!DOCTYPE html>
@@ -727,51 +885,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
           </style>
         </head>
         <body>
-          <div class="note-container">
-            <div class="header-row">
-              <div class="header-left">
-                <h1>NOTA PROMISSÓRIA</h1>
-              </div>
-              <div class="header-right">
-                <div class="document-number">
-                  <strong>Nº</strong> ${promissoryNote.numberHash}
-                </div>
-                <div class="due-date">
-                  <strong>Vencimento:</strong> ${dueDateWords}
-                </div>
-              </div>
-            </div>
-
-            <div class="promise-text">
-              <p>
-                No dia <strong>${dueDateWords}</strong> pagarei por esta única via de <strong>NOTA PROMISSÓRIA</strong> 
-                a <strong>${creditorName}</strong>${creditorCnpj && creditorCnpj !== 'CNPJ não informado' ? ' CNPJ ' + creditorCnpj : ''} ou à sua ordem 
-                a quantia de <strong>${noteValueWords.toUpperCase()}</strong> em moeda corrente desse país.
-              </p>
-            </div>
-
-            <div class="info-section">
-              <div class="info-row">
-                <span class="info-label">Local de pagamento:</span> ${paymentLocation}
-              </div>
-              <div class="info-row">
-                <span class="info-label">Data da Emissão:</span> ${issueDate}
-              </div>
-            </div>
-
-            <div class="issuer-section">
-              <div class="issuer-title">Nome do Emitente:</div>
-              <div class="issuer-info">
-                <strong>${debtorName}</strong><br>
-                CPF: ${debtorCpf ? formatCpf(debtorCpf) : 'não informado'}<br>
-                Endereço: ${debtorAddress}${debtorAddress && debtorCity ? ',' : ''}${debtorCity ? ' ' + debtorCity : ''}${debtorState ? '/' + debtorState : ''}${debtorCep ? ' - CEP:' + formatCep(debtorCep) : ''}
-              </div>
-            </div>
-
-            <div class="signature-section">
-              <div class="signature-label">Assinatura do Emitente</div>
-            </div>
-          </div>
+          ${notesHtml}
         </body>
       </html>
     `);
@@ -1131,10 +1245,16 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Hash da Nota</label>
                     <input
-                      readOnly
-                      className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
+                      className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
                       value={promissoryNote.numberHash}
+                      onChange={e => handlePromissoryChange('numberHash', e.target.value)}
+                      placeholder="#X/YYY#"
                     />
+                    {installmentsCount > 1 && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Insira a primeira hash. As próximas serão geradas automaticamente na impressão.
+                      </p>
+                    )}
                   </div>
                 </div>
 
