@@ -496,7 +496,16 @@ export async function deleteClient(
   });
 
   const body = await toJson(response);
-  assertOk(response, body);
+  
+  if (!response.ok) {
+    // Criar erro com status code e mensagem detalhada
+    const errorMessage = body?.detail || body?.error || body?.erro || body?.message || 
+                        `Erro ${response.status}: ${response.statusText}`;
+    const error: any = new Error(errorMessage);
+    error.status = response.status;
+    error.detail = body?.detail || errorMessage;
+    throw error;
+  }
 }
 
 export interface ForgotPasswordResponse {

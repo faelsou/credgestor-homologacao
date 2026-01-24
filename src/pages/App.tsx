@@ -2167,15 +2167,18 @@ const App: React.FC = () => {
     setClients(prev => prev.map(item => item.id === client.id ? client : item));
   };
 
-  const deleteClient = useCallback(async (id: string) => {
+  const deleteClient = useCallback(async (id: string): Promise<void> => {
     if (isBackendConfiguredValue && session?.accessToken) {
       try {
         await deleteClientApi(session.accessToken, session.tenantId, id);
       } catch (error) {
         console.error('Erro ao excluir cliente no backend', error);
+        // Propagar o erro para que o componente possa tratá-lo
+        throw error;
       }
     }
 
+    // Só remove do estado local se a exclusão foi bem-sucedida
     setClients(prev => prev.filter(client => client.id !== id));
     setLoans(prev => prev.filter(loan => loan.clientId !== id));
     setInstallments(prev => prev.filter(inst => inst.clientId !== id));

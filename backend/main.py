@@ -1453,6 +1453,35 @@ def delete_client(
     context: AuthContext = Depends(require_auth),
 ):
     _enforce_tenant_access(context, tenant_id)
+    
+    # Verificar se o cliente possui empréstimos antes de deletar
+    try:
+        supabase = get_supabase_admin_client()
+        loans_response = (
+            supabase.table("loans")
+            .select("id")
+            .eq("client_id", client_id)
+            .eq("tenant_id", tenant_id)
+            .execute()
+        )
+        
+        error = getattr(loans_response, "error", None)
+        if error:
+            raise HTTPException(status_code=500, detail=f"Erro ao verificar empréstimos: {_format_error(error)}")
+        
+        loans = loans_response.data or []
+        if len(loans) > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Não é possível excluir o cliente pois ele possui {len(loans)} empréstimo(s) associado(s). Exclua os empréstimos primeiro."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Se houver erro ao verificar empréstimos, ainda tentamos deletar
+        # mas logamos o erro para debug
+        print(f"⚠️  Aviso: Erro ao verificar empréstimos antes de deletar cliente: {e}")
+    
     return _delete_row("clients", client_id, ("tenant_id", tenant_id))
 
 
