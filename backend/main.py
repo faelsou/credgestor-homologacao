@@ -16,6 +16,7 @@ from .supabase_client import (
     get_supabase_client,
 )
 from .supabase_helpers import test_supabase_connection
+from .otel_config import setup_opentelemetry
 
 # Importar métricas de banco de dados no nível do módulo para garantir que sejam registradas
 # no registry do Prometheus e expostas no endpoint /metrics
@@ -39,6 +40,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Configurar OpenTelemetry (deve ser feito antes da instrumentação do Prometheus)
+setup_opentelemetry(app)
 
 # Instrumentação Prometheus para métricas da API
 instrumentator = Instrumentator(
@@ -1454,12 +1458,11 @@ def delete_client(
 ):
     _enforce_tenant_access(context, tenant_id)
     
-    # Verificar se o cliente possui empréstimos antes de deletar
-    print(f"🔍 [DEBUG delete_client] Iniciando verificação para cliente {client_id} do tenant {tenant_id}")
+    # Implementar exclusão em cascata: deletar empréstimos e parcelas antes de deletar o cliente
+    supabase = get_supabase_admin_client()
+    
     try:
-        supabase = get_supabase_admin_client()
-        print(f"🔍 [DEBUG delete_client] Cliente Supabase obtido, fazendo query...")
-        
+        # 1. Buscar todos os empréstimos do cliente
         loans_response = (
             supabase.table("loans")
             .select("id")
@@ -1468,47 +1471,79 @@ def delete_client(
             .execute()
         )
         
-        print(f"🔍 [DEBUG delete_client] Resposta recebida: {type(loans_response)}")
-        print(f"🔍 [DEBUG delete_client] Resposta tem 'data'? {hasattr(loans_response, 'data')}")
-        print(f"🔍 [DEBUG delete_client] Resposta tem 'error'? {hasattr(loans_response, 'error')}")
-        
         error = getattr(loans_response, "error", None)
         if error:
-            print(f"❌ [DEBUG delete_client] Erro na query: {error}")
-            raise HTTPException(status_code=500, detail=f"Erro ao verificar empréstimos: {_format_error(error)}")
+            raise HTTPException(status_code=500, detail=f"Erro ao buscar empréstimos: {_format_error(error)}")
         
-        # Usar a mesma abordagem que outros lugares do código
         loans = loans_response.data or []
+        loan_ids = [loan.get("id") if isinstance(loan, dict) else loan for loan in loans]
         
-        # Log para debug
-        print(f"🔍 [DEBUG delete_client] Cliente {client_id}: encontrados {len(loans)} empréstimo(s)")
-        if len(loans) > 0:
-            print(f"🔍 [DEBUG delete_client] IDs dos empréstimos: {[loan.get('id') if isinstance(loan, dict) else loan for loan in loans[:5]]}")
+        print(f"🔍 [delete_client] Cliente {client_id}: encontrados {len(loans)} empréstimo(s)")
         
-        if len(loans) > 0:
-            print(f"❌ [DEBUG delete_client] BLOQUEANDO exclusão: cliente possui {len(loans)} empréstimo(s)")
-            raise HTTPException(
-                status_code=409,
-                detail=f"Não é possível excluir o cliente pois ele possui {len(loans)} empréstimo(s) associado(s). Exclua os empréstimos primeiro."
-            )
+        # 2. Para cada empréstimo, deletar as parcelas primeiro
+        if loan_ids:
+            deleted_loans = 0
+            for loan_id in loan_ids:
+                try:
+                    # Buscar parcelas do empréstimo
+                    installments_response = (
+                        supabase.table("installments")
+                        .select("id")
+                        .eq("loan_id", loan_id)
+                        .eq("tenant_id", tenant_id)
+                        .execute()
+                    )
+                    
+                    installments_error = getattr(installments_response, "error", None)
+                    if installments_error:
+                        print(f"⚠️  [delete_client] Erro ao buscar parcelas do empréstimo {loan_id}: {_format_error(installments_error)}")
+                        # Tenta deletar o empréstimo mesmo assim
+                    else:
+                        installments = installments_response.data or []
+                        installment_ids = [inst.get("id") if isinstance(inst, dict) else inst for inst in installments]
+                        
+                        # Deletar parcelas
+                        if installment_ids:
+                            for installment_id in installment_ids:
+                                try:
+                                    _delete_row("installments", installment_id, ("tenant_id", tenant_id))
+                                except Exception as e:
+                                    print(f"⚠️  [delete_client] Erro ao deletar parcela {installment_id}: {e}")
+                                    raise HTTPException(
+                                        status_code=500,
+                                        detail=f"Erro ao deletar parcelas do empréstimo {loan_id}: {str(e)}"
+                                    )
+                            
+                            print(f"✅ [delete_client] Deletadas {len(installment_ids)} parcela(s) do empréstimo {loan_id}")
+                    
+                    # 3. Deletar o empréstimo
+                    _delete_row("loans", loan_id, ("tenant_id", tenant_id))
+                    deleted_loans += 1
+                    print(f"✅ [delete_client] Deletado empréstimo {loan_id}")
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    print(f"❌ [delete_client] Erro ao deletar empréstimo {loan_id}: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Erro ao deletar empréstimo {loan_id}: {str(e)}"
+                    )
+            
+            print(f"✅ [delete_client] Deletados {deleted_loans} de {len(loan_ids)} empréstimo(s) e suas parcelas")
         
-        print(f"✅ [DEBUG delete_client] Nenhum empréstimo encontrado, prosseguindo com exclusão...")
+        # 4. Deletar o cliente
+        return _delete_row("clients", client_id, ("tenant_id", tenant_id))
+        
     except HTTPException:
-        # Re-lançar HTTPException (incluindo a de empréstimos encontrados)
         raise
     except Exception as e:
-        # Se houver erro inesperado ao verificar empréstimos, não tentar deletar
-        # para evitar violação de chave estrangeira
         import traceback
-        print(f"❌ Erro ao verificar empréstimos antes de deletar cliente {client_id}: {e}")
+        print(f"❌ [delete_client] Erro ao deletar cliente {client_id} em cascata: {e}")
         print(f"📋 Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao verificar se o cliente possui empréstimos: {str(e)}"
+            detail=f"Erro ao deletar cliente e registros associados: {str(e)}"
         )
-    
-    # Só chega aqui se não houver empréstimos
-    return _delete_row("clients", client_id, ("tenant_id", tenant_id))
 
 
 @app.get("/tenants/{tenant_id}/loans")
