@@ -112,6 +112,8 @@ def create_tables(conn):
                 telefone VARCHAR(20),
                 celular VARCHAR(20),
                 endereco TEXT,
+                complemento TEXT,
+                bairro VARCHAR(100),
                 cidade VARCHAR(100),
                 estado VARCHAR(2),
                 cep VARCHAR(10),

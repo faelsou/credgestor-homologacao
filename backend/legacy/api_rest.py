@@ -119,6 +119,8 @@ class ClienteCreate(BaseModel):
     telefone: Optional[str] = Field(None, max_length=20)
     celular: Optional[str] = Field(None, max_length=20)
     endereco: Optional[str] = None
+    complemento: Optional[str] = None
+    bairro: Optional[str] = Field(None, max_length=100)
     cidade: Optional[str] = Field(None, max_length=100)
     estado: Optional[str] = Field(None, max_length=2)
     cep: Optional[str] = Field(None, max_length=10)
@@ -135,6 +137,8 @@ class ClienteUpdate(BaseModel):
     telefone: Optional[str] = Field(None, max_length=20)
     celular: Optional[str] = Field(None, max_length=20)
     endereco: Optional[str] = None
+    complemento: Optional[str] = None
+    bairro: Optional[str] = Field(None, max_length=100)
     cidade: Optional[str] = Field(None, max_length=100)
     estado: Optional[str] = Field(None, max_length=2)
     cep: Optional[str] = Field(None, max_length=10)

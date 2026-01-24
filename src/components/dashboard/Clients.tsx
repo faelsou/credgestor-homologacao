@@ -1109,7 +1109,18 @@ export const ClientsView: React.FC = () => {
   const handleEditClient = (client: Client) => {
     setEditingClientId(client.id);
     setNewClient({
-      ...client
+      name: client.name || '',
+      cpf: client.cpf || '',
+      phone: client.phone || '',
+      email: client.email || '',
+      birthDate: client.birthDate || '',
+      cep: client.cep || '',
+      street: client.street || '',
+      complement: client.complement || '',
+      neighborhood: client.neighborhood || '',
+      city: client.city || '',
+      state: client.state || '',
+      status: client.status || 'active'
     });
     setIsModalOpen(true);
   };
