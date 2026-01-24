@@ -626,8 +626,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     const debtorState = client.state || 'Estado não informado';
     const debtorCep = client.cep || 'CEP não informado';
     
-    // Local de pagamento (cidade e estado do credor)
-    const paymentLocation = `${creditorCity}/${creditorState}`;
+    // Local de pagamento (cidade e estado do devedor/cliente)
+    const paymentLocation = `${debtorCity}/${debtorState}`;
 
     // Formatar data de vencimento para texto extenso
     const formatDateToWords = (dateStr: string): string => {
