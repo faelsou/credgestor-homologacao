@@ -645,119 +645,118 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             }
             .note-container {
               border: 1px solid #000;
-              padding: 15px;
+              padding: 20px;
               margin-bottom: 15px;
               min-height: 280px;
               position: relative;
             }
-            .header {
-              text-align: center;
-              margin-bottom: 12px;
+            .header-row {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              margin-bottom: 15px;
               border-bottom: 1px solid #000;
-              padding-bottom: 8px;
+              padding-bottom: 10px;
+            }
+            .header-left {
+              flex: 1;
+            }
+            .header-right {
+              text-align: right;
+              font-size: 9pt;
             }
             .header h1 {
-              font-size: 14pt;
+              font-size: 16pt;
               font-weight: bold;
               margin: 0;
               text-transform: uppercase;
               letter-spacing: 0.5px;
             }
             .document-number {
+              font-size: 10pt;
+              margin-bottom: 5px;
+              font-weight: bold;
+            }
+            .due-date {
+              font-size: 9pt;
+            }
+            .value-display {
               text-align: right;
-              font-size: 8pt;
-              margin-bottom: 10px;
-              color: #333;
+              font-size: 11pt;
+              font-weight: bold;
+              margin-top: 5px;
             }
             .promise-text {
               text-align: justify;
-              margin-bottom: 12px;
-              font-size: 9.5pt;
-              line-height: 1.5;
-            }
-            .value-section {
-              border: 1px solid #000;
-              padding: 8px;
-              margin: 10px 0;
-              text-align: center;
-            }
-            .value-label {
-              font-weight: bold;
-              font-size: 9pt;
-              margin-bottom: 4px;
-            }
-            .value-amount {
-              font-size: 12pt;
-              font-weight: bold;
-              margin: 4px 0;
-            }
-            .value-words {
-              font-size: 8.5pt;
-              font-style: italic;
-              margin-top: 4px;
+              margin: 15px 0;
+              font-size: 10pt;
+              line-height: 1.6;
             }
             .info-section {
-              margin: 10px 0;
-              font-size: 9pt;
+              margin: 12px 0;
+              font-size: 9.5pt;
             }
             .info-row {
-              margin: 4px 0;
+              margin: 5px 0;
             }
             .info-label {
               font-weight: bold;
             }
             .issuer-section {
-              margin-top: 15px;
-              font-size: 9pt;
+              margin-top: 20px;
+              font-size: 9.5pt;
             }
             .issuer-title {
               font-weight: bold;
-              margin-bottom: 5px;
+              margin-bottom: 8px;
             }
             .issuer-info {
-              line-height: 1.4;
+              line-height: 1.5;
             }
             .signature-section {
-              margin-top: 20px;
+              margin-top: 30px;
               text-align: center;
               border-top: 1px solid #000;
-              padding-top: 8px;
-              min-height: 50px;
+              padding-top: 10px;
+              min-height: 60px;
             }
             .signature-name {
               font-weight: bold;
-              margin-top: 5px;
-              font-size: 9pt;
+              margin-top: 8px;
+              font-size: 10pt;
             }
             .signature-label {
-              font-size: 8pt;
-              margin-top: 3px;
-              color: #666;
+              font-size: 9pt;
+              margin-top: 5px;
+              color: #333;
             }
           </style>
         </head>
         <body>
           <div class="note-container">
-            <div class="header">
-              <h1>NOTA PROMISSÓRIA</h1>
-            </div>
-            
-            <div class="document-number">
-              <strong>Nº</strong> ${promissoryNote.numberHash}
+            <div class="header-row">
+              <div class="header-left">
+                <h1>NOTA PROMISSÓRIA</h1>
+              </div>
+              <div class="header-right">
+                <div class="document-number">
+                  <strong>Nº</strong> ${promissoryNote.numberHash}
+                </div>
+                <div class="due-date">
+                  <strong>Vencimento:</strong> ${dueDateWords}
+                </div>
+                <div class="value-display">
+                  ${formatCurrency(noteValue)}
+                </div>
+              </div>
             </div>
 
             <div class="promise-text">
               <p>
                 No dia <strong>${dueDateWords}</strong> pagarei por esta única via de <strong>NOTA PROMISSÓRIA</strong> 
-                a <strong>${creditorName}</strong>${creditorCnpj ? ' CNPJ ' + creditorCnpj : ''} ou à sua ordem 
-                a quantia de <strong>${noteValueWords.toUpperCase()}</strong> em moeda corrente deste país.
+                a <strong>${creditorName}</strong>${creditorCnpj && creditorCnpj !== 'CNPJ não informado' ? ' CNPJ ' + creditorCnpj : ''} ou à sua ordem 
+                a quantia de <strong>${noteValueWords.toUpperCase()}</strong> em moeda corrente desse país.
               </p>
-            </div>
-
-            <div class="value-section">
-              <div class="value-label">VALOR</div>
-              <div class="value-amount">${formatCurrency(noteValue)}</div>
-              <div class="value-words">(${noteValueWords})</div>
             </div>
 
             <div class="info-section">
@@ -767,9 +766,6 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
               <div class="info-row">
                 <span class="info-label">Data da Emissão:</span> ${issueDate}
               </div>
-              <div class="info-row">
-                <span class="info-label">Vencimento:</span> ${dueDate}
-              </div>
             </div>
 
             <div class="issuer-section">
@@ -777,12 +773,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
               <div class="issuer-info">
                 <strong>${debtorName}</strong><br>
                 CPF: ${debtorCpf ? formatCpf(debtorCpf) : 'não informado'}<br>
-                Endereço: ${debtorAddress}, ${debtorCity}/${debtorState} - CEP: ${formatCep(debtorCep)}
+                Endereço: ${debtorAddress}${debtorAddress && debtorCity ? ',' : ''}${debtorCity ? ' ' + debtorCity : ''}${debtorState ? '/' + debtorState : ''}${debtorCep ? ' - CEP:' + formatCep(debtorCep) : ''}
               </div>
             </div>
 
             <div class="signature-section">
-              <div class="signature-name">${debtorName}</div>
               <div class="signature-label">Assinatura do Emitente</div>
             </div>
           </div>
