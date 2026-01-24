@@ -1,0 +1,58 @@
+# Configuração do OpenTelemetry Collector
+# Este arquivo configura como o coletor recebe e exporta dados
+
+receivers:
+  # Receiver OTLP - recebe dados do backend e frontend
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  # Processador de batch - agrupa dados antes de exportar
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+  
+  # Limitador de memória - previne uso excessivo de memória
+  memory_limiter:
+    limit_mib: 512
+    check_interval: 1s
+
+exporters:
+  # Exporter OTLP HTTP para Jaeger - envia traces para visualização
+  # Jaeger All-in-One aceita OTLP na porta 4318
+  otlp_http/jaeger:
+    endpoint: http://jaeger:4318
+    tls:
+      insecure: true
+  
+  # Exporter para Prometheus - expõe métricas
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+  
+  # Exporter de debug - mostra dados no console (substitui logging)
+  debug:
+    verbosity: normal
+
+service:
+  pipelines:
+    # Pipeline de traces
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http/jaeger, debug]
+    
+    # Pipeline de métricas
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus, debug]
+    
+    # Pipeline de logs
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]

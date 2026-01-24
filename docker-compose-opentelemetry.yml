@@ -1,0 +1,80 @@
+# Docker Compose para OpenTelemetry (Jaeger + Collector)
+# Use este arquivo para adicionar observabilidade ao projeto
+
+version: '3.9'
+
+services:
+  # Jaeger - Interface web para visualizar traces
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    ports:
+      - "16686:16686"  # UI Web
+      - "14250:14250"  # gRPC
+      - "14268:14268"  # HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - otel_network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:16686/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # OpenTelemetry Collector - Coleta e exporta dados
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    container_name: otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4318:4318"  # OTLP HTTP receiver
+      - "4317:4317"  # OTLP gRPC receiver
+      - "8889:8889"  # Prometheus metrics exporter
+    networks:
+      - otel_network
+    depends_on:
+      - jaeger
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:13133/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  # Rede própria para OpenTelemetry (bridge funciona com docker-compose)
+  otel_network:
+    driver: bridge
+    name: otel_network
+
+# ===================================================================
+# INSTRUÇÕES DE USO
+# ===================================================================
+#
+# 1. Criar arquivo otel-collector-config.yaml (já existe no projeto)
+#
+# 2. Iniciar serviços:
+#    docker-compose -f docker-compose-opentelemetry.yml up -d
+#
+# 3. (Opcional) Conectar à rede network_public para comunicação com outros serviços:
+#    ./scripts/conectar-opentelemetry-rede.sh
+#
+# 4. Acessar Jaeger UI:
+#    http://localhost:16686
+#
+# 5. Configurar backend e frontend:
+#    - Backend: OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+#      (Se conectado à network_public, use o nome do container)
+#      (Se não, use o IP do host: http://<IP-DO-HOST>:4318)
+#    - Frontend: VITE_OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+#
+# 6. Verificar se está funcionando:
+#    docker logs otel-collector
+#    docker logs jaeger
+#
+# NOTA: Se precisar conectar com serviços na network_public (como credgestor-api),
+#       execute o script: ./scripts/conectar-opentelemetry-rede.sh
+#
+# ===================================================================
