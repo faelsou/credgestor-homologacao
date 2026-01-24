@@ -30,6 +30,14 @@ services:
       # Use a connection string do Supabase se precisar do código legacy
       # Exemplo: postgresql://postgres:password@db.project.supabase.co:5432/postgres
       DATABASE_URL: ${DATABASE_URL:-}
+      
+      # OpenTelemetry Configuration
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-credgestor-api}
+      OTEL_SERVICE_VERSION: ${OTEL_SERVICE_VERSION:-0.1.0}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-otlp}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-otlp}
+      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-otlp}
     ports:
       - "8000:8000"
     networks:
