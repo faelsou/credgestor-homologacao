@@ -1455,8 +1455,11 @@ def delete_client(
     _enforce_tenant_access(context, tenant_id)
     
     # Verificar se o cliente possui empréstimos antes de deletar
+    print(f"🔍 [DEBUG delete_client] Iniciando verificação para cliente {client_id} do tenant {tenant_id}")
     try:
         supabase = get_supabase_admin_client()
+        print(f"🔍 [DEBUG delete_client] Cliente Supabase obtido, fazendo query...")
+        
         loans_response = (
             supabase.table("loans")
             .select("id")
@@ -1465,8 +1468,13 @@ def delete_client(
             .execute()
         )
         
+        print(f"🔍 [DEBUG delete_client] Resposta recebida: {type(loans_response)}")
+        print(f"🔍 [DEBUG delete_client] Resposta tem 'data'? {hasattr(loans_response, 'data')}")
+        print(f"🔍 [DEBUG delete_client] Resposta tem 'error'? {hasattr(loans_response, 'error')}")
+        
         error = getattr(loans_response, "error", None)
         if error:
+            print(f"❌ [DEBUG delete_client] Erro na query: {error}")
             raise HTTPException(status_code=500, detail=f"Erro ao verificar empréstimos: {_format_error(error)}")
         
         # Usar a mesma abordagem que outros lugares do código
@@ -1474,13 +1482,17 @@ def delete_client(
         
         # Log para debug
         print(f"🔍 [DEBUG delete_client] Cliente {client_id}: encontrados {len(loans)} empréstimo(s)")
+        if len(loans) > 0:
+            print(f"🔍 [DEBUG delete_client] IDs dos empréstimos: {[loan.get('id') if isinstance(loan, dict) else loan for loan in loans[:5]]}")
         
         if len(loans) > 0:
-            print(f"❌ [DEBUG delete_client] Bloqueando exclusão: cliente possui {len(loans)} empréstimo(s)")
+            print(f"❌ [DEBUG delete_client] BLOQUEANDO exclusão: cliente possui {len(loans)} empréstimo(s)")
             raise HTTPException(
                 status_code=409,
                 detail=f"Não é possível excluir o cliente pois ele possui {len(loans)} empréstimo(s) associado(s). Exclua os empréstimos primeiro."
             )
+        
+        print(f"✅ [DEBUG delete_client] Nenhum empréstimo encontrado, prosseguindo com exclusão...")
     except HTTPException:
         # Re-lançar HTTPException (incluindo a de empréstimos encontrados)
         raise
