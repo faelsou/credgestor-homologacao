@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Plus, Calculator, Pencil, Trash2, FileText, Clock8, Search, RotateCcw, Scale } from 'lucide-react';
 import { AppContext } from '@/pages/App';
-import { formatCurrency, formatDate, generateNoteHash, generatePromissoryNoteNumber, getTodayDateString, numberToWords, formatCpf, formatCep } from '@/utils';
+import { formatCurrency, formatDate, generateNoteHash, getTodayDateString, numberToWords, formatCpf, formatCep } from '@/utils';
 import { LoanStatus, Installment, InstallmentStatus, UserRole, Loan, PromissoryNote, IndicationType, Client, LoanModel } from '@/types';
 
 interface LoansViewProps {
@@ -215,18 +215,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     const lastDueDate = generatedInstallments[generatedInstallments.length - 1]?.dueDate || startDate;
     
     // Gerar número da nota promissória no formato #X/YYY#
+    // Sempre iniciar com #1/001# se não houver hash definida
     let noteNumber = promissoryNote.numberHash;
-    if (!noteNumber || !editingLoan) {
-      // Encontrar o índice do cliente na lista ordenada por nome
-      const sortedClients = [...clients].sort((a, b) => a.name.localeCompare(b.name));
-      const clientIndex = sortedClients.findIndex(c => c.id === selectedClientId);
-      
-      // Se estiver editando, excluir o empréstimo atual da contagem
-      const loansForCounting = editingLoan 
-        ? loans.filter(l => l.id !== editingLoan.id)
-        : loans;
-      
-      noteNumber = generatePromissoryNoteNumber(selectedClientId, clientIndex >= 0 ? clientIndex : 0, loansForCounting);
+    if (!noteNumber) {
+      noteNumber = '#1/001#';
     }
     
     const promissoryToSave: PromissoryNote = {
@@ -312,22 +304,16 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   // Atualizar número da nota promissória quando o cliente for selecionado
   useEffect(() => {
     if (selectedClientId && !editingLoan) {
-      // Encontrar o índice do cliente na lista ordenada por nome
-      const sortedClients = [...clients].sort((a, b) => a.name.localeCompare(b.name));
-      const clientIndex = sortedClients.findIndex(c => c.id === selectedClientId);
-      
-      if (clientIndex >= 0) {
-        const noteNumber = generatePromissoryNoteNumber(selectedClientId, clientIndex, loans);
-        setPromissoryNote(prev => {
-          // Só atualiza se o campo estiver vazio
-          if (!prev.numberHash) {
-            return { ...prev, numberHash: noteNumber };
-          }
-          return prev;
-        });
-      }
+      setPromissoryNote(prev => {
+        // Só atualiza se o campo estiver vazio
+        if (!prev.numberHash) {
+          // Sempre iniciar com #1/001#
+          return { ...prev, numberHash: '#1/001#' };
+        }
+        return prev;
+      });
     }
-  }, [selectedClientId, clients, loans, editingLoan]);
+  }, [selectedClientId, editingLoan]);
 
   // Atualizar data de vencimento com a última parcela da simulação
   useEffect(() => {
