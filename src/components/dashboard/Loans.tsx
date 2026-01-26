@@ -215,11 +215,14 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     const lastDueDate = generatedInstallments[generatedInstallments.length - 1]?.dueDate || startDate;
     
     // Gerar número da nota promissória no formato #X/YYY#
-    // Baseado no número de parcelas: #1/XXX# onde XXX é o número de parcelas
+    // X é o sequencial do empréstimo, YYY é o número de parcelas
     let noteNumber = promissoryNote.numberHash;
     if (!noteNumber) {
+      // Contar quantos empréstimos já existem com notas promissórias
+      const existingNotesCount = loans.filter(loan => loan.promissoryNote?.numberHash).length;
+      const nextSequential = editingLoan ? existingNotesCount : existingNotesCount + 1;
       const parcelNumber = installmentsCount.toString().padStart(3, '0');
-      noteNumber = `#1/${parcelNumber}#`;
+      noteNumber = `#${nextSequential}/${parcelNumber}#`;
     }
     
     const promissoryToSave: PromissoryNote = {
@@ -305,9 +308,13 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   // Atualizar número da nota promissória quando o cliente for selecionado ou número de parcelas mudar
   useEffect(() => {
     if (selectedClientId && !editingLoan) {
-      // Gerar hash baseada no número de parcelas: #1/XXX# onde XXX é o número de parcelas
+      // Contar quantos empréstimos já existem com notas promissórias para gerar o sequencial
+      const existingNotesCount = loans.filter(loan => loan.promissoryNote?.numberHash).length;
+      const nextSequential = existingNotesCount + 1;
+      
+      // Gerar hash: #X/YYY# onde X é o sequencial do empréstimo e YYY é o número de parcelas
       const parcelNumber = installmentsCount.toString().padStart(3, '0');
-      const expectedHash = `#1/${parcelNumber}#`;
+      const expectedHash = `#${nextSequential}/${parcelNumber}#`;
       
       setPromissoryNote(prev => {
         // Atualiza se o campo estiver vazio ou se a hash atual não corresponder ao número de parcelas
@@ -317,7 +324,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
         return prev;
       });
     }
-  }, [selectedClientId, installmentsCount, editingLoan]);
+  }, [selectedClientId, installmentsCount, editingLoan, loans]);
 
   // Atualizar data de vencimento com a última parcela da simulação
   useEffect(() => {
