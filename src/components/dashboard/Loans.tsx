@@ -215,10 +215,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     const lastDueDate = generatedInstallments[generatedInstallments.length - 1]?.dueDate || startDate;
     
     // Gerar número da nota promissória no formato #X/YYY#
-    // Sempre iniciar com #1/001# se não houver hash definida
+    // Baseado no número de parcelas: #1/XXX# onde XXX é o número de parcelas
     let noteNumber = promissoryNote.numberHash;
     if (!noteNumber) {
-      noteNumber = '#1/001#';
+      const parcelNumber = installmentsCount.toString().padStart(3, '0');
+      noteNumber = `#1/${parcelNumber}#`;
     }
     
     const promissoryToSave: PromissoryNote = {
@@ -301,19 +302,22 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     }
   };
 
-  // Atualizar número da nota promissória quando o cliente for selecionado
+  // Atualizar número da nota promissória quando o cliente for selecionado ou número de parcelas mudar
   useEffect(() => {
     if (selectedClientId && !editingLoan) {
+      // Gerar hash baseada no número de parcelas: #1/XXX# onde XXX é o número de parcelas
+      const parcelNumber = installmentsCount.toString().padStart(3, '0');
+      const expectedHash = `#1/${parcelNumber}#`;
+      
       setPromissoryNote(prev => {
-        // Só atualiza se o campo estiver vazio
-        if (!prev.numberHash) {
-          // Sempre iniciar com #1/001#
-          return { ...prev, numberHash: '#1/001#' };
+        // Atualiza se o campo estiver vazio ou se a hash atual não corresponder ao número de parcelas
+        if (!prev.numberHash || prev.numberHash !== expectedHash) {
+          return { ...prev, numberHash: expectedHash };
         }
         return prev;
       });
     }
-  }, [selectedClientId, editingLoan]);
+  }, [selectedClientId, installmentsCount, editingLoan]);
 
   // Atualizar data de vencimento com a última parcela da simulação
   useEffect(() => {
