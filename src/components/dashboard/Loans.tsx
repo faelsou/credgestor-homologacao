@@ -218,9 +218,41 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     // X é o sequencial do empréstimo, YYY é o número de parcelas
     let noteNumber = promissoryNote.numberHash;
     if (!noteNumber) {
-      // Contar quantos empréstimos já existem com notas promissórias
-      const existingNotesCount = loans.filter(loan => loan.promissoryNote?.numberHash).length;
-      const nextSequential = editingLoan ? existingNotesCount : existingNotesCount + 1;
+      // Extrair o maior sequencial existente das notas promissórias
+      const getNextSequential = (): number => {
+        const existingHashes = loans
+          .map(loan => loan.promissoryNote?.numberHash)
+          .filter((hash): hash is string => !!hash);
+        
+        if (existingHashes.length === 0) {
+          return 1; // Sempre iniciar com #1
+        }
+        
+        // Extrair todos os sequenciais (primeiro número antes da barra)
+        const sequentials = existingHashes
+          .map(hash => {
+            const match = hash.match(/#(\d+)\//);
+            return match ? parseInt(match[1]) : 0;
+          })
+          .filter(seq => seq > 0);
+        
+        if (sequentials.length === 0) {
+          return 1; // Se não conseguir extrair, começar em 1
+        }
+        
+        // Se estiver editando, usar o sequencial atual do empréstimo
+        if (editingLoan && editingLoan.promissoryNote?.numberHash) {
+          const currentMatch = editingLoan.promissoryNote.numberHash.match(/#(\d+)\//);
+          if (currentMatch) {
+            return parseInt(currentMatch[1]);
+          }
+        }
+        
+        // Retornar o maior sequencial + 1
+        return Math.max(...sequentials) + 1;
+      };
+      
+      const nextSequential = getNextSequential();
       const parcelNumber = installmentsCount.toString().padStart(3, '0');
       noteNumber = `#${nextSequential}/${parcelNumber}#`;
     }
@@ -308,9 +340,33 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   // Atualizar número da nota promissória quando o cliente for selecionado ou número de parcelas mudar
   useEffect(() => {
     if (selectedClientId && !editingLoan) {
-      // Contar quantos empréstimos já existem com notas promissórias para gerar o sequencial
-      const existingNotesCount = loans.filter(loan => loan.promissoryNote?.numberHash).length;
-      const nextSequential = existingNotesCount + 1;
+      // Extrair o maior sequencial existente das notas promissórias
+      const getNextSequential = (): number => {
+        const existingHashes = loans
+          .map(loan => loan.promissoryNote?.numberHash)
+          .filter((hash): hash is string => !!hash);
+        
+        if (existingHashes.length === 0) {
+          return 1; // Sempre iniciar com #1
+        }
+        
+        // Extrair todos os sequenciais (primeiro número antes da barra)
+        const sequentials = existingHashes
+          .map(hash => {
+            const match = hash.match(/#(\d+)\//);
+            return match ? parseInt(match[1]) : 0;
+          })
+          .filter(seq => seq > 0);
+        
+        if (sequentials.length === 0) {
+          return 1; // Se não conseguir extrair, começar em 1
+        }
+        
+        // Retornar o maior sequencial + 1
+        return Math.max(...sequentials) + 1;
+      };
+      
+      const nextSequential = getNextSequential();
       
       // Gerar hash: #X/YYY# onde X é o sequencial do empréstimo e YYY é o número de parcelas
       const parcelNumber = installmentsCount.toString().padStart(3, '0');
