@@ -126,14 +126,24 @@ export const DashboardHome: React.FC = () => {
     const lateCount = parceladosFilteredData.filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate)).length;
     const activeCount = parceladosLoans.filter(l => l.status === LoanStatus.ACTIVE).length;
     
+    // Capital das parcelas (amortização)
     const capital = parceladosFilteredData.reduce((acc, curr) => 
       acc + (curr.principalAmount ?? Math.max(0, curr.amount - (curr.interestAmount ?? 0))), 0
     );
+    // Lucro (juros) das parcelas
     const interest = parceladosFilteredData.reduce((acc, curr) => 
       acc + (curr.interestAmount ?? Math.max(0, curr.amount - (curr.principalAmount ?? curr.amount))), 0
     );
+    
+    // Capital total emprestado (soma dos valores emprestados dos empréstimos ativos)
+    const capitalEmprestado = parceladosLoans
+      .filter(l => l.status === LoanStatus.ACTIVE)
+      .reduce((acc, curr) => acc + curr.amount, 0);
+    
+    // Valor total: Lucro + Parcelas + Capital
+    const valorTotal = interest + total + capitalEmprestado;
 
-    return { total, received, receivable, late, lateCount, activeCount, capital, interest };
+    return { total, received, receivable, late, lateCount, activeCount, capital, interest, capitalEmprestado, valorTotal };
   }, [parceladosFilteredData, parceladosLoans]);
 
   // Estatísticas para empréstimos somente juros
@@ -151,14 +161,20 @@ export const DashboardHome: React.FC = () => {
     const lateCount = jurosFilteredData.filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate)).length;
     const activeCount = jurosLoans.filter(l => l.status === LoanStatus.ACTIVE).length;
     
+    // Valor dos juros
     const interest = jurosFilteredData.reduce((acc, curr) => 
       acc + (curr.interestAmount ?? curr.amount), 0
     );
-    const capital = jurosFilteredData.reduce((acc, curr) => 
-      acc + (curr.principalAmount ?? 0), 0
-    );
+    
+    // Capital total emprestado (soma dos valores emprestados dos empréstimos ativos)
+    const capitalEmprestado = jurosLoans
+      .filter(l => l.status === LoanStatus.ACTIVE)
+      .reduce((acc, curr) => acc + curr.amount, 0);
+    
+    // Valor dos Juros + Capital
+    const jurosMaisCapital = interest + capitalEmprestado;
 
-    return { total, received, receivable, late, lateCount, activeCount, capital, interest };
+    return { total, received, receivable, late, lateCount, activeCount, capital: capitalEmprestado, interest, jurosMaisCapital };
   }, [jurosFilteredData, jurosLoans]);
 
   // Dados para gráfico de linha - Parcelados
@@ -457,21 +473,38 @@ export const DashboardHome: React.FC = () => {
             />
           </div>
 
-          {/* Capital e Juros */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <div className="flex items-center gap-2 mb-2">
-                <DollarSign className="text-slate-600" size={16} />
-                <p className="text-xs uppercase font-semibold text-slate-500">Capital</p>
+          {/* Informações do Empréstimo Price */}
+          <div className="space-y-3">
+            <p className="text-xs uppercase font-semibold text-slate-500">Informações do Empréstimo Price</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
+                <div className="flex items-center gap-2 mb-2">
+                  <DollarSign className="text-slate-600" size={16} />
+                  <p className="text-xs uppercase font-semibold text-slate-500">Capital Emprestado</p>
+                </div>
+                <p className="text-xl font-bold text-slate-800">{formatCurrency(parceladosStats.capitalEmprestado)}</p>
               </div>
-              <p className="text-xl font-bold text-slate-800">{formatCurrency(parceladosStats.capital)}</p>
-            </div>
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <div className="flex items-center gap-2 mb-2">
-                <Percent className="text-slate-600" size={16} />
-                <p className="text-xs uppercase font-semibold text-slate-500">Juros</p>
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
+                <div className="flex items-center gap-2 mb-2">
+                  <DollarSign className="text-slate-600" size={16} />
+                  <p className="text-xs uppercase font-semibold text-slate-500">Valor das Parcelas</p>
+                </div>
+                <p className="text-xl font-bold text-slate-800">{formatCurrency(parceladosStats.total)}</p>
               </div>
-              <p className="text-xl font-bold text-slate-800">{formatCurrency(parceladosStats.interest)}</p>
+              <div className="p-4 rounded-xl border border-slate-200 bg-emerald-50">
+                <div className="flex items-center gap-2 mb-2">
+                  <TrendingUp className="text-emerald-600" size={16} />
+                  <p className="text-xs uppercase font-semibold text-emerald-700">Lucro (Juros)</p>
+                </div>
+                <p className="text-xl font-bold text-emerald-700">{formatCurrency(parceladosStats.interest)}</p>
+              </div>
+              <div className="p-4 rounded-xl border border-emerald-300 bg-emerald-50">
+                <div className="flex items-center gap-2 mb-2">
+                  <DollarSign className="text-emerald-600" size={16} />
+                  <p className="text-xs uppercase font-semibold text-emerald-700">Lucro + Parcelas + Capital</p>
+                </div>
+                <p className="text-xl font-bold text-emerald-700">{formatCurrency(parceladosStats.valorTotal)}</p>
+              </div>
             </div>
           </div>
 
@@ -608,21 +641,31 @@ export const DashboardHome: React.FC = () => {
             />
           </div>
 
-          {/* Capital e Juros */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <div className="flex items-center gap-2 mb-2">
-                <DollarSign className="text-slate-600" size={16} />
-                <p className="text-xs uppercase font-semibold text-slate-500">Capital em Aberto</p>
+          {/* Informações do Empréstimo Somente Juros */}
+          <div className="space-y-3">
+            <p className="text-xs uppercase font-semibold text-slate-500">Informações do Empréstimo Somente Juros</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
+                <div className="flex items-center gap-2 mb-2">
+                  <DollarSign className="text-slate-600" size={16} />
+                  <p className="text-xs uppercase font-semibold text-slate-500">Capital</p>
+                </div>
+                <p className="text-xl font-bold text-slate-800">{formatCurrency(jurosStats.capital)}</p>
               </div>
-              <p className="text-xl font-bold text-slate-800">{formatCurrency(jurosStats.capital)}</p>
-            </div>
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <div className="flex items-center gap-2 mb-2">
-                <Percent className="text-slate-600" size={16} />
-                <p className="text-xs uppercase font-semibold text-slate-500">Juros</p>
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Percent className="text-slate-600" size={16} />
+                  <p className="text-xs uppercase font-semibold text-slate-500">Valor dos Juros</p>
+                </div>
+                <p className="text-xl font-bold text-slate-800">{formatCurrency(jurosStats.interest)}</p>
               </div>
-              <p className="text-xl font-bold text-slate-800">{formatCurrency(jurosStats.interest)}</p>
+              <div className="p-4 rounded-xl border border-blue-300 bg-blue-50 col-span-2">
+                <div className="flex items-center gap-2 mb-2">
+                  <DollarSign className="text-blue-600" size={16} />
+                  <p className="text-xs uppercase font-semibold text-blue-700">Valor dos Juros + Capital</p>
+                </div>
+                <p className="text-xl font-bold text-blue-700">{formatCurrency(jurosStats.jurosMaisCapital)}</p>
+              </div>
             </div>
           </div>
 
