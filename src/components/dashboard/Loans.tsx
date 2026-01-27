@@ -127,11 +127,19 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setPromissoryNote(prev => ({ ...prev, [field]: value }));
   };
 
-  // Gerar hashes para todas as parcelas do mesmo empréstimo
-  // Todas as parcelas usam o mesmo hash base do empréstimo
-  const generateSequentialHashes = (firstHash: string, count: number): string[] => {
-    // Todas as parcelas do mesmo empréstimo usam o mesmo hash
-    return Array(count).fill(firstHash);
+  // Gerar hashes sequenciais para cada parcela da nota promissória
+  // Formato: #1/010#, #2/010#, #3/010#, etc.
+  // Onde o primeiro número é sequencial (1, 2, 3...) e o segundo é o número de parcelas
+  const generateSequentialHashes = (installmentsCount: number): string[] => {
+    const hashes: string[] = [];
+    const parcelNumber = installmentsCount.toString().padStart(3, '0');
+    
+    // Gerar hash sequencial para cada parcela
+    for (let i = 1; i <= installmentsCount; i++) {
+      hashes.push(`#${i}/${parcelNumber}#`);
+    }
+    
+    return hashes;
   };
 
   const resetForm = () => {
@@ -198,55 +206,19 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
 
     const lastDueDate = generatedInstallments[generatedInstallments.length - 1]?.dueDate || startDate;
     
-    // Gerar número da nota promissória no formato #X/YYY#
-    // X é o sequencial do empréstimo (1, 2, 3...), YYY é o número de parcelas com 3 dígitos (010, 020, etc.)
+    // Hash inicial do empréstimo sempre é #1/001#
+    // Este hash é usado apenas para identificar o empréstimo
+    // As notas promissórias terão hashes sequenciais: #1/010#, #2/010#, #3/010#, etc.
     let noteNumber = promissoryNote.numberHash;
     if (!noteNumber) {
-      // Extrair o maior sequencial existente das notas promissórias
-      const getNextSequential = (): number => {
-        const existingHashes = loans
-          .map(loan => loan.promissoryNote?.numberHash)
-          .filter((hash): hash is string => !!hash);
-        
-        if (existingHashes.length === 0) {
-          return 1; // Sempre iniciar com #1
-        }
-        
-        // Extrair todos os sequenciais (primeiro número antes da barra)
-        const sequentials = existingHashes
-          .map(hash => {
-            const match = hash.match(/#(\d+)\//);
-            return match ? parseInt(match[1]) : 0;
-          })
-          .filter(seq => seq > 0);
-        
-        if (sequentials.length === 0) {
-          return 1; // Se não conseguir extrair, começar em 1
-        }
-        
-        // Se estiver editando, usar o sequencial atual do empréstimo
-        if (editingLoan && editingLoan.promissoryNote?.numberHash) {
-          const currentMatch = editingLoan.promissoryNote.numberHash.match(/#(\d+)\//);
-          if (currentMatch) {
-            return parseInt(currentMatch[1]);
-          }
-        }
-        
-        // Retornar o maior sequencial + 1
-        return Math.max(...sequentials) + 1;
-      };
-      
-      const nextSequential = getNextSequential();
-      // Garantir que o número de parcelas sempre tenha 3 dígitos com zeros à esquerda
-      const parcelNumber = installmentsCount.toString().padStart(3, '0');
-      noteNumber = `#${nextSequential}/${parcelNumber}#`;
+      // Hash inicial sempre começa com #1/001#
+      noteNumber = '#1/001#';
     } else {
-      // Se já existe um hash, garantir que o número de parcelas esteja correto
+      // Se já existe um hash, manter o formato mas garantir que seja válido
       const match = noteNumber.match(/#(\d+)\/(\d+)#/);
-      if (match) {
-        const currentParcelNumber = installmentsCount.toString().padStart(3, '0');
-        // Atualizar apenas a parte das parcelas se necessário
-        noteNumber = `#${match[1]}/${currentParcelNumber}#`;
+      if (!match) {
+        // Se o formato estiver incorreto, resetar para #1/001#
+        noteNumber = '#1/001#';
       }
     }
     
@@ -330,55 +302,19 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     }
   };
 
-  // Atualizar número da nota promissória quando o cliente for selecionado ou número de parcelas mudar
+  // Atualizar hash inicial do empréstimo quando o cliente for selecionado
+  // Hash inicial sempre é #1/001#
   useEffect(() => {
     if (selectedClientId && !editingLoan) {
-      // Extrair o maior sequencial existente das notas promissórias
-      const getNextSequential = (): number => {
-        const existingHashes = loans
-          .map(loan => loan.promissoryNote?.numberHash)
-          .filter((hash): hash is string => !!hash);
-        
-        if (existingHashes.length === 0) {
-          return 1; // Sempre iniciar com #1
-        }
-        
-        // Extrair todos os sequenciais (primeiro número antes da barra)
-        const sequentials = existingHashes
-          .map(hash => {
-            const match = hash.match(/#(\d+)\//);
-            return match ? parseInt(match[1]) : 0;
-          })
-          .filter(seq => seq > 0);
-        
-        if (sequentials.length === 0) {
-          return 1; // Se não conseguir extrair, começar em 1
-        }
-        
-        // Retornar o maior sequencial + 1
-        return Math.max(...sequentials) + 1;
-      };
-      
-      const nextSequential = getNextSequential();
-      
-      // Gerar hash: #X/YYY# onde X é o sequencial do empréstimo (1, 2, 3...) e YYY é o número de parcelas com 3 dígitos (010, 020, etc.)
-      const parcelNumber = installmentsCount.toString().padStart(3, '0');
-      const expectedHash = `#${nextSequential}/${parcelNumber}#`;
-      
       setPromissoryNote(prev => {
-        // Atualiza se o campo estiver vazio ou se a hash atual não corresponder ao número de parcelas
-        if (!prev.numberHash) {
-          return { ...prev, numberHash: expectedHash };
-        }
-        // Se já existe um hash, atualizar apenas a parte das parcelas se necessário
-        const match = prev.numberHash.match(/#(\d+)\/(\d+)#/);
-        if (match && match[2] !== parcelNumber) {
-          return { ...prev, numberHash: `#${match[1]}/${parcelNumber}#` };
+        // Se não há hash ou o hash não é #1/001#, definir como #1/001#
+        if (!prev.numberHash || prev.numberHash !== '#1/001#') {
+          return { ...prev, numberHash: '#1/001#' };
         }
         return prev;
       });
     }
-  }, [selectedClientId, installmentsCount, editingLoan, loans]);
+  }, [selectedClientId, editingLoan]);
 
   // Atualizar data de vencimento com a última parcela da simulação
   useEffect(() => {
@@ -656,19 +592,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       .filter(inst => inst.loanId === loan.id)
       .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
     
-    // Todas as parcelas do mesmo empréstimo usam o mesmo hash
-    // O hash é no formato #número_empréstimo/número_parcelas#
-    // Se o hash estiver no formato antigo, normalizar para o formato correto
-    let loanHash = promissoryNote.numberHash;
-    
-    // Garantir que o hash está no formato correto #X/YYY#
-    // Se o hash tiver formato antigo (ex: #4/010#, #4/011#), usar apenas o primeiro número e o número de parcelas
-    const hashMatch = loanHash.match(/#(\d+)\/(\d+)#/);
-    if (hashMatch) {
-      const loanNumber = hashMatch[1];
-      const parcelCount = loan.installmentsCount.toString().padStart(3, '0');
-      loanHash = `#${loanNumber}/${parcelCount}#`;
-    }
+    // Gerar hashes sequenciais para cada parcela
+    // Formato: #1/010#, #2/010#, #3/010#, etc.
+    // Onde o primeiro número é sequencial (1, 2, 3...) e o segundo é o número de parcelas
+    const hashes = generateSequentialHashes(loan.installmentsCount);
     
     // Dados do credor (empresa)
     const creditorName = issuerData?.name || issuerName || 'Empresa Credora';
@@ -719,11 +646,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     };
 
     // Gerar notas promissórias para cada parcela
-    // Todas as parcelas do mesmo empréstimo usam o mesmo hash
+    // Cada parcela tem um hash sequencial: #1/010#, #2/010#, #3/010#, etc.
     const notesHtml = loanInstallments.length > 0 
       ? loanInstallments.map((installment, index) => {
-          // Todas as parcelas usam o mesmo hash do empréstimo
-          const installmentHash = loanHash;
+          // Cada parcela usa um hash sequencial baseado no índice (1, 2, 3...)
+          const installmentHash = hashes[index] || hashes[0];
           const installmentDueDate = installment.dueDate;
           const installmentDueDateWords = formatDateToWords(installmentDueDate);
           const installmentValue = installment.amount;
@@ -1310,10 +1237,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
                       value={promissoryNote.numberHash}
                       onChange={e => handlePromissoryChange('numberHash', e.target.value)}
-                      placeholder="#1/010#"
+                      placeholder="#1/001#"
                     />
                     <p className="text-xs text-slate-500 mt-1">
-                      Formato: #número_do_empréstimo/quantidade_de_parcelas# (ex: #1/010# para primeiro empréstimo com 10 parcelas)
+                      Hash inicial do empréstimo: #1/001#. As notas promissórias terão hashes sequenciais: #1/010#, #2/010#, #3/010#, etc.
                     </p>
                   </div>
                 </div>
