@@ -79,7 +79,8 @@ export const DashboardHome: React.FC = () => {
 
   // Aplicar filtros de data para parcelados
   const parceladosFilteredData = useMemo(() => {
-    const { start, end } = parceladosDateRange === 'ALL' && parceladosStartDate && parceladosEndDate
+    // Sempre usar datas manuais se estiverem preenchidas, caso contrário usar o range
+    const { start, end } = parceladosStartDate && parceladosEndDate
       ? { start: parceladosStartDate, end: parceladosEndDate }
       : getDateRange(parceladosDateRange);
     
@@ -96,7 +97,8 @@ export const DashboardHome: React.FC = () => {
 
   // Aplicar filtros de data para somente juros
   const jurosFilteredData = useMemo(() => {
-    const { start, end } = jurosDateRange === 'ALL' && jurosStartDate && jurosEndDate
+    // Sempre usar datas manuais se estiverem preenchidas, caso contrário usar o range
+    const { start, end } = jurosStartDate && jurosEndDate
       ? { start: jurosStartDate, end: jurosEndDate }
       : getDateRange(jurosDateRange);
     
@@ -361,24 +363,22 @@ export const DashboardHome: React.FC = () => {
           </button>
         ))}
       </div>
-      {dateRange === 'ALL' && (
-        <div className="flex items-center gap-2">
-          <Calendar size={16} className="text-slate-500" />
-          <input
-            type="date"
-            value={startDate}
-            onChange={e => setStartDate(e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
-          <span className="text-slate-500">até</span>
-          <input
-            type="date"
-            value={endDate}
-            onChange={e => setEndDate(e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-      )}
+      <div className="flex items-center gap-2">
+        <Calendar size={16} className="text-slate-500" />
+        <input
+          type="date"
+          value={startDate}
+          onChange={e => setStartDate(e.target.value)}
+          className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+        />
+        <span className="text-slate-500">até</span>
+        <input
+          type="date"
+          value={endDate}
+          onChange={e => setEndDate(e.target.value)}
+          className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+        />
+      </div>
     </div>
   );
 
@@ -434,7 +434,7 @@ export const DashboardHome: React.FC = () => {
               icon={<TrendingUp className="text-emerald-600" size={20} />}
               bg="bg-emerald-50"
               onClick={() => {
-                const { start, end } = parceladosDateRange === 'ALL' && parceladosStartDate && parceladosEndDate
+                const { start, end } = parceladosStartDate && parceladosEndDate
                   ? { start: parceladosStartDate, end: parceladosEndDate }
                   : getDateRange(parceladosDateRange);
                 setView('installments', 'PAID', { start, end });
@@ -446,7 +446,7 @@ export const DashboardHome: React.FC = () => {
               icon={<TrendingDown className="text-blue-600" size={20} />}
               bg="bg-blue-50"
               onClick={() => {
-                const { start, end } = parceladosDateRange === 'ALL' && parceladosStartDate && parceladosEndDate
+                const { start, end } = parceladosStartDate && parceladosEndDate
                   ? { start: parceladosStartDate, end: parceladosEndDate }
                   : getDateRange(parceladosDateRange);
                 setView('installments', 'PENDING', { start, end });
@@ -459,7 +459,7 @@ export const DashboardHome: React.FC = () => {
               icon={<AlertTriangle className="text-red-600" size={20} />}
               bg="bg-red-50"
               onClick={() => {
-                const { start, end } = parceladosDateRange === 'ALL' && parceladosStartDate && parceladosEndDate
+                const { start, end } = parceladosStartDate && parceladosEndDate
                   ? { start: parceladosStartDate, end: parceladosEndDate }
                   : getDateRange(parceladosDateRange);
                 setView('installments', 'LATE', { start, end });
@@ -602,7 +602,7 @@ export const DashboardHome: React.FC = () => {
               icon={<TrendingUp className="text-emerald-600" size={20} />}
               bg="bg-emerald-50"
               onClick={() => {
-                const { start, end } = jurosDateRange === 'ALL' && jurosStartDate && jurosEndDate
+                const { start, end } = jurosStartDate && jurosEndDate
                   ? { start: jurosStartDate, end: jurosEndDate }
                   : getDateRange(jurosDateRange);
                 setView('installments', 'PAID', { start, end });
@@ -614,7 +614,7 @@ export const DashboardHome: React.FC = () => {
               icon={<TrendingDown className="text-blue-600" size={20} />}
               bg="bg-blue-50"
               onClick={() => {
-                const { start, end } = jurosDateRange === 'ALL' && jurosStartDate && jurosEndDate
+                const { start, end } = jurosStartDate && jurosEndDate
                   ? { start: jurosStartDate, end: jurosEndDate }
                   : getDateRange(jurosDateRange);
                 setView('installments', 'PENDING', { start, end });
@@ -627,7 +627,7 @@ export const DashboardHome: React.FC = () => {
               icon={<AlertTriangle className="text-red-600" size={20} />}
               bg="bg-red-50"
               onClick={() => {
-                const { start, end } = jurosDateRange === 'ALL' && jurosStartDate && jurosEndDate
+                const { start, end } = jurosStartDate && jurosEndDate
                   ? { start: jurosStartDate, end: jurosEndDate }
                   : getDateRange(jurosDateRange);
                 setView('installments', 'LATE', { start, end });
