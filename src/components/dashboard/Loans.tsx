@@ -127,27 +127,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setPromissoryNote(prev => ({ ...prev, [field]: value }));
   };
 
-  // Gerar hashes sequenciais baseado na primeira hash
+  // Gerar hashes para todas as parcelas do mesmo empréstimo
+  // Todas as parcelas usam o mesmo hash base do empréstimo
   const generateSequentialHashes = (firstHash: string, count: number): string[] => {
-    const hashes: string[] = [firstHash];
-    
-    // Extrair o padrão #X/YYY# da primeira hash
-    const match = firstHash.match(/#(\d+)\/(\d+)#/);
-    if (!match) {
-      // Se não seguir o padrão, retornar apenas a primeira
-      return hashes;
-    }
-    
-    const clientNumber = match[1]; // X
-    const firstSequence = parseInt(match[2]); // YYY
-    
-    // Gerar hashes sequenciais
-    for (let i = 1; i < count; i++) {
-      const nextSequence = firstSequence + i;
-      hashes.push(`#${clientNumber}/${nextSequence.toString().padStart(3, '0')}#`);
-    }
-    
-    return hashes;
+    // Todas as parcelas do mesmo empréstimo usam o mesmo hash
+    return Array(count).fill(firstHash);
   };
 
   const resetForm = () => {
@@ -215,7 +199,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     const lastDueDate = generatedInstallments[generatedInstallments.length - 1]?.dueDate || startDate;
     
     // Gerar número da nota promissória no formato #X/YYY#
-    // X é o sequencial do empréstimo, YYY é o número de parcelas
+    // X é o sequencial do empréstimo (1, 2, 3...), YYY é o número de parcelas com 3 dígitos (010, 020, etc.)
     let noteNumber = promissoryNote.numberHash;
     if (!noteNumber) {
       // Extrair o maior sequencial existente das notas promissórias
@@ -253,8 +237,17 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       };
       
       const nextSequential = getNextSequential();
+      // Garantir que o número de parcelas sempre tenha 3 dígitos com zeros à esquerda
       const parcelNumber = installmentsCount.toString().padStart(3, '0');
       noteNumber = `#${nextSequential}/${parcelNumber}#`;
+    } else {
+      // Se já existe um hash, garantir que o número de parcelas esteja correto
+      const match = noteNumber.match(/#(\d+)\/(\d+)#/);
+      if (match) {
+        const currentParcelNumber = installmentsCount.toString().padStart(3, '0');
+        // Atualizar apenas a parte das parcelas se necessário
+        noteNumber = `#${match[1]}/${currentParcelNumber}#`;
+      }
     }
     
     const promissoryToSave: PromissoryNote = {
@@ -368,14 +361,19 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       
       const nextSequential = getNextSequential();
       
-      // Gerar hash: #X/YYY# onde X é o sequencial do empréstimo e YYY é o número de parcelas
+      // Gerar hash: #X/YYY# onde X é o sequencial do empréstimo (1, 2, 3...) e YYY é o número de parcelas com 3 dígitos (010, 020, etc.)
       const parcelNumber = installmentsCount.toString().padStart(3, '0');
       const expectedHash = `#${nextSequential}/${parcelNumber}#`;
       
       setPromissoryNote(prev => {
         // Atualiza se o campo estiver vazio ou se a hash atual não corresponder ao número de parcelas
-        if (!prev.numberHash || prev.numberHash !== expectedHash) {
+        if (!prev.numberHash) {
           return { ...prev, numberHash: expectedHash };
+        }
+        // Se já existe um hash, atualizar apenas a parte das parcelas se necessário
+        const match = prev.numberHash.match(/#(\d+)\/(\d+)#/);
+        if (match && match[2] !== parcelNumber) {
+          return { ...prev, numberHash: `#${match[1]}/${parcelNumber}#` };
         }
         return prev;
       });
@@ -1301,13 +1299,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
                       value={promissoryNote.numberHash}
                       onChange={e => handlePromissoryChange('numberHash', e.target.value)}
-                      placeholder="#X/YYY#"
+                      placeholder="#1/010#"
                     />
-                    {installmentsCount > 1 && (
-                      <p className="text-xs text-slate-500 mt-1">
-                        Insira a primeira hash. As próximas serão geradas automaticamente na impressão.
-                      </p>
-                    )}
+                    <p className="text-xs text-slate-500 mt-1">
+                      Formato: #número_do_empréstimo/quantidade_de_parcelas# (ex: #1/010# para primeiro empréstimo com 10 parcelas)
+                    </p>
                   </div>
                 </div>
 
