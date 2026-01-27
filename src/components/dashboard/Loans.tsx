@@ -24,7 +24,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   // Form State
   const [selectedClientId, setSelectedClientId] = useState('');
   const [amount, setAmount] = useState(1000);
-  const [interestRate, setInterestRate] = useState(20); // 20%
+  const [interestRate, setInterestRate] = useState(1.0); // 1.0%
   const [installmentsCount, setInstallmentsCount] = useState(1);
   const [startDate, setStartDate] = useState(getTodayDateString());
   const [loanModel, setLoanModel] = useState<LoanModel>(LoanModel.PRICE);
@@ -145,7 +145,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const resetForm = () => {
     setSelectedClientId('');
     setAmount(1000);
-    setInterestRate(20);
+    setInterestRate(1.0);
     setInstallmentsCount(1);
     setLoanModel(LoanModel.PRICE);
     const today = getTodayDateString();
@@ -1117,10 +1117,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                     <input
                       type="number"
                       min="0"
+                      step="0.1"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors"
                       value={interestRate}
                       onChange={e => {
-                        const value = parseFloat(e.target.value);
+                        const value = parseFloat(e.target.value) || 0;
                         setInterestRate(value);
                         setPromissoryNote(prev => ({ ...prev, interestRate: value }));
                       }}
@@ -1264,10 +1265,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       required
                       type="number"
                       min="0"
+                      step="0.1"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
-                      placeholder="Ex: 8"
+                      placeholder="Ex: 1.5"
                       value={promissoryNote.interestRate}
-                      onChange={e => handlePromissoryChange('interestRate', parseFloat(e.target.value))}
+                      onChange={e => handlePromissoryChange('interestRate', parseFloat(e.target.value) || 0)}
                     />
                   </div>
                 </div>
