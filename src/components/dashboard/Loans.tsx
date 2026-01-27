@@ -656,10 +656,19 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       .filter(inst => inst.loanId === loan.id)
       .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
     
-    // Gerar hashes sequenciais se houver múltiplas parcelas
-    const hashes = loanInstallments.length > 1 
-      ? generateSequentialHashes(promissoryNote.numberHash, loanInstallments.length)
-      : [promissoryNote.numberHash];
+    // Todas as parcelas do mesmo empréstimo usam o mesmo hash
+    // O hash é no formato #número_empréstimo/número_parcelas#
+    // Se o hash estiver no formato antigo, normalizar para o formato correto
+    let loanHash = promissoryNote.numberHash;
+    
+    // Garantir que o hash está no formato correto #X/YYY#
+    // Se o hash tiver formato antigo (ex: #4/010#, #4/011#), usar apenas o primeiro número e o número de parcelas
+    const hashMatch = loanHash.match(/#(\d+)\/(\d+)#/);
+    if (hashMatch) {
+      const loanNumber = hashMatch[1];
+      const parcelCount = loan.installmentsCount.toString().padStart(3, '0');
+      loanHash = `#${loanNumber}/${parcelCount}#`;
+    }
     
     // Dados do credor (empresa)
     const creditorName = issuerData?.name || issuerName || 'Empresa Credora';
@@ -710,9 +719,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     };
 
     // Gerar notas promissórias para cada parcela
+    // Todas as parcelas do mesmo empréstimo usam o mesmo hash
     const notesHtml = loanInstallments.length > 0 
       ? loanInstallments.map((installment, index) => {
-          const installmentHash = hashes[index] || promissoryNote.numberHash;
+          // Todas as parcelas usam o mesmo hash do empréstimo
+          const installmentHash = loanHash;
           const installmentDueDate = installment.dueDate;
           const installmentDueDateWords = formatDateToWords(installmentDueDate);
           const installmentValue = installment.amount;
