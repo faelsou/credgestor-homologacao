@@ -363,21 +363,33 @@ export const DashboardHome: React.FC = () => {
           </button>
         ))}
       </div>
-      <div className="flex items-center gap-2">
-        <Calendar size={16} className="text-slate-500" />
-        <input
-          type="date"
-          value={startDate}
-          onChange={e => setStartDate(e.target.value)}
-          className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
-        />
-        <span className="text-slate-500">até</span>
-        <input
-          type="date"
-          value={endDate}
-          onChange={e => setEndDate(e.target.value)}
-          className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
-        />
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-1 min-w-[280px]">
+          <Calendar size={18} className="text-slate-500 flex-shrink-0" />
+          <label className="text-sm text-slate-600 font-medium whitespace-nowrap">Data Inicial:</label>
+          <input
+            type="date"
+            value={startDate}
+            onChange={e => {
+              setStartDate(e.target.value);
+              setDateRange('ALL'); // Muda para 'ALL' quando editar manualmente
+            }}
+            className="flex-1 border-2 border-slate-300 rounded-lg px-4 py-3 text-base bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all min-w-[160px] cursor-text"
+          />
+        </div>
+        <div className="flex items-center gap-2 flex-1 min-w-[280px]">
+          <span className="text-slate-500 text-sm font-medium">até</span>
+          <label className="text-sm text-slate-600 font-medium whitespace-nowrap">Data Final:</label>
+          <input
+            type="date"
+            value={endDate}
+            onChange={e => {
+              setEndDate(e.target.value);
+              setDateRange('ALL'); // Muda para 'ALL' quando editar manualmente
+            }}
+            className="flex-1 border-2 border-slate-300 rounded-lg px-4 py-3 text-base bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all min-w-[160px] cursor-text"
+          />
+        </div>
       </div>
     </div>
   );
