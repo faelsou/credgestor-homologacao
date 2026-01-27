@@ -28,16 +28,16 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const [installmentsCount, setInstallmentsCount] = useState(1);
   const [startDate, setStartDate] = useState(getTodayDateString());
   const [loanModel, setLoanModel] = useState<LoanModel>(LoanModel.PRICE);
-  const createDefaultPromissoryNote = (baseDate: string): PromissoryNote => ({
+  const createDefaultPromissoryNote = (baseDate: string, defaultInterestRate: number = 1.0): PromissoryNote => ({
     capital: amount,
-    interestRate: interestRate,
+    interestRate: defaultInterestRate,
     issueDate: baseDate,
     dueDate: baseDate,
     indication: 'Sem Garantia',
     numberHash: '', // Será gerado automaticamente quando o cliente for selecionado
     observation: ''
   });
-  const [promissoryNote, setPromissoryNote] = useState<PromissoryNote>(createDefaultPromissoryNote(startDate));
+  const [promissoryNote, setPromissoryNote] = useState<PromissoryNote>(createDefaultPromissoryNote(startDate, 1.0));
 
   const addMonths = (dateString: string, months: number) => {
     // Parse a data no formato YYYY-MM-DD evitando problemas de fuso horário
@@ -150,7 +150,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setLoanModel(LoanModel.PRICE);
     const today = getTodayDateString();
     setStartDate(today);
-    setPromissoryNote(createDefaultPromissoryNote(today));
+    setPromissoryNote(createDefaultPromissoryNote(today, 1.0));
     setEditingLoan(null);
   };
 
@@ -301,6 +301,19 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       deleteLoan(loan.id);
     }
   };
+
+  // Sincronizar juros inicial quando o formulário é aberto (novo empréstimo)
+  useEffect(() => {
+    if (!editingLoan && isModalOpen && interestRate === 1.0) {
+      // Garantir que o campo da nota promissória também tenha 1.0%
+      setPromissoryNote(prev => {
+        if (prev.interestRate !== 1.0) {
+          return { ...prev, interestRate: 1.0 };
+        }
+        return prev;
+      });
+    }
+  }, [isModalOpen, editingLoan, interestRate]);
 
   // Atualizar hash inicial do empréstimo quando o cliente for selecionado
   // Hash inicial sempre é #1/001#
@@ -1119,12 +1132,13 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       min="0"
                       step="0.1"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors"
-                      value={interestRate}
+                      value={interestRate || ''}
                       onChange={e => {
                         const value = parseFloat(e.target.value) || 0;
                         setInterestRate(value);
                         setPromissoryNote(prev => ({ ...prev, interestRate: value }));
                       }}
+                      placeholder="1.0"
                     />
                 </div>
               </div>
@@ -1267,9 +1281,13 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       min="0"
                       step="0.1"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
-                      placeholder="Ex: 1.5"
-                      value={promissoryNote.interestRate}
-                      onChange={e => handlePromissoryChange('interestRate', parseFloat(e.target.value) || 0)}
+                      placeholder="1.0"
+                      value={promissoryNote.interestRate || ''}
+                      onChange={e => {
+                        const value = parseFloat(e.target.value) || 0;
+                        handlePromissoryChange('interestRate', value);
+                        setInterestRate(value);
+                      }}
                     />
                   </div>
                 </div>
