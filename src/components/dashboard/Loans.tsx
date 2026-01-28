@@ -1140,9 +1140,9 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       min="0"
                       step="0.1"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors"
-                      value={interestRate || ''}
+                      value={interestRate ?? ''}
                       onChange={e => {
-                        const value = parseFloat(e.target.value) || 0;
+                        const value = e.target.value === '' ? 0 : (parseFloat(e.target.value) || 0);
                         setInterestRate(value);
                         setPromissoryNote(prev => ({ ...prev, interestRate: value }));
                       }}
@@ -1290,9 +1290,9 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       step="0.1"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
                       placeholder="1.0"
-                      value={promissoryNote.interestRate || ''}
+                      value={promissoryNote.interestRate ?? ''}
                       onChange={e => {
-                        const value = parseFloat(e.target.value) || 0;
+                        const value = e.target.value === '' ? 0 : (parseFloat(e.target.value) || 0);
                         handlePromissoryChange('interestRate', value);
                         setInterestRate(value);
                       }}
