@@ -159,6 +159,15 @@ export const InstallmentsView: React.FC = () => {
   };
 
   const getInterestAmount = (inst: Installment) => {
+    // IMPORTANTE: Para empréstimos "somente juros", sempre usar o valor original dos juros
+    // baseado no valor original do empréstimo, não no valor salvo na parcela (que pode estar incorreto)
+    const loan = loans.find(l => l.id === inst.loanId);
+    if (loan && loan.model === LoanModel.INTEREST_ONLY) {
+      // SEMPRE calcular baseado no valor original do empréstimo
+      return Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+    }
+    
+    // Para outros modelos, usar o valor salvo na parcela
     const interest = inst.interestAmount ?? Math.max(0, inst.amount - (inst.principalAmount ?? inst.amount));
     return interest > 0 ? interest : inst.amount;
   };
@@ -835,14 +844,17 @@ export const InstallmentsView: React.FC = () => {
                   // baseado no valor ORIGINAL do empréstimo (loan.totalAmount), não no capital restante.
                   // Isso garante que a taxa de juros permaneça constante do início ao fim.
                   let minInterestAmount = selectedInstallment.interestAmount ?? selectedInstallment.amount;
+                  let displayAmount = selectedInstallment.amount;
                   
                   if (loan && loan.model === LoanModel.INTEREST_ONLY) {
                     // SEMPRE usar o valor original do empréstimo para calcular os juros
+                    // Isso corrige automaticamente valores incorretos nas parcelas
                     minInterestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+                    // Para INTEREST_ONLY, o valor da parcela deve ser sempre igual aos juros originais
+                    displayAmount = minInterestAmount;
                   }
                   
-                  // O valor da parcela deve ser pelo menos o valor mínimo dos juros
-                  const displayAmount = Math.max(selectedInstallment.amount, minInterestAmount);
+                  // O valor pendente deve ser pelo menos o valor mínimo dos juros
                   const pendingAmount = Math.max(displayAmount - (selectedInstallment.amountPaid || 0), minInterestAmount);
                   
                   return (
@@ -863,12 +875,26 @@ export const InstallmentsView: React.FC = () => {
                     </>
                   );
                 })()}
-                {selectedInstallment.interestAmount !== undefined && selectedInstallment.principalAmount !== undefined && (
-                  <div className="mt-2 text-xs text-slate-500">
-                    Juros: {formatCurrency(selectedInstallment.interestAmount)} • 
-                    Capital: {formatCurrency(selectedInstallment.principalAmount)}
-                  </div>
-                )}
+                {(() => {
+                  const loan = loans.find(l => l.id === selectedInstallment.loanId);
+                  let displayInterest = selectedInstallment.interestAmount ?? 0;
+                  
+                  // IMPORTANTE: Para empréstimos "somente juros", sempre mostrar o valor correto dos juros
+                  // baseado no valor original do empréstimo, não no valor salvo na parcela (que pode estar incorreto)
+                  if (loan && loan.model === LoanModel.INTEREST_ONLY) {
+                    displayInterest = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+                  }
+                  
+                  if (selectedInstallment.principalAmount !== undefined) {
+                    return (
+                      <div className="mt-2 text-xs text-slate-500">
+                        Juros: {formatCurrency(displayInterest)} • 
+                        Capital: {formatCurrency(selectedInstallment.principalAmount)}
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
 
               <div>
