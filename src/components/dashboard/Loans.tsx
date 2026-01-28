@@ -1143,13 +1143,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Juros (%)</label>
                     <input
-                      type="number"
+                      type="text"
                       inputMode="decimal"
-                      min="0"
-                      step="0.1"
-                      pattern="[0-9]*\.?[0-9]*"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors"
-                      value={interestRate === 0 ? '0' : (interestRate !== null && interestRate !== undefined ? interestRate.toString() : '')}
+                      value={interestRate === 0 ? '0' : (interestRate !== null && interestRate !== undefined ? interestRate.toString().replace('.', ',') : '')}
                       onChange={e => {
                         const inputValue = e.target.value.trim();
                         // Permitir campo vazio temporariamente durante edição
@@ -1158,10 +1155,27 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                           setPromissoryNote(prev => ({ ...prev, interestRate: 0 }));
                           return;
                         }
-                        // Aceitar valores decimais (ex: 0.0, 0.5, 1.0, 4.5, 10.0, 20.0)
-                        // Permitir ponto decimal e vírgula (compatibilidade mobile)
-                        const normalizedValue = inputValue.replace(',', '.');
-                        const numValue = parseFloat(normalizedValue);
+                        // Aceitar apenas números, vírgula e ponto
+                        const cleanedValue = inputValue.replace(/[^\d,.]/g, '');
+                        // Substituir múltiplas vírgulas/pontos por apenas um
+                        const normalizedValue = cleanedValue.replace(/[,.]/g, (match, offset) => {
+                          // Manter apenas o primeiro separador decimal encontrado
+                          const before = cleanedValue.substring(0, offset);
+                          if (before.includes(',') || before.includes('.')) {
+                            return '';
+                          }
+                          return ',';
+                        });
+                        
+                        // Se o valor está vazio após limpeza, definir como 0
+                        if (normalizedValue === '' || normalizedValue === ',') {
+                          setInterestRate(0);
+                          setPromissoryNote(prev => ({ ...prev, interestRate: 0 }));
+                          return;
+                        }
+                        
+                        // Converter vírgula para ponto para parseFloat
+                        const numValue = parseFloat(normalizedValue.replace(',', '.'));
                         if (!isNaN(numValue) && numValue >= 0 && isFinite(numValue)) {
                           // Limitar a 2 casas decimais
                           const roundedValue = Math.round(numValue * 100) / 100;
@@ -1170,13 +1184,13 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                         }
                       }}
                       onBlur={e => {
-                        // Garantir que ao sair do campo, sempre tenha um valor válido
+                        // Garantir que ao sair do campo, sempre tenha um valor válido formatado
                         const inputValue = e.target.value.trim();
-                        if (inputValue === '' || inputValue === '-') {
+                        if (inputValue === '' || inputValue === '-' || inputValue === ',') {
                           setInterestRate(0);
                           setPromissoryNote(prev => ({ ...prev, interestRate: 0 }));
                         } else {
-                          // Normalizar vírgula para ponto
+                          // Normalizar vírgula para ponto e garantir formato correto
                           const normalizedValue = inputValue.replace(',', '.');
                           const numValue = parseFloat(normalizedValue);
                           if (!isNaN(numValue) && numValue >= 0) {
@@ -1186,7 +1200,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                           }
                         }
                       }}
-                      placeholder="1.0"
+                      placeholder="1,0"
                     />
                 </div>
               </div>
@@ -1325,14 +1339,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                     <label className="block text-sm font-medium text-slate-700 mb-1">Juros (%)</label>
                     <input
                       required
-                      type="number"
+                      type="text"
                       inputMode="decimal"
-                      min="0"
-                      step="0.1"
-                      pattern="[0-9]*\.?[0-9]*"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
-                      placeholder="1.0"
-                      value={promissoryNote.interestRate === 0 ? '0' : (promissoryNote.interestRate !== null && promissoryNote.interestRate !== undefined ? promissoryNote.interestRate.toString() : '')}
+                      placeholder="1,0"
+                      value={promissoryNote.interestRate === 0 ? '0' : (promissoryNote.interestRate !== null && promissoryNote.interestRate !== undefined ? promissoryNote.interestRate.toString().replace('.', ',') : '')}
                       onChange={e => {
                         const inputValue = e.target.value.trim();
                         // Permitir campo vazio temporariamente durante edição
@@ -1341,10 +1352,27 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                           setInterestRate(0);
                           return;
                         }
-                        // Aceitar valores decimais (ex: 0.0, 0.5, 1.0, 4.5, 10.0, 20.0)
-                        // Permitir ponto decimal e vírgula (compatibilidade mobile)
-                        const normalizedValue = inputValue.replace(',', '.');
-                        const numValue = parseFloat(normalizedValue);
+                        // Aceitar apenas números, vírgula e ponto
+                        const cleanedValue = inputValue.replace(/[^\d,.]/g, '');
+                        // Substituir múltiplas vírgulas/pontos por apenas um
+                        const normalizedValue = cleanedValue.replace(/[,.]/g, (match, offset) => {
+                          // Manter apenas o primeiro separador decimal encontrado
+                          const before = cleanedValue.substring(0, offset);
+                          if (before.includes(',') || before.includes('.')) {
+                            return '';
+                          }
+                          return ',';
+                        });
+                        
+                        // Se o valor está vazio após limpeza, definir como 0
+                        if (normalizedValue === '' || normalizedValue === ',') {
+                          handlePromissoryChange('interestRate', 0);
+                          setInterestRate(0);
+                          return;
+                        }
+                        
+                        // Converter vírgula para ponto para parseFloat
+                        const numValue = parseFloat(normalizedValue.replace(',', '.'));
                         if (!isNaN(numValue) && numValue >= 0 && isFinite(numValue)) {
                           // Limitar a 2 casas decimais
                           const roundedValue = Math.round(numValue * 100) / 100;
@@ -1353,13 +1381,13 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                         }
                       }}
                       onBlur={e => {
-                        // Garantir que ao sair do campo, sempre tenha um valor válido
+                        // Garantir que ao sair do campo, sempre tenha um valor válido formatado
                         const inputValue = e.target.value.trim();
-                        if (inputValue === '' || inputValue === '-') {
+                        if (inputValue === '' || inputValue === '-' || inputValue === ',') {
                           handlePromissoryChange('interestRate', 0);
                           setInterestRate(0);
                         } else {
-                          // Normalizar vírgula para ponto
+                          // Normalizar vírgula para ponto e garantir formato correto
                           const normalizedValue = inputValue.replace(',', '.');
                           const numValue = parseFloat(normalizedValue);
                           if (!isNaN(numValue) && numValue >= 0) {
