@@ -4,7 +4,7 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContai
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, isLate } from '@/utils';
 import { InstallmentStatus, LoanStatus, LoanModel } from '@/types';
-import { DateInput } from '@/components/DateInput';
+
 
 type DateRange = '1D' | '7D' | '1M' | '3M' | 'ALL';
 
@@ -368,27 +368,13 @@ export const DashboardHome: React.FC = () => {
         <div className="flex items-center gap-2 flex-1 min-w-[280px]">
           <Calendar size={18} className="text-slate-500 flex-shrink-0" />
           <label className="text-sm text-slate-600 font-medium whitespace-nowrap">Data Inicial:</label>
-          <DateInput
-            value={startDate}
-            onChange={(value) => {
-              setStartDate(value);
-              setDateRange('ALL'); // Muda para 'ALL' quando editar manualmente
-            }}
-            className="flex-1 border-2 border-slate-300 rounded-lg px-4 py-3 text-base bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all min-w-[160px] cursor-text"
-            placeholder="DD/MM/AAAA"
+
           />
         </div>
         <div className="flex items-center gap-2 flex-1 min-w-[280px]">
           <span className="text-slate-500 text-sm font-medium">até</span>
           <label className="text-sm text-slate-600 font-medium whitespace-nowrap">Data Final:</label>
-          <DateInput
-            value={endDate}
-            onChange={(value) => {
-              setEndDate(value);
-              setDateRange('ALL'); // Muda para 'ALL' quando editar manualmente
-            }}
-            className="flex-1 border-2 border-slate-300 rounded-lg px-4 py-3 text-base bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all min-w-[160px] cursor-text"
-            placeholder="DD/MM/AAAA"
+
           />
         </div>
       </div>
@@ -485,6 +471,7 @@ export const DashboardHome: React.FC = () => {
               bg="bg-slate-50"
             />
           </div>
+
 
 
           {/* Gráfico */}
@@ -619,6 +606,7 @@ export const DashboardHome: React.FC = () => {
               bg="bg-slate-50"
             />
           </div>
+
 
 
           {/* Gráfico */}
