@@ -2695,7 +2695,7 @@ const App: React.FC = () => {
       // O interestAmount deve sempre representar o valor ORIGINAL dos juros (não o pendente)
       // Isso garante que o contrato permaneça o mesmo do início ao fim
       // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100 de juros sempre
-      const originalInterestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+      // Reutilizar originalInterestAmount já calculado acima (linha 2630)
       
       // Se o interestAmount atual for 0 ou diferente do original, restaurar o valor original
       // O updatedInterest representa o valor pendente após o pagamento atual
