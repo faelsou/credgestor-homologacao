@@ -233,6 +233,14 @@ export const InstallmentsView: React.FC = () => {
   };
 
   const getPrincipalAmount = (inst: Installment) => {
+    // IMPORTANTE: Para empréstimos "somente juros", sempre usar o capital original do empréstimo
+    // O capital nunca muda, mesmo com amortização
+    const loan = loans.find(l => l.id === inst.loanId);
+    if (loan && loan.model === LoanModel.INTEREST_ONLY) {
+      return loan.amount; // SEMPRE usar o capital original do empréstimo
+    }
+    
+    // Para outros modelos, usar o principalAmount da parcela ou calcular
     const interest = inst.interestAmount ?? 0;
     return inst.principalAmount ?? Math.max(0, inst.amount - interest);
   };
@@ -266,17 +274,14 @@ export const InstallmentsView: React.FC = () => {
         let capitalAmount = 0;
         let totalInterest = 0;
         
-        // IMPORTANTE: No modelo "somente juros", o capital é compartilhado entre todas as parcelas
-        // Não devemos somar o capital de todas as parcelas, mas sim pegar o capital de UMA parcela pendente
-        // (todas as parcelas têm o mesmo capital)
+        // IMPORTANTE: No modelo "somente juros", o capital SEMPRE é o valor original do empréstimo
+        // Não devemos usar o principalAmount das parcelas, pois pode estar incorreto
+        // O capital do empréstimo nunca muda, mesmo com amortização
+        capitalAmount = loan.amount; // SEMPRE usar o capital original do empréstimo
+        
+        // Soma todos os juros pendentes
         for (const inst of allLoanInstallments) {
           if (inst.status !== InstallmentStatus.PAID) {
-            const principal = inst.principalAmount ?? 0;
-            if (principal > 0 && capitalAmount === 0) {
-              capitalAmount = principal; // Capital é o mesmo para todas as parcelas
-            }
-            
-            // Soma todos os juros pendentes
             const interest = inst.interestAmount ?? 0;
             if (interest > 0) {
               totalInterest += interest;
@@ -915,11 +920,18 @@ export const InstallmentsView: React.FC = () => {
                     displayInterest = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
                   }
                   
-                  if (selectedInstallment.principalAmount !== undefined) {
+                  // IMPORTANTE: Para empréstimos "somente juros", sempre mostrar o capital original do empréstimo
+                  // O capital nunca muda, mesmo com amortização
+                  let displayCapital = selectedInstallment.principalAmount ?? 0;
+                  if (loan && loan.model === LoanModel.INTEREST_ONLY) {
+                    displayCapital = loan.amount; // SEMPRE usar o capital original do empréstimo
+                  }
+                  
+                  if (displayCapital > 0) {
                     return (
                       <div className="mt-2 text-xs text-slate-500">
                         Juros: {formatCurrency(displayInterest)} • 
-                        Capital: {formatCurrency(selectedInstallment.principalAmount)}
+                        Capital: {formatCurrency(displayCapital)}
                       </div>
                     );
                   }
