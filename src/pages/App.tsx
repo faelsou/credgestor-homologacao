@@ -2410,6 +2410,44 @@ const App: React.FC = () => {
     alert('Empréstimo reaberto com sucesso!');
   }, [loans, user?.role, isBackendConfiguredValue, session]);
 
+  // Função auxiliar para obter o UUID correto da parcela no backend
+  const getInstallmentBackendId = useCallback(async (
+    installment: Installment,
+    backendInstallments?: any[]
+  ): Promise<string | null> => {
+    if (!isBackendConfiguredValue || !session?.accessToken) {
+      return installment.id;
+    }
+
+    // Verificar se o ID é um UUID válido
+    const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(installment.id);
+    
+    if (isValidUUID) {
+      return installment.id;
+    }
+
+    // Se não for UUID válido, buscar no backend
+    try {
+      let installments = backendInstallments;
+      if (!installments) {
+        const { fetchBackendInstallments } = await import('@/services/backendApi');
+        installments = await fetchBackendInstallments(
+          session.accessToken,
+          requireTenantId(session.tenantId, 'buscar parcelas')
+        );
+      }
+      
+      const backendInst = installments.find(
+        (bi: any) => bi.loanId === installment.loanId && bi.number === installment.number
+      );
+      
+      return backendInst?.id || null;
+    } catch (error) {
+      console.error('Erro ao buscar parcela no backend', error);
+      return null;
+    }
+  }, [isBackendConfiguredValue, session]);
+
   const payInstallment = useCallback(async (id: string, amount?: number, paymentDate?: string) => {
     if (user?.role === UserRole.COLLECTION) {
       alert("Acesso restrito: Cobradores não podem baixar pagamentos, apenas visualizar.");
@@ -2725,14 +2763,43 @@ const App: React.FC = () => {
       // Atualizar parcelas no backend se configurado
       if (isBackendConfiguredValue && session?.accessToken) {
         try {
-          const { updateBackendInstallment } = await import('@/services/backendApi');
+          const { updateBackendInstallment, fetchBackendInstallments } = await import('@/services/backendApi');
+          // Buscar parcelas do backend para obter os UUIDs corretos
+          const backendInstallments = await fetchBackendInstallments(
+            session.accessToken,
+            requireTenantId(session.tenantId, 'operar com parcelas')
+          );
+          
           for (const inst of updatedInstallments) {
-            await updateBackendInstallment(
-              session.accessToken,
-              requireTenantId(session.tenantId, 'operar com parcelas'),
-              inst.id,
-              inst
-            );
+            // Verificar se o ID é um UUID válido (formato: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+            const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(inst.id);
+            
+            if (!isValidUUID) {
+              // Se não for UUID válido, buscar a parcela no backend pelo loanId e number
+              const backendInst = backendInstallments.find(
+                (bi: any) => bi.loanId === inst.loanId && bi.number === inst.number
+              );
+              
+              if (backendInst) {
+                // Usar o UUID do backend
+                await updateBackendInstallment(
+                  session.accessToken,
+                  requireTenantId(session.tenantId, 'operar com parcelas'),
+                  backendInst.id,
+                  inst
+                );
+              } else {
+                console.warn(`Parcela não encontrada no backend para atualização: loanId=${inst.loanId}, number=${inst.number}`);
+              }
+            } else {
+              // ID é UUID válido, atualizar diretamente
+              await updateBackendInstallment(
+                session.accessToken,
+                requireTenantId(session.tenantId, 'operar com parcelas'),
+                inst.id,
+                inst
+              );
+            }
           }
         } catch (error) {
           console.error('Erro ao atualizar parcelas no backend', error);
@@ -2783,15 +2850,11 @@ const App: React.FC = () => {
         // sobre o valor ORIGINAL do empréstimo (loan.totalAmount), não sobre o capital restante.
         // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
         // O capital restante pode mudar, mas os juros devem sempre ser os mesmos.
-        // Tentar obter o valor original de juros da primeira parcela para garantir consistência
-        const firstInstallment = allLoanInstallments.find(inst => inst.number === 1);
-        const originalInterestAmount = firstInstallment 
-          ? (firstInstallment.interestAmount ?? firstInstallment.amount)
-          : Number((loan.totalAmount * rateDecimal).toFixed(2));
-        
-        // Usar o valor original de juros da primeira parcela, ou calcular se não existir
+        // IMPORTANTE: Sempre calcular os juros baseado no valor ORIGINAL do empréstimo
+        // Não usar o valor da primeira parcela, pois ela pode ter sido criada incorretamente
         // Isso garante que todas as parcelas tenham exatamente o mesmo valor de juros
-        const nextInterestAmount = originalInterestAmount;
+        // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 sempre
+        const nextInterestAmount = Number((loan.totalAmount * rateDecimal).toFixed(2));
         const nextAmount = nextInterestAmount; // O valor da parcela é sempre igual aos juros para "somente juros"
         
         // Encontrar a data de vencimento mais recente entre todas as parcelas do empréstimo
