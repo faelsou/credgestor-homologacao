@@ -382,6 +382,31 @@ export const DashboardHome: React.FC = () => {
             />
           </div>
 
+          {/* Informações do Empréstimo Price */}
+          <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-3">
+            <p className="text-xs uppercase font-semibold text-slate-600 mb-3">Informações do Empréstimo Price</p>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-slate-600">Valor dinheiro emprestado:</span>
+                <span className="text-sm font-bold text-slate-800">{formatCurrency(parceladosStats.capitalEmprestado)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-slate-600">Valor das parcelas:</span>
+                <span className="text-sm font-bold text-slate-800">{formatCurrency(parceladosStats.total)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-slate-600">Valor de lucro referente as parcelas:</span>
+                <span className="text-sm font-bold text-emerald-600">{formatCurrency(parceladosStats.interest)}</span>
+              </div>
+              <div className="pt-2 border-t border-slate-300">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-semibold text-slate-700">Valor lucro + Parcelas + Capital:</span>
+                  <span className="text-lg font-bold text-emerald-700">{formatCurrency(parceladosStats.valorTotal)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Estatísticas */}
           <div className="grid grid-cols-2 gap-3">
             <StatCard
@@ -510,6 +535,27 @@ export const DashboardHome: React.FC = () => {
               endDate={jurosEndDate}
               setEndDate={setJurosEndDate}
             />
+          </div>
+
+          {/* Informações do Empréstimo Somente Juros */}
+          <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-3">
+            <p className="text-xs uppercase font-semibold text-slate-600 mb-3">Informações do Empréstimo Somente Juros</p>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-slate-600">Capital (dinheiro emprestado):</span>
+                <span className="text-sm font-bold text-slate-800">{formatCurrency(jurosStats.capital)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-slate-600">Valor do Juros:</span>
+                <span className="text-sm font-bold text-emerald-600">{formatCurrency(jurosStats.interest)}</span>
+              </div>
+              <div className="pt-2 border-t border-slate-300">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-semibold text-slate-700">Valor do Juros + Capital:</span>
+                  <span className="text-lg font-bold text-emerald-700">{formatCurrency(jurosStats.jurosMaisCapital)}</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Estatísticas */}
