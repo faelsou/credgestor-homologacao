@@ -2624,10 +2624,13 @@ const App: React.FC = () => {
 
     if (loan.model === LoanModel.INTEREST_ONLY) {
       // Calcular juros baseado na taxa do empréstimo se não estiver definido
+      // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser sempre calculados
+      // sobre o valor ORIGINAL do empréstimo (loan.totalAmount), não sobre o principal da parcela.
+      // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
       let interestDue = installment.interestAmount ?? 0;
       if (interestDue === 0) {
-        const principal = installment.principalAmount ?? installment.amount;
-        interestDue = Number((principal * (loan.interestRate / 100)).toFixed(2));
+        // Usar sempre o valor original do empréstimo para calcular os juros
+        interestDue = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
       }
       
       const principalDue = Math.max(0, installment.principalAmount ?? Math.max(0, installment.amount - interestDue));
@@ -2648,6 +2651,9 @@ const App: React.FC = () => {
       const principalPayment = 0; // Não abater capital da parcela atual
       const updatedPrincipal = principalDue; // Manter o capital original intacto
 
+      // Valor total aplicado nesta parcela (juros + principal)
+      const appliedToThisInstallment = interestPayment + principalPayment;
+
       // Para empréstimos "somente juros", o amount é apenas os juros, não juros + principal
       // O status é PAID quando não há mais juros nem principal pendentes
       // IMPORTANTE: Para pagamentos retroativos, o amount original deve ser preservado
@@ -2657,9 +2663,6 @@ const App: React.FC = () => {
         : (appliedToThisInstallment > 0) 
           ? InstallmentStatus.PARTIAL 
           : installment.status;
-      
-      // Valor total aplicado nesta parcela (juros + principal)
-      const appliedToThisInstallment = interestPayment + principalPayment;
 
       // Registrar pagamento no histórico
       const paymentHistoryEntry = {
