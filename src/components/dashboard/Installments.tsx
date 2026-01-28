@@ -152,9 +152,10 @@ export const InstallmentsView: React.FC = () => {
     let interestAmount = 0;
     
     if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-      // SEMPRE usar o valor original do empréstimo para calcular os juros
+      // SEMPRE usar o valor ORIGINAL do capital (loan.amount), não o totalAmount
+      // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
       // Não usar o interestAmount da parcela, pois pode estar incorreto
-      interestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+      interestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
     } else if (loan) {
       // Para outros modelos, usar o interestAmount da parcela ou calcular
       interestAmount = installment.interestAmount ?? 0;
@@ -175,8 +176,9 @@ export const InstallmentsView: React.FC = () => {
     // baseado no valor original do empréstimo, não no valor salvo na parcela (que pode estar incorreto)
     const loan = loans.find(l => l.id === inst.loanId);
     if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-      // SEMPRE calcular baseado no valor original do empréstimo
-      return Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+      // SEMPRE calcular baseado no valor ORIGINAL do capital (loan.amount), não o totalAmount
+      // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
+      return Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
     }
     
     // Para outros modelos, usar o valor salvo na parcela
@@ -314,9 +316,10 @@ export const InstallmentsView: React.FC = () => {
     let interestAmount = 0;
     
     if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-      // SEMPRE usar o valor original do empréstimo para calcular os juros
+      // SEMPRE usar o valor ORIGINAL do capital (loan.amount), não o totalAmount
+      // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
       // Não usar o interestAmount da parcela, pois pode estar incorreto
-      interestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+      interestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
     } else if (loan) {
       // Para outros modelos, usar o interestAmount da parcela ou calcular
       interestAmount = selectedInstallment.interestAmount ?? 0;
@@ -392,8 +395,9 @@ export const InstallmentsView: React.FC = () => {
     // IMPORTANTE: Para empréstimos "somente juros", sempre usar os valores corretos
     // baseados no valor original do empréstimo, não nos valores salvos na parcela (que podem estar incorretos)
     if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-      // SEMPRE calcular baseado no valor original do empréstimo
-      const correctInterestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+      // SEMPRE calcular baseado no valor ORIGINAL do capital (loan.amount), não o totalAmount
+      // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
+      const correctInterestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
       setEditAmount(correctInterestAmount);
       setEditInterestAmount(correctInterestAmount);
       setEditPrincipalAmount(inst.principalAmount ?? loan.totalAmount);
@@ -872,9 +876,10 @@ export const InstallmentsView: React.FC = () => {
                   let displayAmount = selectedInstallment.amount;
                   
                   if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-                    // SEMPRE usar o valor original do empréstimo para calcular os juros
+                    // SEMPRE usar o valor ORIGINAL do capital (loan.amount), não o totalAmount
+                    // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
                     // Isso corrige automaticamente valores incorretos nas parcelas
-                    minInterestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+                    minInterestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
                     // Para INTEREST_ONLY, o valor da parcela deve ser sempre igual aos juros originais
                     displayAmount = minInterestAmount;
                   }
@@ -905,9 +910,9 @@ export const InstallmentsView: React.FC = () => {
                   let displayInterest = selectedInstallment.interestAmount ?? 0;
                   
                   // IMPORTANTE: Para empréstimos "somente juros", sempre mostrar o valor correto dos juros
-                  // baseado no valor original do empréstimo, não no valor salvo na parcela (que pode estar incorreto)
+                  // baseado no valor ORIGINAL do capital (loan.amount), não no totalAmount ou no valor salvo na parcela
                   if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-                    displayInterest = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+                    displayInterest = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
                   }
                   
                   if (selectedInstallment.principalAmount !== undefined) {
@@ -947,8 +952,9 @@ export const InstallmentsView: React.FC = () => {
                   let interestAmount = 0;
                   
                   if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-                    // Sempre usar o valor original do empréstimo
-                    interestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+                    // Sempre usar o valor ORIGINAL do capital (loan.amount), não o totalAmount
+                    // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
+                    interestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
                   } else if (loan) {
                     // Para outros modelos, usar o interestAmount da parcela ou calcular
                     interestAmount = selectedInstallment.interestAmount ?? 0;
