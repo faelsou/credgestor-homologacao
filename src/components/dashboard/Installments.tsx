@@ -144,14 +144,26 @@ export const InstallmentsView: React.FC = () => {
     const loan = loans.find(l => l.id === installment.loanId);
     
     setSelectedInstallment(installment);
-    // Inicializar com o valor mínimo (juros) baseado na taxa do empréstimo
-    // Se não houver interestAmount, calcular baseado na taxa do empréstimo
-    let interestAmount = installment.interestAmount ?? 0;
-    if (interestAmount === 0 && loan) {
-      // Calcular juros mínimo baseado na taxa do empréstimo e no principal
-      const principal = installment.principalAmount ?? installment.amount;
-      interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
+    // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser SEMPRE calculados
+    // sobre o valor ORIGINAL do empréstimo (loan.totalAmount), não sobre o capital restante
+    // ou o interestAmount da parcela (que pode estar incorreto).
+    // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
+    // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 sempre
+    let interestAmount = 0;
+    
+    if (loan && loan.model === LoanModel.INTEREST_ONLY) {
+      // SEMPRE usar o valor original do empréstimo para calcular os juros
+      // Não usar o interestAmount da parcela, pois pode estar incorreto
+      interestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+    } else if (loan) {
+      // Para outros modelos, usar o interestAmount da parcela ou calcular
+      interestAmount = installment.interestAmount ?? 0;
+      if (interestAmount === 0) {
+        const principal = installment.principalAmount ?? installment.amount;
+        interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
+      }
     }
+    
     const pendingAmount = installment.amount - (installment.amountPaid || 0);
     const minAmount = interestAmount > 0 ? interestAmount : pendingAmount;
     setPaymentAmount(minAmount > 0 ? minAmount : installment.amount);
@@ -372,11 +384,24 @@ export const InstallmentsView: React.FC = () => {
   };
 
   const handleEditInstallment = (inst: Installment) => {
+    const loan = loans.find(l => l.id === inst.loanId);
+    
     setEditingInstallment(inst);
     setEditDueDate(inst.dueDate);
-    setEditAmount(inst.amount);
-    setEditInterestAmount(inst.interestAmount ?? 0);
-    setEditPrincipalAmount(inst.principalAmount ?? 0);
+    
+    // IMPORTANTE: Para empréstimos "somente juros", sempre usar os valores corretos
+    // baseados no valor original do empréstimo, não nos valores salvos na parcela (que podem estar incorretos)
+    if (loan && loan.model === LoanModel.INTEREST_ONLY) {
+      // SEMPRE calcular baseado no valor original do empréstimo
+      const correctInterestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+      setEditAmount(correctInterestAmount);
+      setEditInterestAmount(correctInterestAmount);
+      setEditPrincipalAmount(inst.principalAmount ?? loan.totalAmount);
+    } else {
+      setEditAmount(inst.amount);
+      setEditInterestAmount(inst.interestAmount ?? 0);
+      setEditPrincipalAmount(inst.principalAmount ?? 0);
+    }
   };
 
   const handleSaveEdit = async () => {

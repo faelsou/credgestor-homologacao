@@ -2539,12 +2539,13 @@ const App: React.FC = () => {
         
         // Se não houver valores definidos, calcular baseado no modelo
         if (loan.model === LoanModel.INTEREST_ONLY) {
-          // Para somente juros, o amount geralmente já representa os juros
-          // Se não houver interestAmount definido, usar o amount como juros
-          if (pendingInterest === 0) {
-            // Tentar usar o interestAmount da parcela, se não tiver, usar o amount
-            pendingInterest = inst.interestAmount ?? inst.amount;
-          }
+          // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser SEMPRE calculados
+          // sobre o valor ORIGINAL do empréstimo (loan.totalAmount), não sobre o capital restante
+          // ou o interestAmount da parcela (que pode estar incorreto).
+          // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
+          // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 sempre
+          // SEMPRE usar o valor original do empréstimo para calcular os juros
+          pendingInterest = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
           
           // Para o capital, usar o principalAmount se existir
           // No modelo "somente juros", o capital é compartilhado entre parcelas
