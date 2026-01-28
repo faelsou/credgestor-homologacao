@@ -2547,11 +2547,17 @@ const App: React.FC = () => {
           // SEMPRE usar o valor original do capital para calcular os juros
           pendingInterest = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
           
-          // Para o capital, usar o principalAmount se existir
-          // No modelo "somente juros", o capital é compartilhado entre parcelas
-          if (pendingPrincipal === 0) {
-            pendingPrincipal = inst.principalAmount ?? 0;
-          }
+          // IMPORTANTE: Para o capital, SEMPRE usar o valor original do empréstimo
+          // O capital nunca muda, mesmo com amortização, então sempre usar loan.amount
+          // Verificar se o capital já foi pago através do histórico de pagamentos de TODAS as parcelas
+          // O capital é compartilhado entre todas as parcelas no modelo INTEREST_ONLY
+          const totalCapitalPaid = allLoanInstallments.reduce((sum, allInst) => {
+            if (allInst.paymentHistory && allInst.paymentHistory.length > 0) {
+              return sum + allInst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+            }
+            return sum;
+          }, 0);
+          pendingPrincipal = Math.max(0, loan.amount - totalCapitalPaid);
         } else {
           // Para outros modelos, se não tiver valores separados, usar o amount pendente
           if (pendingInterest === 0 && pendingPrincipal === 0) {
@@ -2623,10 +2629,54 @@ const App: React.FC = () => {
         return prev.map(inst => updatedMap.get(inst.id) || inst);
       });
 
-      // Atualizar status do empréstimo
+      // IMPORTANTE: Atualizar status do empréstimo após pagamento total
+      // Para empréstimos INTEREST_ONLY, verificar se capital + todos os juros foram pagos
       setLoans(prevLoans => prevLoans.map(l => {
         if (l.id === loan.id) {
-          const updatedLoan = { ...l, status: LoanStatus.PAID, outstandingAmount: 0 };
+          // Verificar se todas as parcelas estão pagas
+          const allPaid = updatedInstallments.every(inst => inst.status === InstallmentStatus.PAID);
+          
+          // Para empréstimos INTEREST_ONLY, verificar se capital foi totalmente pago
+          if (loan.model === LoanModel.INTEREST_ONLY) {
+            // Calcular capital total pago através do histórico de pagamentos de todas as parcelas
+            const totalCapitalPaid = updatedInstallments.reduce((sum, inst) => {
+              if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+                return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+              }
+              return sum;
+            }, 0);
+            
+            // Empréstimo está pago se: todas as parcelas estão PAID E capital foi totalmente pago
+            const isCapitalPaid = totalCapitalPaid >= loan.amount;
+            const isLoanPaid = allPaid && isCapitalPaid;
+            
+            const updatedLoan = { 
+              ...l, 
+              status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE, 
+              outstandingAmount: isLoanPaid ? 0 : l.totalAmount 
+            };
+            
+            // Atualizar no backend se configurado
+            if (isBackendConfiguredValue && session?.accessToken) {
+              (async () => {
+                try {
+                  const { updateBackendLoan } = await import('@/services/backendApi');
+                  await updateBackendLoan(session.accessToken, session.tenantId || '', l.id, updatedLoan);
+                } catch (error) {
+                  console.error('Erro ao atualizar empréstimo no backend', error);
+                }
+              })();
+            }
+            
+            return updatedLoan;
+          }
+          
+          // Para outros modelos, se todas as parcelas estão pagas, empréstimo está pago
+          const updatedLoan = { 
+            ...l, 
+            status: allPaid ? LoanStatus.PAID : LoanStatus.ACTIVE, 
+            outstandingAmount: allPaid ? 0 : l.totalAmount 
+          };
           
           // Atualizar no backend se configurado
           if (isBackendConfiguredValue && session?.accessToken) {
