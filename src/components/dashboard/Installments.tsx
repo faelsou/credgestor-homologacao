@@ -1,7 +1,7 @@
 import React, { useContext, useState, useMemo, useCallback } from 'react';
 import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Pencil, FileSpreadsheet } from 'lucide-react';
 import { AppContext } from '@/pages/App';
-import { formatCurrency, formatDate, getTodayDateString, isLate } from '@/utils';
+import { formatCurrency, formatDate, getTodayDateString, isLate, formatInterestRate } from '@/utils';
 import { InstallmentStatus, Installment, UserRole, LoanModel } from '@/types';
 
 export const InstallmentsView: React.FC = () => {
@@ -379,8 +379,8 @@ export const InstallmentsView: React.FC = () => {
     // Validar que o pagamento seja pelo menos o valor dos juros (apenas para pagamentos parciais)
     if (interestAmount > 0 && paymentAmount < interestAmount) {
       const message = loan?.model === LoanModel.INTEREST_ONLY
-        ? `O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${loan?.interestRate ?? 0}% do empréstimo original).`
-        : `O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${loan?.interestRate ?? 0}% do empréstimo).`;
+        ? `O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${formatInterestRate(loan?.interestRate ?? 0)} do empréstimo original).`
+        : `O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${formatInterestRate(loan?.interestRate ?? 0)} do empréstimo).`;
       alert(message);
       return;
     }
@@ -588,7 +588,7 @@ export const InstallmentsView: React.FC = () => {
         'Data Prometida': inst.promisedPaymentDate ? formatDate(inst.promisedPaymentDate) : '',
         'Histórico Promessas': promiseHistory,
         'ID Empréstimo': inst.loanId,
-        'Taxa Juros Empréstimo': loan ? `${loan.interestRate}%` : '',
+        'Taxa Juros Empréstimo': loan ? formatInterestRate(loan.interestRate) : '',
         'Modelo Empréstimo': loan?.model === LoanModel.PRICE ? 'Tabela Price' : loan?.model === LoanModel.INTEREST_ONLY ? 'Somente Juros' : ''
       };
     });
@@ -1050,10 +1050,10 @@ export const InstallmentsView: React.FC = () => {
                             <p className="mt-1 text-xs text-slate-600">
                               <span className="font-semibold">Mínimo (juros):</span> {formatCurrency(interestAmount)}
                               {loan && loan.model === LoanModel.INTEREST_ONLY && (
-                                <span className="text-slate-500"> ({loan.interestRate}% do empréstimo original)</span>
+                                <span className="text-slate-500"> ({formatInterestRate(loan.interestRate)} do empréstimo original)</span>
                               )}
                               {loan && loan.model !== LoanModel.INTEREST_ONLY && (
-                                <span className="text-slate-500"> ({loan.interestRate}% do capital)</span>
+                                <span className="text-slate-500"> ({formatInterestRate(loan.interestRate)} do capital)</span>
                               )}
                             </p>
                           );

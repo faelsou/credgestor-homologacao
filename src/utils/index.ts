@@ -194,6 +194,10 @@ export const formatCep = (value: string) => {
   return digits.replace(/(\d{5})(\d)/, '$1-$2');
 };
 
+export const formatInterestRate = (value: number): string => {
+  return `${Number(value.toFixed(1))}%`;
+};
+
 export const generateNoteHash = () => {
   if (typeof crypto !== 'undefined' && 'getRandomValues' in crypto) {
     const randomBytes = crypto.getRandomValues(new Uint8Array(8));
