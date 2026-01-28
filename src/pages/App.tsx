@@ -2680,13 +2680,19 @@ const App: React.FC = () => {
         interestDue = originalInterestAmount;
       }
       
-      const principalDue = Math.max(0, installment.principalAmount ?? Math.max(0, installment.amount - interestDue));
+      // IMPORTANTE: Para empréstimos INTEREST_ONLY, o capital SEMPRE deve ser o valor original do empréstimo
+      // O capital do empréstimo (loan.amount) NUNCA deve ser alterado, mesmo com amortização
+      // Exemplo: Empréstimo de R$ 1.000 com 10% = Capital sempre R$ 1.000, Juros sempre R$ 100
+      // A amortização é registrada no histórico, mas o capital da parcela permanece como o original
+      const originalPrincipal = loan.amount; // SEMPRE usar o capital original do empréstimo
+      const principalDue = originalPrincipal; // Capital disponível para amortização
       const totalDue = Math.max(0, interestDue + principalDue);
 
       // IMPORTANTE: Para empréstimos INTEREST_ONLY:
       // 1. O mínimo a receber é sempre o valor dos juros (baseado no valor original do empréstimo)
-      // 2. Se o pagamento for maior que o mínimo, o excedente deve amortizar o capital
+      // 2. Se o pagamento for maior que o mínimo, o excedente pode amortizar o capital
       // 3. A taxa de juros permanece constante (sempre baseada no valor original)
+      // 4. O capital do empréstimo SEMPRE permanece como o valor original (não é alterado)
       let remainingPayment = paymentValue;
 
       // 1. Abater PRIMEIRO os juros da parcela atual (valor mínimo)
@@ -2695,10 +2701,14 @@ const App: React.FC = () => {
       const updatedInterest = Number((interestDue - interestPayment).toFixed(2));
 
       // 2. Se sobrar pagamento após abater os juros, aplicar ao capital (amortização)
-      // Isso permite que pagamentos maiores que o mínimo amortizem o capital
+      // IMPORTANTE: A amortização é registrada no histórico, mas o capital da parcela permanece como o original
       const principalPayment = Math.min(remainingPayment, principalDue);
       remainingPayment -= principalPayment;
-      const updatedPrincipal = Number((principalDue - principalPayment).toFixed(2));
+      
+      // IMPORTANTE: O capital do empréstimo SEMPRE permanece como o valor original
+      // Não alterar o principalAmount da parcela, ele sempre deve ser o capital original do empréstimo
+      // A amortização é registrada apenas no histórico de pagamentos
+      const updatedPrincipal = originalPrincipal; // SEMPRE manter o capital original do empréstimo
 
       // Valor total aplicado nesta parcela (juros + principal)
       const appliedToThisInstallment = interestPayment + principalPayment;
@@ -2814,57 +2824,35 @@ const App: React.FC = () => {
         }
       }
 
-      // Calcular capital total restante do empréstimo após o pagamento
+      // IMPORTANTE: Para empréstimos INTEREST_ONLY, o capital sempre permanece como o valor original
+      // Não precisamos calcular "capital restante" porque o capital nunca muda
+      // As novas parcelas são criadas apenas quando necessário para cobrar os juros mensais
       // Primeiro, atualizar a lista de parcelas com as modificadas
       const allUpdatedInstallments = [...updatedInstallments];
-      
-      // Calcular capital total restante: soma de todos os principalAmount das parcelas pendentes
-      let totalRemainingCapital = 0;
-      
-      // Capital da parcela atual atualizada
-      totalRemainingCapital += updatedPrincipal;
-      
-      // Capital das outras parcelas atualizadas
-      for (const inst of updatedInstallments) {
-        if (inst.id !== id && inst.principalAmount && inst.status !== InstallmentStatus.PAID) {
-          totalRemainingCapital += inst.principalAmount;
-        }
-      }
-      
-      // Capital das parcelas que não foram atualizadas (ainda pendentes)
-      const loanInstallments = installments.filter(inst => inst.loanId === loan.id && inst.id !== id);
-      const otherPendingInstallments = loanInstallments.filter(
-        inst => inst.status !== InstallmentStatus.PAID && 
-                !updatedInstallments.some(updated => updated.id === inst.id)
-      );
-      for (const inst of otherPendingInstallments) {
-        if (inst.principalAmount) {
-          totalRemainingCapital += inst.principalAmount;
-        }
-      }
-      
-      totalRemainingCapital = Number(totalRemainingCapital.toFixed(2));
       
       // Encontrar o próximo número de parcela
       const allLoanInstallments = installments.filter(inst => inst.loanId === loan.id);
       const maxNumber = Math.max(...allLoanInstallments.map(inst => inst.number), 0);
       const nextNumber = maxNumber + 1;
 
-      // Se ainda há capital total em aberto, criar nova parcela com juros recalculados
-      // A nova parcela representa o capital restante total do empréstimo
-      if (totalRemainingCapital > 0) {
+      // IMPORTANTE: Para empréstimos INTEREST_ONLY, criar nova parcela apenas se ainda há juros pendentes
+      // O capital sempre permanece como o valor original do empréstimo
+      // Verificar se ainda há parcelas pendentes (não pagas) para determinar se precisa criar nova parcela
+      const hasPendingInstallments = allLoanInstallments.some(
+        inst => inst.status !== InstallmentStatus.PAID && inst.id !== id
+      ) || updatedInstallment.status !== InstallmentStatus.PAID;
+      
+      if (hasPendingInstallments) {
         const rateDecimal = loan.interestRate / 100;
         // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser sempre calculados
         // sobre o valor ORIGINAL do capital (loan.amount), não sobre o totalAmount ou capital restante.
         // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
         // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
-        // O capital restante pode mudar, mas os juros devem sempre ser os mesmos.
         // IMPORTANTE: Sempre calcular os juros baseado no valor ORIGINAL do capital
         // Não usar o valor da primeira parcela, pois ela pode ter sido criada incorretamente
         // Isso garante que todas as parcelas tenham exatamente o mesmo valor de juros
         // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 sempre
         const nextInterestAmount = Number((loan.amount * rateDecimal).toFixed(2));
-        const nextAmount = nextInterestAmount; // O valor da parcela é sempre igual aos juros para "somente juros"
         
         // Encontrar a data de vencimento mais recente entre todas as parcelas do empréstimo
         // Isso garante que as parcelas seguem uma sequência lógica mesmo em cadastros retroativos
@@ -2886,9 +2874,9 @@ const App: React.FC = () => {
           clientId: installment.clientId,
           number: nextNumber,
           dueDate: nextDueDate,
-          amount: nextAmount, // Sempre pelo menos o valor mínimo dos juros baseado no capital restante
-          interestAmount: nextInterestAmount, // R$ 180
-          principalAmount: totalRemainingCapital, // Capital total em aberto (R$ 900)
+          amount: nextInterestAmount, // Valor da parcela = juros (sempre)
+          interestAmount: nextInterestAmount, // Juros sempre baseados no capital original
+          principalAmount: loan.amount, // SEMPRE usar o capital original do empréstimo
           amountPaid: 0,
           status: InstallmentStatus.PENDING
         };
