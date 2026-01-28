@@ -1144,8 +1144,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                     <label className="block text-sm font-medium text-slate-700 mb-1">Juros (%)</label>
                     <input
                       type="number"
+                      inputMode="decimal"
                       min="0"
                       step="0.1"
+                      pattern="[0-9]*\.?[0-9]*"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors"
                       value={interestRate === 0 ? '0' : (interestRate !== null && interestRate !== undefined ? interestRate.toString() : '')}
                       onChange={e => {
@@ -1157,7 +1159,9 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                           return;
                         }
                         // Aceitar valores decimais (ex: 0.0, 0.5, 1.0, 4.5, 10.0, 20.0)
-                        const numValue = parseFloat(inputValue);
+                        // Permitir ponto decimal e vírgula (compatibilidade mobile)
+                        const normalizedValue = inputValue.replace(',', '.');
+                        const numValue = parseFloat(normalizedValue);
                         if (!isNaN(numValue) && numValue >= 0 && isFinite(numValue)) {
                           // Limitar a 2 casas decimais
                           const roundedValue = Math.round(numValue * 100) / 100;
@@ -1171,6 +1175,15 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                         if (inputValue === '' || inputValue === '-') {
                           setInterestRate(0);
                           setPromissoryNote(prev => ({ ...prev, interestRate: 0 }));
+                        } else {
+                          // Normalizar vírgula para ponto
+                          const normalizedValue = inputValue.replace(',', '.');
+                          const numValue = parseFloat(normalizedValue);
+                          if (!isNaN(numValue) && numValue >= 0) {
+                            const roundedValue = Math.round(numValue * 100) / 100;
+                            setInterestRate(roundedValue);
+                            setPromissoryNote(prev => ({ ...prev, interestRate: roundedValue }));
+                          }
                         }
                       }}
                       placeholder="1.0"
@@ -1313,8 +1326,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                     <input
                       required
                       type="number"
+                      inputMode="decimal"
                       min="0"
                       step="0.1"
+                      pattern="[0-9]*\.?[0-9]*"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
                       placeholder="1.0"
                       value={promissoryNote.interestRate === 0 ? '0' : (promissoryNote.interestRate !== null && promissoryNote.interestRate !== undefined ? promissoryNote.interestRate.toString() : '')}
@@ -1327,7 +1342,9 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                           return;
                         }
                         // Aceitar valores decimais (ex: 0.0, 0.5, 1.0, 4.5, 10.0, 20.0)
-                        const numValue = parseFloat(inputValue);
+                        // Permitir ponto decimal e vírgula (compatibilidade mobile)
+                        const normalizedValue = inputValue.replace(',', '.');
+                        const numValue = parseFloat(normalizedValue);
                         if (!isNaN(numValue) && numValue >= 0 && isFinite(numValue)) {
                           // Limitar a 2 casas decimais
                           const roundedValue = Math.round(numValue * 100) / 100;
@@ -1341,6 +1358,15 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                         if (inputValue === '' || inputValue === '-') {
                           handlePromissoryChange('interestRate', 0);
                           setInterestRate(0);
+                        } else {
+                          // Normalizar vírgula para ponto
+                          const normalizedValue = inputValue.replace(',', '.');
+                          const numValue = parseFloat(normalizedValue);
+                          if (!isNaN(numValue) && numValue >= 0) {
+                            const roundedValue = Math.round(numValue * 100) / 100;
+                            handlePromissoryChange('interestRate', roundedValue);
+                            setInterestRate(roundedValue);
+                          }
                         }
                       }}
                     />
