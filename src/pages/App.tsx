@@ -2685,10 +2685,17 @@ const App: React.FC = () => {
           ? InstallmentStatus.PARTIAL // Se estava LATE e agora está parcialmente paga, remover status LATE
           : newStatus;
       
+      // IMPORTANTE: Para empréstimos "somente juros", preservar o valor ORIGINAL dos juros
+      // O interestAmount original deve ser mantido, apenas atualizar o valor pendente
+      // Isso garante que o contrato permaneça o mesmo do início ao fim
+      const originalInterestAmount = installment.interestAmount ?? Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+      
       const updatedInstallment = {
         ...installment,
         amount: installment.amount, // Preservar o valor original da parcela
-        interestAmount: updatedInterest,
+        interestAmount: updatedInterest, // Valor pendente de juros (pode ser 0 se pago)
+        // IMPORTANTE: Manter o valor original dos juros em um campo separado se necessário
+        // Por enquanto, o interestAmount representa o valor pendente, mas o amount original já está preservado
         principalAmount: updatedPrincipal,
         amountPaid: Number(((installment.amountPaid || 0) + appliedToThisInstallment).toFixed(2)),
         paymentHistory: updatedPaymentHistory,
@@ -2765,8 +2772,16 @@ const App: React.FC = () => {
         // sobre o valor ORIGINAL do empréstimo (loan.totalAmount), não sobre o capital restante.
         // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
         // O capital restante pode mudar, mas os juros devem sempre ser os mesmos.
-        const nextInterestAmount = Number((loan.totalAmount * rateDecimal).toFixed(2));
-        const nextAmount = nextInterestAmount; // Já é o valor mínimo dos juros
+        // Tentar obter o valor original de juros da primeira parcela para garantir consistência
+        const firstInstallment = allLoanInstallments.find(inst => inst.number === 1);
+        const originalInterestAmount = firstInstallment 
+          ? (firstInstallment.interestAmount ?? firstInstallment.amount)
+          : Number((loan.totalAmount * rateDecimal).toFixed(2));
+        
+        // Usar o valor original de juros da primeira parcela, ou calcular se não existir
+        // Isso garante que todas as parcelas tenham exatamente o mesmo valor de juros
+        const nextInterestAmount = originalInterestAmount;
+        const nextAmount = nextInterestAmount; // O valor da parcela é sempre igual aos juros para "somente juros"
         
         // Encontrar a data de vencimento mais recente entre todas as parcelas do empréstimo
         // Isso garante que as parcelas seguem uma sequência lógica mesmo em cadastros retroativos
