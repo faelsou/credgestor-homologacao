@@ -4,6 +4,7 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContai
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, isLate } from '@/utils';
 import { InstallmentStatus, LoanStatus, LoanModel } from '@/types';
+import { DateInput } from '@/components/DateInput';
 
 type DateRange = '1D' | '7D' | '1M' | '3M' | 'ALL';
 
@@ -367,27 +368,27 @@ export const DashboardHome: React.FC = () => {
         <div className="flex items-center gap-2 flex-1 min-w-[280px]">
           <Calendar size={18} className="text-slate-500 flex-shrink-0" />
           <label className="text-sm text-slate-600 font-medium whitespace-nowrap">Data Inicial:</label>
-          <input
-            type="date"
+          <DateInput
             value={startDate}
-            onChange={e => {
-              setStartDate(e.target.value);
+            onChange={(value) => {
+              setStartDate(value);
               setDateRange('ALL'); // Muda para 'ALL' quando editar manualmente
             }}
             className="flex-1 border-2 border-slate-300 rounded-lg px-4 py-3 text-base bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all min-w-[160px] cursor-text"
+            placeholder="DD/MM/AAAA"
           />
         </div>
         <div className="flex items-center gap-2 flex-1 min-w-[280px]">
           <span className="text-slate-500 text-sm font-medium">até</span>
           <label className="text-sm text-slate-600 font-medium whitespace-nowrap">Data Final:</label>
-          <input
-            type="date"
+          <DateInput
             value={endDate}
-            onChange={e => {
-              setEndDate(e.target.value);
+            onChange={(value) => {
+              setEndDate(value);
               setDateRange('ALL'); // Muda para 'ALL' quando editar manualmente
             }}
             className="flex-1 border-2 border-slate-300 rounded-lg px-4 py-3 text-base bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all min-w-[160px] cursor-text"
+            placeholder="DD/MM/AAAA"
           />
         </div>
       </div>
@@ -483,41 +484,6 @@ export const DashboardHome: React.FC = () => {
               icon={<Users className="text-slate-600" size={20} />}
               bg="bg-slate-50"
             />
-          </div>
-
-          {/* Informações do Empréstimo Price */}
-          <div className="space-y-3">
-            <p className="text-xs uppercase font-semibold text-slate-500">Informações do Empréstimo Price</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-                <div className="flex items-center gap-2 mb-2">
-                  <DollarSign className="text-slate-600" size={16} />
-                  <p className="text-xs uppercase font-semibold text-slate-500">Capital Emprestado</p>
-                </div>
-                <p className="text-xl font-bold text-slate-800">{formatCurrency(parceladosStats.capitalEmprestado)}</p>
-              </div>
-              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-                <div className="flex items-center gap-2 mb-2">
-                  <DollarSign className="text-slate-600" size={16} />
-                  <p className="text-xs uppercase font-semibold text-slate-500">Valor das Parcelas</p>
-                </div>
-                <p className="text-xl font-bold text-slate-800">{formatCurrency(parceladosStats.total)}</p>
-              </div>
-              <div className="p-4 rounded-xl border border-slate-200 bg-emerald-50">
-                <div className="flex items-center gap-2 mb-2">
-                  <TrendingUp className="text-emerald-600" size={16} />
-                  <p className="text-xs uppercase font-semibold text-emerald-700">Lucro (Juros)</p>
-                </div>
-                <p className="text-xl font-bold text-emerald-700">{formatCurrency(parceladosStats.interest)}</p>
-              </div>
-              <div className="p-4 rounded-xl border border-emerald-300 bg-emerald-50">
-                <div className="flex items-center gap-2 mb-2">
-                  <DollarSign className="text-emerald-600" size={16} />
-                  <p className="text-xs uppercase font-semibold text-emerald-700">Lucro + Parcelas + Capital</p>
-                </div>
-                <p className="text-xl font-bold text-emerald-700">{formatCurrency(parceladosStats.valorTotal)}</p>
-              </div>
-            </div>
           </div>
 
           {/* Gráfico */}
@@ -651,34 +617,6 @@ export const DashboardHome: React.FC = () => {
               icon={<Users className="text-slate-600" size={20} />}
               bg="bg-slate-50"
             />
-          </div>
-
-          {/* Informações do Empréstimo Somente Juros */}
-          <div className="space-y-3">
-            <p className="text-xs uppercase font-semibold text-slate-500">Informações do Empréstimo Somente Juros</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-                <div className="flex items-center gap-2 mb-2">
-                  <DollarSign className="text-slate-600" size={16} />
-                  <p className="text-xs uppercase font-semibold text-slate-500">Capital</p>
-                </div>
-                <p className="text-xl font-bold text-slate-800">{formatCurrency(jurosStats.capital)}</p>
-              </div>
-              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-                <div className="flex items-center gap-2 mb-2">
-                  <Percent className="text-slate-600" size={16} />
-                  <p className="text-xs uppercase font-semibold text-slate-500">Valor dos Juros</p>
-                </div>
-                <p className="text-xl font-bold text-slate-800">{formatCurrency(jurosStats.interest)}</p>
-              </div>
-              <div className="p-4 rounded-xl border border-blue-300 bg-blue-50 col-span-2">
-                <div className="flex items-center gap-2 mb-2">
-                  <DollarSign className="text-blue-600" size={16} />
-                  <p className="text-xs uppercase font-semibold text-blue-700">Valor dos Juros + Capital</p>
-                </div>
-                <p className="text-xl font-bold text-blue-700">{formatCurrency(jurosStats.jurosMaisCapital)}</p>
-              </div>
-            </div>
           </div>
 
           {/* Gráfico */}
