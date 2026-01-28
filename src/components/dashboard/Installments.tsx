@@ -24,6 +24,20 @@ export const InstallmentsView: React.FC = () => {
   }, [installmentsInitialFilter, setInstallmentsInitialFilter, installmentsDateRange, setInstallmentsDateRange]);
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
   const [paymentAmount, setPaymentAmount] = useState(0);
+  
+  // Para empréstimos PRICE, garantir que o valor a receber seja sempre igual ao valor da parcela
+  React.useEffect(() => {
+    if (selectedInstallment) {
+      const loan = loans.find(l => l.id === selectedInstallment.loanId);
+      if (loan && loan.model === LoanModel.PRICE) {
+        const pendingAmount = selectedInstallment.amount - (selectedInstallment.amountPaid || 0);
+        const finalAmount = pendingAmount > 0 ? pendingAmount : selectedInstallment.amount;
+        if (paymentAmount !== finalAmount) {
+          setPaymentAmount(finalAmount);
+        }
+      }
+    }
+  }, [selectedInstallment, loans, paymentAmount]);
   const [paymentDate, setPaymentDate] = useState(getTodayDateString());
   const [promiseModal, setPromiseModal] = useState<Installment | null>(null);
   const [promiseReason, setPromiseReason] = useState('');
@@ -144,30 +158,39 @@ export const InstallmentsView: React.FC = () => {
     const loan = loans.find(l => l.id === installment.loanId);
     
     setSelectedInstallment(installment);
-    // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser SEMPRE calculados
-    // sobre o valor ORIGINAL do empréstimo (loan.totalAmount), não sobre o capital restante
-    // ou o interestAmount da parcela (que pode estar incorreto).
-    // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
-    // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 sempre
-    let interestAmount = 0;
-    
-    if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-      // SEMPRE usar o valor ORIGINAL do capital (loan.amount), não o totalAmount
-      // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
-      // Não usar o interestAmount da parcela, pois pode estar incorreto
-      interestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
-    } else if (loan) {
-      // Para outros modelos, usar o interestAmount da parcela ou calcular
-      interestAmount = installment.interestAmount ?? 0;
-      if (interestAmount === 0) {
-        const principal = installment.principalAmount ?? installment.amount;
-        interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
-      }
-    }
     
     const pendingAmount = installment.amount - (installment.amountPaid || 0);
-    const minAmount = interestAmount > 0 ? interestAmount : pendingAmount;
-    setPaymentAmount(minAmount > 0 ? minAmount : installment.amount);
+    
+    // IMPORTANTE: Para empréstimos PRICE, o valor a receber deve SEMPRE ser igual ao valor da parcela
+    if (loan && loan.model === LoanModel.PRICE) {
+      // Para PRICE, sempre usar o valor pendente da parcela completa
+      setPaymentAmount(pendingAmount > 0 ? pendingAmount : installment.amount);
+    } else {
+      // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser SEMPRE calculados
+      // sobre o valor ORIGINAL do empréstimo (loan.totalAmount), não sobre o capital restante
+      // ou o interestAmount da parcela (que pode estar incorreto).
+      // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
+      // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 sempre
+      let interestAmount = 0;
+      
+      if (loan && loan.model === LoanModel.INTEREST_ONLY) {
+        // SEMPRE usar o valor ORIGINAL do capital (loan.amount), não o totalAmount
+        // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
+        // Não usar o interestAmount da parcela, pois pode estar incorreto
+        interestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
+      } else if (loan) {
+        // Para outros modelos, usar o interestAmount da parcela ou calcular
+        interestAmount = installment.interestAmount ?? 0;
+        if (interestAmount === 0) {
+          const principal = installment.principalAmount ?? installment.amount;
+          interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
+        }
+      }
+      
+      const minAmount = interestAmount > 0 ? interestAmount : pendingAmount;
+      setPaymentAmount(minAmount > 0 ? minAmount : installment.amount);
+    }
+    
     setPaymentDate(getTodayDateString());
   };
 
@@ -260,6 +283,25 @@ export const InstallmentsView: React.FC = () => {
 
     const loan = loans.find(l => l.id === selectedInstallment.loanId);
     if (!loan) return;
+
+    const pendingAmount = selectedInstallment.amount - (selectedInstallment.amountPaid || 0);
+
+    // IMPORTANTE: Para empréstimos PRICE, o valor a receber deve SEMPRE ser igual ao valor da parcela
+    if (loan.model === LoanModel.PRICE) {
+      // Validar que o valor seja exatamente o valor pendente da parcela
+      if (paymentAmount !== pendingAmount && paymentAmount !== selectedInstallment.amount) {
+        alert(`Para empréstimos PRICE, o valor a receber deve ser sempre igual ao valor da parcela (${formatCurrency(pendingAmount > 0 ? pendingAmount : selectedInstallment.amount)}).`);
+        return;
+      }
+      
+      // Garantir que o valor seja exatamente o valor pendente
+      const finalAmount = pendingAmount > 0 ? pendingAmount : selectedInstallment.amount;
+      payInstallment(selectedInstallment.id, finalAmount, paymentDate);
+      setSelectedInstallment(null);
+      setPaymentAmount(0);
+      setPaymentDate(getTodayDateString());
+      return;
+    }
 
     // Calcular valor total em aberto do empréstimo
     const allLoanInstallments = installments.filter(inst => inst.loanId === loan.id);
@@ -943,53 +985,83 @@ export const InstallmentsView: React.FC = () => {
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   Valor a receber <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={paymentAmount || ''}
-                  onChange={e => setPaymentAmount(parseFloat(e.target.value) || 0)}
-                  className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                  placeholder="0,00"
-                  autoFocus
-                />
                 {(() => {
                   const loan = loans.find(l => l.id === selectedInstallment.loanId);
+                  const pendingAmount = selectedInstallment.amount - (selectedInstallment.amountPaid || 0);
                   
-                  // IMPORTANTE: Para empréstimos "somente juros", o valor mínimo dos juros
-                  // deve ser SEMPRE calculado baseado no valor ORIGINAL do empréstimo (loan.totalAmount),
-                  // não no capital restante ou no interestAmount da parcela.
-                  // Isso garante que a taxa de juros permaneça constante do início ao fim.
-                  // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 sempre
-                  let interestAmount = 0;
-                  
-                  if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-                    // Sempre usar o valor ORIGINAL do capital (loan.amount), não o totalAmount
-                    // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
-                    interestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
-                  } else if (loan) {
-                    // Para outros modelos, usar o interestAmount da parcela ou calcular
-                    interestAmount = selectedInstallment.interestAmount ?? 0;
-                    if (interestAmount === 0) {
-                      const principal = selectedInstallment.principalAmount ?? selectedInstallment.amount;
-                      interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
-                    }
-                  }
-                  
-                  if (interestAmount > 0) {
+                  // Para empréstimos PRICE, o valor a receber deve sempre ser igual ao valor da parcela
+                  if (loan && loan.model === LoanModel.PRICE) {
+                    const finalPendingAmount = pendingAmount > 0 ? pendingAmount : selectedInstallment.amount;
+                    
                     return (
-                      <p className="mt-1 text-xs text-slate-600">
-                        <span className="font-semibold">Mínimo (juros):</span> {formatCurrency(interestAmount)}
-                        {loan && loan.model === LoanModel.INTEREST_ONLY && (
-                          <span className="text-slate-500"> ({loan.interestRate}% do empréstimo original)</span>
-                        )}
-                        {loan && loan.model !== LoanModel.INTEREST_ONLY && (
-                          <span className="text-slate-500"> ({loan.interestRate}% do capital)</span>
-                        )}
-                      </p>
+                      <>
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={finalPendingAmount}
+                          className="w-full border border-slate-300 rounded-lg p-3 bg-slate-100 cursor-not-allowed"
+                          placeholder="0,00"
+                          disabled
+                        />
+                        <p className="mt-1 text-xs text-slate-600">
+                          <span className="font-semibold">Para empréstimos PRICE, o valor a receber deve ser sempre igual ao valor da parcela.</span>
+                        </p>
+                      </>
                     );
                   }
-                  return null;
+                  
+                  // Para outros modelos, permitir edição
+                  return (
+                    <>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={paymentAmount || ''}
+                        onChange={e => setPaymentAmount(parseFloat(e.target.value) || 0)}
+                        className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        placeholder="0,00"
+                        autoFocus
+                      />
+                      {(() => {
+                        // IMPORTANTE: Para empréstimos "somente juros", o valor mínimo dos juros
+                        // deve ser SEMPRE calculado baseado no valor ORIGINAL do empréstimo (loan.totalAmount),
+                        // não no capital restante ou no interestAmount da parcela.
+                        // Isso garante que a taxa de juros permaneça constante do início ao fim.
+                        // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 sempre
+                        let interestAmount = 0;
+                        
+                        if (loan && loan.model === LoanModel.INTEREST_ONLY) {
+                          // Sempre usar o valor ORIGINAL do capital (loan.amount), não o totalAmount
+                          // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
+                          interestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
+                        } else if (loan) {
+                          // Para outros modelos, usar o interestAmount da parcela ou calcular
+                          interestAmount = selectedInstallment.interestAmount ?? 0;
+                          if (interestAmount === 0) {
+                            const principal = selectedInstallment.principalAmount ?? selectedInstallment.amount;
+                            interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
+                          }
+                        }
+                        
+                        if (interestAmount > 0) {
+                          return (
+                            <p className="mt-1 text-xs text-slate-600">
+                              <span className="font-semibold">Mínimo (juros):</span> {formatCurrency(interestAmount)}
+                              {loan && loan.model === LoanModel.INTEREST_ONLY && (
+                                <span className="text-slate-500"> ({loan.interestRate}% do empréstimo original)</span>
+                              )}
+                              {loan && loan.model !== LoanModel.INTEREST_ONLY && (
+                                <span className="text-slate-500"> ({loan.interestRate}% do capital)</span>
+                              )}
+                            </p>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </>
+                  );
                 })()}
               </div>
 
