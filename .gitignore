@@ -3,5 +3,3 @@
 # Versionamento (manter VERSION no git, mas não .version.local)
 .version.local
 
-# Arquivos grandes do Dynatrace
-Dynatrace-OneAgent-*.sh
