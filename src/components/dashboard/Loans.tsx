@@ -174,6 +174,14 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
         alert('Erro ao gerar parcela inicial.');
         return;
       }
+      
+      // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser SEMPRE calculados
+      // sobre o valor ORIGINAL do empréstimo (amount), não sobre valores calculados do schedulePreview.
+      // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
+      // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 de juros sempre
+      const rateDecimal = interestRate / 100;
+      const originalInterestAmount = Number((amount * rateDecimal).toFixed(2));
+      
       // Criar apenas a primeira parcela com somente juros
       // O principalAmount representa o capital total em aberto
       generatedInstallments = [{
@@ -182,8 +190,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
         clientId: selectedClientId,
         number: 1,
         dueDate: firstScheduleItem.dueDate,
-        amount: firstScheduleItem.interest, // Apenas juros para pagar agora
-        interestAmount: firstScheduleItem.interest,
+        amount: originalInterestAmount, // SEMPRE usar o valor original dos juros
+        interestAmount: originalInterestAmount, // SEMPRE usar o valor original dos juros
         principalAmount: amount, // Capital total em aberto (será reduzido conforme pagamentos)
         amountPaid: 0,
         status: InstallmentStatus.PENDING
