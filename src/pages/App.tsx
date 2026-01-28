@@ -2623,33 +2623,39 @@ const App: React.FC = () => {
     };
 
     if (loan.model === LoanModel.INTEREST_ONLY) {
-      // Calcular juros baseado na taxa do empréstimo se não estiver definido
       // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser sempre calculados
       // sobre o valor ORIGINAL do empréstimo (loan.totalAmount), não sobre o principal da parcela.
       // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
+      // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100 de juros sempre, independente do capital restante
+      const originalInterestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+      
+      // Se o interestAmount da parcela for 0 ou diferente do valor original, usar o valor original
+      // Isso garante que parcelas criadas incorretamente sejam corrigidas automaticamente
       let interestDue = installment.interestAmount ?? 0;
-      if (interestDue === 0) {
-        // Usar sempre o valor original do empréstimo para calcular os juros
-        interestDue = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+      if (interestDue === 0 || interestDue !== originalInterestAmount) {
+        // Restaurar o valor original dos juros
+        interestDue = originalInterestAmount;
       }
       
       const principalDue = Math.max(0, installment.principalAmount ?? Math.max(0, installment.amount - interestDue));
       const totalDue = Math.max(0, interestDue + principalDue);
 
-      // IMPORTANTE: Para empréstimos INTEREST_ONLY, o capital NÃO deve ser abatido da parcela atual
-      // O capital deve permanecer intacto até que seja totalmente pago em uma ação separada
-      // Apenas os juros são abatidos da parcela atual
+      // IMPORTANTE: Para empréstimos INTEREST_ONLY:
+      // 1. O mínimo a receber é sempre o valor dos juros (baseado no valor original do empréstimo)
+      // 2. Se o pagamento for maior que o mínimo, o excedente deve amortizar o capital
+      // 3. A taxa de juros permanece constante (sempre baseada no valor original)
       let remainingPayment = paymentValue;
 
-      // 1. Abater APENAS os juros da parcela atual
+      // 1. Abater PRIMEIRO os juros da parcela atual (valor mínimo)
       const interestPayment = Math.min(remainingPayment, interestDue);
       remainingPayment -= interestPayment;
       const updatedInterest = Number((interestDue - interestPayment).toFixed(2));
 
-      // 2. NÃO abater o capital da parcela atual - o capital permanece intacto
-      // O capital só será abatido quando o pagamento total for recebido
-      const principalPayment = 0; // Não abater capital da parcela atual
-      const updatedPrincipal = principalDue; // Manter o capital original intacto
+      // 2. Se sobrar pagamento após abater os juros, aplicar ao capital (amortização)
+      // Isso permite que pagamentos maiores que o mínimo amortizem o capital
+      const principalPayment = Math.min(remainingPayment, principalDue);
+      remainingPayment -= principalPayment;
+      const updatedPrincipal = Number((principalDue - principalPayment).toFixed(2));
 
       // Valor total aplicado nesta parcela (juros + principal)
       const appliedToThisInstallment = interestPayment + principalPayment;
@@ -2686,17 +2692,22 @@ const App: React.FC = () => {
           : newStatus;
       
       // IMPORTANTE: Para empréstimos "somente juros", preservar o valor ORIGINAL dos juros
-      // O interestAmount original deve ser mantido, apenas atualizar o valor pendente
+      // O interestAmount deve sempre representar o valor ORIGINAL dos juros (não o pendente)
       // Isso garante que o contrato permaneça o mesmo do início ao fim
-      const originalInterestAmount = installment.interestAmount ?? Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+      // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100 de juros sempre
+      const originalInterestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+      
+      // Se o interestAmount atual for 0 ou diferente do original, restaurar o valor original
+      // O updatedInterest representa o valor pendente após o pagamento atual
+      const finalInterestAmount = (installment.interestAmount === 0 || installment.interestAmount !== originalInterestAmount)
+        ? originalInterestAmount // Restaurar valor original se estiver incorreto
+        : installment.interestAmount; // Manter se já estiver correto
       
       const updatedInstallment = {
         ...installment,
         amount: installment.amount, // Preservar o valor original da parcela
-        interestAmount: updatedInterest, // Valor pendente de juros (pode ser 0 se pago)
-        // IMPORTANTE: Manter o valor original dos juros em um campo separado se necessário
-        // Por enquanto, o interestAmount representa o valor pendente, mas o amount original já está preservado
-        principalAmount: updatedPrincipal,
+        interestAmount: finalInterestAmount, // Valor ORIGINAL dos juros (sempre constante)
+        principalAmount: updatedPrincipal, // Capital restante após amortização
         amountPaid: Number(((installment.amountPaid || 0) + appliedToThisInstallment).toFixed(2)),
         paymentHistory: updatedPaymentHistory,
         status: finalStatus,

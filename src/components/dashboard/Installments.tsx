@@ -285,12 +285,15 @@ export const InstallmentsView: React.FC = () => {
     }
 
     // Para pagamentos parciais, validar valor mínimo (pelo menos o valor dos juros)
+    // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser sempre calculados
+    // sobre o valor ORIGINAL do empréstimo (loan.totalAmount), não sobre o capital restante.
+    // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
     let interestAmount = selectedInstallment.interestAmount ?? 0;
     
-    // Se não houver interestAmount, calcular baseado na taxa do empréstimo
+    // Se não houver interestAmount ou for 0, calcular baseado no valor ORIGINAL do empréstimo
     if (interestAmount === 0 && loan) {
-      const principal = selectedInstallment.principalAmount ?? selectedInstallment.amount;
-      interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
+      // Usar sempre o valor original do empréstimo, não o capital restante
+      interestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
     }
     
     // Validar que o pagamento seja pelo menos o valor dos juros (apenas para pagamentos parciais)
@@ -816,11 +819,12 @@ export const InstallmentsView: React.FC = () => {
                 <div className="text-sm text-slate-600 mb-1">Valor da parcela</div>
                 {(() => {
                   const loan = loans.find(l => l.id === selectedInstallment.loanId);
-                  // Calcular valor mínimo dos juros baseado no capital restante
-                  const principal = selectedInstallment.principalAmount ?? 0;
-                  const minInterestAmount = principal > 0 && loan 
-                    ? Number((principal * (loan.interestRate / 100)).toFixed(2))
-                    : 0;
+                  // IMPORTANTE: Para empréstimos "somente juros", calcular valor mínimo dos juros
+                  // baseado no valor ORIGINAL do empréstimo (loan.totalAmount), não no capital restante.
+                  // Isso garante que a taxa de juros permaneça constante do início ao fim.
+                  const minInterestAmount = loan 
+                    ? Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2))
+                    : (selectedInstallment.interestAmount ?? selectedInstallment.amount);
                   
                   // O valor da parcela deve ser pelo menos o valor mínimo dos juros
                   const displayAmount = Math.max(selectedInstallment.amount, minInterestAmount);
