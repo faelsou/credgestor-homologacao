@@ -1904,8 +1904,22 @@ const App: React.FC = () => {
 
   useEffect(() => {
     setInstallments(prev => prev.map(inst => {
+      // Não marcar como LATE se a parcela já está paga
+      if (inst.status === InstallmentStatus.PAID) {
+        return inst;
+      }
+      // Marcar como LATE apenas se está PENDING e a data passou
       if (inst.status === InstallmentStatus.PENDING && isLate(inst.dueDate)) {
         return { ...inst, status: InstallmentStatus.LATE };
+      }
+      // Se está LATE mas foi paga (verificar pelo paymentHistory), atualizar para PAID
+      if (inst.status === InstallmentStatus.LATE && inst.paymentHistory && inst.paymentHistory.length > 0) {
+        // Verificar se há pagamento suficiente para quitar a parcela
+        const totalPaid = inst.paymentHistory.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const totalDue = (inst.interestAmount || 0) + (inst.principalAmount || 0);
+        if (totalPaid >= totalDue && totalDue > 0) {
+          return { ...inst, status: InstallmentStatus.PAID };
+        }
       }
       return inst;
     }));
@@ -2638,8 +2652,11 @@ const App: React.FC = () => {
       // O status é PAID quando não há mais juros nem principal pendentes
       // IMPORTANTE: Para pagamentos retroativos, o amount original deve ser preservado
       // Não recalcular o amount baseado no capital restante para manter o valor inicial
-      const newStatus = (updatedInterest <= 0 && updatedPrincipal <= 0) ? InstallmentStatus.PAID : 
-                       (updatedInterest <= 0 && updatedPrincipal <= 0) ? InstallmentStatus.PARTIAL : InstallmentStatus.PARTIAL;
+      const newStatus = (updatedInterest <= 0 && updatedPrincipal <= 0) 
+        ? InstallmentStatus.PAID 
+        : (appliedToThisInstallment > 0) 
+          ? InstallmentStatus.PARTIAL 
+          : installment.status;
       
       // Valor total aplicado nesta parcela (juros + principal)
       const appliedToThisInstallment = interestPayment + principalPayment;
@@ -2658,6 +2675,13 @@ const App: React.FC = () => {
       // IMPORTANTE: Preservar o amount original da parcela para não alterar o valor inicial
       // Isso é especialmente importante para pagamentos retroativos
       // Apenas atualizar interestAmount e principalAmount, mantendo o amount original
+      // IMPORTANTE: Se a parcela foi paga (PAID), ela não deve mais estar como LATE
+      const finalStatus = newStatus === InstallmentStatus.PAID 
+        ? InstallmentStatus.PAID 
+        : (newStatus === InstallmentStatus.PARTIAL && installment.status === InstallmentStatus.LATE)
+          ? InstallmentStatus.PARTIAL // Se estava LATE e agora está parcialmente paga, remover status LATE
+          : newStatus;
+      
       const updatedInstallment = {
         ...installment,
         amount: installment.amount, // Preservar o valor original da parcela
@@ -2665,8 +2689,8 @@ const App: React.FC = () => {
         principalAmount: updatedPrincipal,
         amountPaid: Number(((installment.amountPaid || 0) + appliedToThisInstallment).toFixed(2)),
         paymentHistory: updatedPaymentHistory,
-        status: newStatus,
-        paidDate: newStatus === InstallmentStatus.PAID ? new Date().toISOString() : installment.paidDate
+        status: finalStatus,
+        paidDate: finalStatus === InstallmentStatus.PAID ? new Date().toISOString() : installment.paidDate
       };
 
       // 3. IMPORTANTE: O capital NÃO deve ser abatido automaticamente das próximas parcelas
@@ -2734,9 +2758,11 @@ const App: React.FC = () => {
       // A nova parcela representa o capital restante total do empréstimo
       if (totalRemainingCapital > 0) {
         const rateDecimal = loan.interestRate / 100;
-        // Calcular juros sobre o capital total restante (ex: R$ 900 * 20% = R$ 180)
-        // O amount deve sempre ser pelo menos o valor mínimo dos juros baseado no capital restante
-        const nextInterestAmount = totalRemainingCapital > 0 ? Number((totalRemainingCapital * rateDecimal).toFixed(2)) : 0;
+        // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser sempre calculados
+        // sobre o valor ORIGINAL do empréstimo (loan.totalAmount), não sobre o capital restante.
+        // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
+        // O capital restante pode mudar, mas os juros devem sempre ser os mesmos.
+        const nextInterestAmount = Number((loan.totalAmount * rateDecimal).toFixed(2));
         const nextAmount = nextInterestAmount; // Já é o valor mínimo dos juros
         
         // Encontrar a data de vencimento mais recente entre todas as parcelas do empréstimo
@@ -2817,12 +2843,20 @@ const App: React.FC = () => {
       const existingHistory = installment.paymentHistory || [];
       const updatedPaymentHistory = [...existingHistory, paymentHistoryEntry];
 
+      // IMPORTANTE: Se a parcela foi paga (PAID), ela não deve mais estar como LATE
+      // Se estava LATE e agora está parcialmente paga, remover status LATE
+      const finalStatus = isPaid 
+        ? InstallmentStatus.PAID 
+        : (installment.status === InstallmentStatus.LATE)
+          ? InstallmentStatus.PARTIAL // Se estava LATE e agora está parcialmente paga, remover status LATE
+          : InstallmentStatus.PARTIAL;
+      
       const updatedInstallment = {
         ...installment,
-        status: isPaid ? InstallmentStatus.PAID : InstallmentStatus.PARTIAL,
+        status: finalStatus,
         amountPaid: Number(paidAmount.toFixed(2)),
         paymentHistory: updatedPaymentHistory,
-        paidDate: new Date().toISOString()
+        paidDate: finalStatus === InstallmentStatus.PAID ? new Date().toISOString() : installment.paidDate
       };
 
       // Atualizar no backend se configurado
