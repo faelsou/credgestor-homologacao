@@ -2697,15 +2697,23 @@ const App: React.FC = () => {
 
       // IMPORTANTE: Atualizar status do empréstimo após pagamento total
       // Para empréstimos INTEREST_ONLY, verificar se capital + todos os juros foram pagos
+      // Usar todas as parcelas do empréstimo (atualizadas e não atualizadas) para verificação correta
       setLoans(prevLoans => prevLoans.map(l => {
         if (l.id === loan.id) {
+          // IMPORTANTE: Combinar parcelas atualizadas (finalInstallments) com parcelas não atualizadas
+          // Isso garante que verificamos o estado real de todas as parcelas após a atualização
+          const allLoanInstallmentsAfterUpdate = allLoanInstallments.map(inst => {
+            const updated = finalInstallments.find(f => f.id === inst.id);
+            return updated || inst;
+          });
+          
           // Verificar se todas as parcelas estão pagas
-          const allPaid = finalInstallments.every(inst => inst.status === InstallmentStatus.PAID);
+          const allPaid = allLoanInstallmentsAfterUpdate.every(inst => inst.status === InstallmentStatus.PAID);
           
           // Para empréstimos INTEREST_ONLY, verificar se capital foi totalmente pago
           if (loan.model === LoanModel.INTEREST_ONLY) {
-            // Calcular capital total pago através do histórico de pagamentos de todas as parcelas
-            const totalCapitalPaid = finalInstallments.reduce((sum, inst) => {
+            // Calcular capital total pago através do histórico de pagamentos de TODAS as parcelas
+            const totalCapitalPaid = allLoanInstallmentsAfterUpdate.reduce((sum, inst) => {
               if (inst.paymentHistory && inst.paymentHistory.length > 0) {
                 return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
               }
