@@ -2835,14 +2835,34 @@ const App: React.FC = () => {
       const maxNumber = Math.max(...allLoanInstallments.map(inst => inst.number), 0);
       const nextNumber = maxNumber + 1;
 
-      // IMPORTANTE: Para empréstimos INTEREST_ONLY, criar nova parcela apenas se ainda há juros pendentes
-      // O capital sempre permanece como o valor original do empréstimo
-      // Verificar se ainda há parcelas pendentes (não pagas) para determinar se precisa criar nova parcela
-      const hasPendingInstallments = allLoanInstallments.some(
-        inst => inst.status !== InstallmentStatus.PAID && inst.id !== id
-      ) || updatedInstallment.status !== InstallmentStatus.PAID;
+      // IMPORTANTE: Para empréstimos INTEREST_ONLY:
+      // 1. Sempre criar nova parcela quando uma parcela é paga parcialmente (apenas juros)
+      // 2. O empréstimo só é finalizado quando capital + todos os juros forem pagos completamente
+      // 3. Verificar se já existe uma próxima parcela antes de criar uma nova
       
-      if (hasPendingInstallments) {
+      // Verificar se ainda há capital ou juros pendentes
+      // O capital sempre permanece como o valor original até ser totalmente pago
+      const hasOutstandingCapital = updatedPrincipal > 0;
+      const hasOutstandingInterest = updatedInterest > 0;
+      const hasOtherPendingInstallments = allLoanInstallments.some(
+        inst => inst.status !== InstallmentStatus.PAID && inst.id !== id
+      );
+      
+      // Verificar se já existe uma próxima parcela com o número calculado
+      const nextInstallmentExists = allLoanInstallments.some(
+        inst => inst.number === nextNumber
+      );
+      
+      // Criar nova parcela se:
+      // 1. Ainda há capital ou juros pendentes na parcela atual OU há outras parcelas pendentes
+      // 2. E não existe ainda uma próxima parcela
+      // 3. E a parcela atual foi paga parcialmente (apenas juros) ou há outras pendentes
+      const shouldCreateNewInstallment = 
+        (hasOutstandingCapital || hasOutstandingInterest || hasOtherPendingInstallments) &&
+        !nextInstallmentExists &&
+        (updatedInstallment.status === InstallmentStatus.PARTIAL || hasOtherPendingInstallments);
+      
+      if (shouldCreateNewInstallment) {
         const rateDecimal = loan.interestRate / 100;
         // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser sempre calculados
         // sobre o valor ORIGINAL do capital (loan.amount), não sobre o totalAmount ou capital restante.
@@ -2977,20 +2997,42 @@ const App: React.FC = () => {
       // Calcular valor em aberto
       const outstandingAmount = calculateOutstandingAmount(l, related);
       
-      // Para empréstimos "somente juros", verificar se não há mais capital nem juros pendentes
+      // Para empréstimos "somente juros", verificar se capital + todos os juros foram pagos
       if (l.model === LoanModel.INTEREST_ONLY) {
-        const hasPendingCapital = related.some(inst => {
-          const principal = inst.principalAmount ?? 0;
-          return principal > 0;
-        });
+        // Calcular capital total pago através do histórico de pagamentos
+        const totalCapitalPaid = related.reduce((sum, inst) => {
+          if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+            return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+          }
+          return sum;
+        }, 0);
         
-        const hasPendingInterest = related.some(inst => {
-          const interest = inst.interestAmount ?? 0;
-          return interest > 0;
-        });
+        // Calcular juros totais pagos através do histórico de pagamentos
+        const totalInterestPaid = related.reduce((sum, inst) => {
+          if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+            return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.interestPaid || 0), 0);
+          }
+          return sum;
+        }, 0);
         
-        // Empréstimo só está finalizado se não há capital nem juros pendentes
-        const isLoanPaid = !hasPendingCapital && !hasPendingInterest;
+        // Calcular juros mensais (sempre baseado no capital original)
+        const monthlyInterest = Number((l.amount * (l.interestRate / 100)).toFixed(2));
+        
+        // Verificar se há parcelas pendentes (não pagas completamente)
+        const hasPendingInstallments = related.some(inst => inst.status !== InstallmentStatus.PAID);
+        
+        // Empréstimo só está finalizado se:
+        // 1. Capital foi totalmente pago (totalCapitalPaid >= loan.amount)
+        // 2. Todos os juros foram pagos (verificar através do histórico)
+        // 3. Não há parcelas pendentes (todas estão PAID)
+        // IMPORTANTE: Como o capital sempre permanece como o valor original nas parcelas,
+        // precisamos verificar através do histórico de pagamentos se foi totalmente pago
+        const isCapitalPaid = totalCapitalPaid >= l.amount;
+        const allInstallmentsPaid = !hasPendingInstallments;
+        
+        // Para verificar se todos os juros foram pagos, verificar se todas as parcelas estão PAID
+        // e se o capital foi pago (isso garante que capital + juros foram pagos)
+        const isLoanPaid = isCapitalPaid && allInstallmentsPaid;
         const updatedLoan = { ...l, status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE, outstandingAmount };
         
         // Atualizar no backend se configurado
