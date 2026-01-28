@@ -88,7 +88,10 @@ export const DateInput: React.FC<DateInputProps> = ({
         // Validação adicional: verificar se a data é válida
         const date = new Date(yearNum, monthNum - 1, dayNum);
         if (date.getFullYear() === yearNum && date.getMonth() === monthNum - 1 && date.getDate() === dayNum) {
-          const dateValue = `${year}-${month}-${day}`;
+          // Formatar com zeros à esquerda se necessário
+          const dayFormatted = day.padStart(2, '0');
+          const monthFormatted = month.padStart(2, '0');
+          const dateValue = `${year}-${monthFormatted}-${dayFormatted}`;
           onChange(dateValue);
         }
       }
@@ -108,14 +111,24 @@ export const DateInput: React.FC<DateInputProps> = ({
       const yearNum = parseInt(year, 10);
       
       if (dayNum >= 1 && dayNum <= 31 && monthNum >= 1 && monthNum <= 12 && yearNum >= 1900 && yearNum <= 2100) {
-        const dateValue = `${year}-${month}-${day}`;
-        onChange(dateValue);
-        setDisplayValue(formatForDisplay(dateValue));
+        // Validação adicional: verificar se a data é válida
+        const date = new Date(yearNum, monthNum - 1, dayNum);
+        if (date.getFullYear() === yearNum && date.getMonth() === monthNum - 1 && date.getDate() === dayNum) {
+          // Formatar com zeros à esquerda se necessário
+          const dayFormatted = day.padStart(2, '0');
+          const monthFormatted = month.padStart(2, '0');
+          const dateValue = `${year}-${monthFormatted}-${dayFormatted}`;
+          onChange(dateValue);
+          setDisplayValue(formatForDisplay(dateValue));
+        } else {
+          // Se a data for inválida, resetar para o valor original
+          setDisplayValue(formatForDisplay(value));
+        }
       } else {
         // Se a data for inválida, resetar para o valor original
         setDisplayValue(formatForDisplay(value));
       }
-    } else if (numbers.length > 0) {
+    } else if (numbers.length > 0 && numbers.length < 8) {
       // Se tiver algum número mas não 8, resetar
       setDisplayValue(formatForDisplay(value));
     }
@@ -132,6 +145,8 @@ export const DateInput: React.FC<DateInputProps> = ({
       maxLength={10}
       className={className}
       inputMode="numeric"
+      pattern="[0-9/]*"
+      autoComplete="off"
     />
   );
 };
