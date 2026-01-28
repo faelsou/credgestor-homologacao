@@ -285,20 +285,32 @@ export const InstallmentsView: React.FC = () => {
     }
 
     // Para pagamentos parciais, validar valor mínimo (pelo menos o valor dos juros)
-    // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser sempre calculados
-    // sobre o valor ORIGINAL do empréstimo (loan.totalAmount), não sobre o capital restante.
+    // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser SEMPRE calculados
+    // sobre o valor ORIGINAL do empréstimo (loan.totalAmount), não sobre o capital restante
+    // ou o interestAmount da parcela (que pode estar incorreto).
     // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
-    let interestAmount = selectedInstallment.interestAmount ?? 0;
+    // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 sempre
+    let interestAmount = 0;
     
-    // Se não houver interestAmount ou for 0, calcular baseado no valor ORIGINAL do empréstimo
-    if (interestAmount === 0 && loan) {
-      // Usar sempre o valor original do empréstimo, não o capital restante
+    if (loan && loan.model === LoanModel.INTEREST_ONLY) {
+      // SEMPRE usar o valor original do empréstimo para calcular os juros
+      // Não usar o interestAmount da parcela, pois pode estar incorreto
       interestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+    } else if (loan) {
+      // Para outros modelos, usar o interestAmount da parcela ou calcular
+      interestAmount = selectedInstallment.interestAmount ?? 0;
+      if (interestAmount === 0) {
+        const principal = selectedInstallment.principalAmount ?? selectedInstallment.amount;
+        interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
+      }
     }
     
     // Validar que o pagamento seja pelo menos o valor dos juros (apenas para pagamentos parciais)
     if (interestAmount > 0 && paymentAmount < interestAmount) {
-      alert(`O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${loan?.interestRate ?? 0}% do empréstimo).`);
+      const message = loan?.model === LoanModel.INTEREST_ONLY
+        ? `O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${loan?.interestRate ?? 0}% do empréstimo original).`
+        : `O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${loan?.interestRate ?? 0}% do empréstimo).`;
+      alert(message);
       return;
     }
 
@@ -822,9 +834,12 @@ export const InstallmentsView: React.FC = () => {
                   // IMPORTANTE: Para empréstimos "somente juros", calcular valor mínimo dos juros
                   // baseado no valor ORIGINAL do empréstimo (loan.totalAmount), não no capital restante.
                   // Isso garante que a taxa de juros permaneça constante do início ao fim.
-                  const minInterestAmount = loan 
-                    ? Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2))
-                    : (selectedInstallment.interestAmount ?? selectedInstallment.amount);
+                  let minInterestAmount = selectedInstallment.interestAmount ?? selectedInstallment.amount;
+                  
+                  if (loan && loan.model === LoanModel.INTEREST_ONLY) {
+                    // SEMPRE usar o valor original do empréstimo para calcular os juros
+                    minInterestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+                  }
                   
                   // O valor da parcela deve ser pelo menos o valor mínimo dos juros
                   const displayAmount = Math.max(selectedInstallment.amount, minInterestAmount);
@@ -872,19 +887,36 @@ export const InstallmentsView: React.FC = () => {
                 />
                 {(() => {
                   const loan = loans.find(l => l.id === selectedInstallment.loanId);
-                  let interestAmount = selectedInstallment.interestAmount ?? 0;
                   
-                  // Se não houver interestAmount, calcular baseado na taxa do empréstimo
-                  if (interestAmount === 0 && loan) {
-                    const principal = selectedInstallment.principalAmount ?? selectedInstallment.amount;
-                    interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
+                  // IMPORTANTE: Para empréstimos "somente juros", o valor mínimo dos juros
+                  // deve ser SEMPRE calculado baseado no valor ORIGINAL do empréstimo (loan.totalAmount),
+                  // não no capital restante ou no interestAmount da parcela.
+                  // Isso garante que a taxa de juros permaneça constante do início ao fim.
+                  // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 sempre
+                  let interestAmount = 0;
+                  
+                  if (loan && loan.model === LoanModel.INTEREST_ONLY) {
+                    // Sempre usar o valor original do empréstimo
+                    interestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
+                  } else if (loan) {
+                    // Para outros modelos, usar o interestAmount da parcela ou calcular
+                    interestAmount = selectedInstallment.interestAmount ?? 0;
+                    if (interestAmount === 0) {
+                      const principal = selectedInstallment.principalAmount ?? selectedInstallment.amount;
+                      interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
+                    }
                   }
                   
                   if (interestAmount > 0) {
                     return (
                       <p className="mt-1 text-xs text-slate-600">
                         <span className="font-semibold">Mínimo (juros):</span> {formatCurrency(interestAmount)}
-                        {loan && <span className="text-slate-500"> ({loan.interestRate}% do capital)</span>}
+                        {loan && loan.model === LoanModel.INTEREST_ONLY && (
+                          <span className="text-slate-500"> ({loan.interestRate}% do empréstimo original)</span>
+                        )}
+                        {loan && loan.model !== LoanModel.INTEREST_ONLY && (
+                          <span className="text-slate-500"> ({loan.interestRate}% do capital)</span>
+                        )}
                       </p>
                     );
                   }

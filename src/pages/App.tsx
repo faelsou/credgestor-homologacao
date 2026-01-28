@@ -2667,11 +2667,14 @@ const App: React.FC = () => {
       // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100 de juros sempre, independente do capital restante
       const originalInterestAmount = Number((loan.totalAmount * (loan.interestRate / 100)).toFixed(2));
       
+      // IMPORTANTE: Restauração automática de valores incorretos
       // Se o interestAmount da parcela for 0 ou diferente do valor original, usar o valor original
       // Isso garante que parcelas criadas incorretamente sejam corrigidas automaticamente
+      // Usar comparação com tolerância para evitar problemas de precisão de ponto flutuante
       let interestDue = installment.interestAmount ?? 0;
-      if (interestDue === 0 || interestDue !== originalInterestAmount) {
-        // Restaurar o valor original dos juros
+      const tolerance = 0.01; // Tolerância de 1 centavo para comparação
+      if (interestDue === 0 || Math.abs(interestDue - originalInterestAmount) > tolerance) {
+        // Restaurar o valor original dos juros automaticamente
         interestDue = originalInterestAmount;
       }
       
@@ -2733,13 +2736,16 @@ const App: React.FC = () => {
       // O interestAmount deve sempre representar o valor ORIGINAL dos juros (não o pendente)
       // Isso garante que o contrato permaneça o mesmo do início ao fim
       // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100 de juros sempre
-      // Reutilizar originalInterestAmount já calculado acima (linha 2630)
+      // Reutilizar originalInterestAmount já calculado acima
       
+      // IMPORTANTE: Restauração automática - sempre usar o valor original dos juros
       // Se o interestAmount atual for 0 ou diferente do original, restaurar o valor original
       // O updatedInterest representa o valor pendente após o pagamento atual
-      const finalInterestAmount = (installment.interestAmount === 0 || installment.interestAmount !== originalInterestAmount)
+      // Reutilizar tolerance já declarado acima
+      const currentInterestAmount = installment.interestAmount ?? 0;
+      const finalInterestAmount = (currentInterestAmount === 0 || Math.abs(currentInterestAmount - originalInterestAmount) > tolerance)
         ? originalInterestAmount // Restaurar valor original se estiver incorreto
-        : installment.interestAmount; // Manter se já estiver correto
+        : originalInterestAmount; // SEMPRE usar o valor original para garantir consistência
       
       const updatedInstallment = {
         ...installment,
