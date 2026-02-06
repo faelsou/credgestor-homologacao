@@ -2466,6 +2466,11 @@ const App: React.FC = () => {
 
     // Função auxiliar para calcular valor em aberto do empréstimo
     const calculateOutstandingAmount = (loan: Loan, relatedInstallments: Installment[]): number => {
+      // Se o empréstimo foi finalizado, valor em aberto deve ser sempre 0
+      if (loan.status === LoanStatus.PAID) {
+        return 0;
+      }
+      
       if (relatedInstallments.length === 0) {
         return loan.totalAmount;
       }

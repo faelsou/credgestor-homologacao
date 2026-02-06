@@ -47,6 +47,11 @@ export const LoanHistoryView: React.FC = () => {
 
   // Função para calcular o valor em aberto do empréstimo
   const calculateOutstandingAmount = (loan: typeof loans[0]): number => {
+    // Se o empréstimo foi finalizado, valor em aberto deve ser sempre 0
+    if (loan.status === LoanStatus.PAID) {
+      return 0;
+    }
+    
     const related = installments.filter(inst => inst.loanId === loan.id);
     
     if (related.length === 0) {
