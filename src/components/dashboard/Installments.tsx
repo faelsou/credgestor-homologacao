@@ -307,6 +307,11 @@ export const InstallmentsView: React.FC = () => {
     const allLoanInstallments = installments.filter(inst => inst.loanId === loan.id);
     
     const calculateOutstandingAmount = (): number => {
+      // Se o empréstimo foi finalizado, valor em aberto deve ser sempre 0
+      if (loan.status === LoanStatus.PAID) {
+        return 0;
+      }
+      
       if (allLoanInstallments.length === 0) {
         return loan.totalAmount;
       }
