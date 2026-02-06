@@ -313,25 +313,35 @@ export const InstallmentsView: React.FC = () => {
       
       // Para empréstimos "somente juros", calcular capital + juros pendentes
       if (loan.model === LoanModel.INTEREST_ONLY) {
-        let capitalAmount = 0;
+        // Calcular capital total pago através do histórico de pagamentos
+        const totalCapitalPaid = allLoanInstallments.reduce((sum, inst) => {
+          if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+            return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+          }
+          return sum;
+        }, 0);
+        
+        // Se o cliente pagou somente juros (capital pago = 0), manter o capital original
+        // Se o cliente pagou juros + capital (capital pago > 0), reduzir o capital pendente
+        const pendingCapital = totalCapitalPaid > 0 
+          ? Math.max(0, loan.amount - totalCapitalPaid) 
+          : loan.amount; // Se só juros foram pagos, manter capital original
+        
+        // Calcular juros pendentes (de parcelas não pagas)
         let totalInterest = 0;
-        
-        // IMPORTANTE: No modelo "somente juros", o capital SEMPRE é o valor original do empréstimo
-        // Não devemos usar o principalAmount das parcelas, pois pode estar incorreto
-        // O capital do empréstimo nunca muda, mesmo com amortização
-        capitalAmount = loan.amount; // SEMPRE usar o capital original do empréstimo
-        
-        // Soma todos os juros pendentes
         for (const inst of allLoanInstallments) {
           if (inst.status !== InstallmentStatus.PAID) {
             const interest = inst.interestAmount ?? 0;
             if (interest > 0) {
-              totalInterest += interest;
+              // Verificar se os juros desta parcela foram pagos
+              const interestPaid = inst.paymentHistory?.reduce((sum, p) => sum + (p.interestPaid || 0), 0) || 0;
+              const pendingInterest = Math.max(0, interest - interestPaid);
+              totalInterest += pendingInterest;
             }
           }
         }
         
-        const totalOutstanding = capitalAmount + totalInterest;
+        const totalOutstanding = pendingCapital + totalInterest;
         return Number(totalOutstanding.toFixed(2));
       }
       

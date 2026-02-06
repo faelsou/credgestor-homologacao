@@ -2481,8 +2481,11 @@ const App: React.FC = () => {
           return sum;
         }, 0);
         
-        // Capital pendente = capital original - capital já pago
-        const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
+        // Se o cliente pagou somente juros (capital pago = 0), manter o capital original
+        // Se o cliente pagou juros + capital (capital pago > 0), reduzir o capital pendente
+        const pendingCapital = totalCapitalPaid > 0 
+          ? Math.max(0, loan.amount - totalCapitalPaid) 
+          : loan.amount; // Se só juros foram pagos, manter capital original
         
         // Soma todos os juros pendentes (de parcelas não pagas)
         let totalInterest = 0;

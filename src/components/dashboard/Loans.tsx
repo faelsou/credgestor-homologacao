@@ -418,24 +418,35 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     
     // Para empréstimos "somente juros", calcular capital + juros pendentes
     if (loan.model === LoanModel.INTEREST_ONLY) {
-      let totalOutstanding = 0;
+      // Calcular capital total pago através do histórico de pagamentos
+      const totalCapitalPaid = related.reduce((sum, inst) => {
+        if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+          return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+        }
+        return sum;
+      }, 0);
       
-      // Soma todo o capital pendente
+      // Se o cliente pagou somente juros (capital pago = 0), manter o capital original
+      // Se o cliente pagou juros + capital (capital pago > 0), reduzir o capital pendente
+      const pendingCapital = totalCapitalPaid > 0 
+        ? Math.max(0, loan.amount - totalCapitalPaid) 
+        : loan.amount; // Se só juros foram pagos, manter capital original
+      
+      // Calcular juros pendentes (de parcelas não pagas)
+      let totalInterestPending = 0;
       for (const inst of related) {
-        const principal = inst.principalAmount ?? 0;
-        if (principal > 0) {
-          totalOutstanding += principal;
+        if (inst.status !== InstallmentStatus.PAID) {
+          const interest = inst.interestAmount ?? 0;
+          if (interest > 0) {
+            // Verificar se os juros desta parcela foram pagos
+            const interestPaid = inst.paymentHistory?.reduce((sum, p) => sum + (p.interestPaid || 0), 0) || 0;
+            const pendingInterest = Math.max(0, interest - interestPaid);
+            totalInterestPending += pendingInterest;
+          }
         }
       }
       
-      // Soma todos os juros pendentes
-      for (const inst of related) {
-        const interest = inst.interestAmount ?? 0;
-        if (interest > 0) {
-          totalOutstanding += interest;
-        }
-      }
-      
+      const totalOutstanding = pendingCapital + totalInterestPending;
       return Number(totalOutstanding.toFixed(2));
     }
     
