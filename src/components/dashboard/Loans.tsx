@@ -24,11 +24,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   // Form State
   const [selectedClientId, setSelectedClientId] = useState('');
   const [amount, setAmount] = useState(1000);
-  const [interestRate, setInterestRate] = useState(1.0); // 1.0%
+  const [interestRate, setInterestRate] = useState(0.0); // 0.0% - deve ser preenchido manualmente
   const [installmentsCount, setInstallmentsCount] = useState(1);
   const [startDate, setStartDate] = useState(getTodayDateString());
   const [loanModel, setLoanModel] = useState<LoanModel>(LoanModel.PRICE);
-  const createDefaultPromissoryNote = (baseDate: string, defaultInterestRate: number = 1.0): PromissoryNote => ({
+  const createDefaultPromissoryNote = (baseDate: string, defaultInterestRate: number = 0.0): PromissoryNote => ({
     capital: amount,
     interestRate: defaultInterestRate,
     issueDate: baseDate,
@@ -37,7 +37,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     numberHash: '', // Será gerado automaticamente quando o cliente for selecionado
     observation: ''
   });
-  const [promissoryNote, setPromissoryNote] = useState<PromissoryNote>(createDefaultPromissoryNote(startDate, 1.0));
+  const [promissoryNote, setPromissoryNote] = useState<PromissoryNote>(createDefaultPromissoryNote(startDate, 0.0));
 
   const addMonths = (dateString: string, months: number) => {
     // Parse a data no formato YYYY-MM-DD evitando problemas de fuso horário
@@ -145,12 +145,12 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const resetForm = () => {
     setSelectedClientId('');
     setAmount(1000);
-    setInterestRate(1.0);
+    setInterestRate(0.0);
     setInstallmentsCount(1);
     setLoanModel(LoanModel.PRICE);
     const today = getTodayDateString();
     setStartDate(today);
-    setPromissoryNote(createDefaultPromissoryNote(today, 1.0));
+    setPromissoryNote(createDefaultPromissoryNote(today, 0.0));
     setEditingLoan(null);
   };
 
@@ -319,11 +319,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
 
   // Sincronizar juros inicial quando o formulário é aberto (novo empréstimo)
   useEffect(() => {
-    if (!editingLoan && isModalOpen && interestRate === 1.0) {
-      // Garantir que o campo da nota promissória também tenha 1.0%
+    if (!editingLoan && isModalOpen && interestRate === 0.0) {
+      // Garantir que o campo da nota promissória também tenha 0.0%
       setPromissoryNote(prev => {
-        if (prev.interestRate !== 1.0) {
-          return { ...prev, interestRate: 1.0 };
+        if (prev.interestRate !== 0.0) {
+          return { ...prev, interestRate: 0.0 };
         }
         return prev;
       });
@@ -1146,7 +1146,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       type="text"
                       inputMode="decimal"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors"
-                      value={interestRate === 0 ? '0' : (interestRate !== null && interestRate !== undefined ? interestRate.toString().replace('.', ',') : '')}
+                      value={interestRate === 0 ? '0,0' : (interestRate !== null && interestRate !== undefined ? interestRate.toString().replace('.', ',') : '0,0')}
                       onChange={e => {
                         const inputValue = e.target.value.trim();
                         // Permitir campo vazio temporariamente durante edição
@@ -1200,7 +1200,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                           }
                         }
                       }}
-                      placeholder="1,0"
+                      placeholder="0,0"
                     />
                 </div>
               </div>
@@ -1342,8 +1342,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       type="text"
                       inputMode="decimal"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
-                      placeholder="1,0"
-                      value={promissoryNote.interestRate === 0 ? '0' : (promissoryNote.interestRate !== null && promissoryNote.interestRate !== undefined ? promissoryNote.interestRate.toString().replace('.', ',') : '')}
+                      placeholder="0,0"
+                      value={promissoryNote.interestRate === 0 ? '0,0' : (promissoryNote.interestRate !== null && promissoryNote.interestRate !== undefined ? promissoryNote.interestRate.toString().replace('.', ',') : '0,0')}
                       onChange={e => {
                         const inputValue = e.target.value.trim();
                         // Permitir campo vazio temporariamente durante edição
