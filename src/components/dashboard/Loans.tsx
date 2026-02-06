@@ -25,6 +25,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const [selectedClientId, setSelectedClientId] = useState('');
   const [amount, setAmount] = useState(1000);
   const [interestRate, setInterestRate] = useState(0.0); // 0.0% - deve ser preenchido manualmente
+  const [interestRateDisplay, setInterestRateDisplay] = useState('0,0'); // Valor exibido no campo
   const [installmentsCount, setInstallmentsCount] = useState(1);
   const [startDate, setStartDate] = useState(getTodayDateString());
   const [loanModel, setLoanModel] = useState<LoanModel>(LoanModel.PRICE);
@@ -146,6 +147,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setSelectedClientId('');
     setAmount(1000);
     setInterestRate(0.0);
+    setInterestRateDisplay('0,0');
     setInstallmentsCount(1);
     setLoanModel(LoanModel.PRICE);
     const today = getTodayDateString();
@@ -299,6 +301,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     // Garantir que o valor de juros seja sempre um número válido (0 ou maior)
     const validInterestRate = loan.interestRate !== null && loan.interestRate !== undefined ? loan.interestRate : 0;
     setInterestRate(validInterestRate);
+    setInterestRateDisplay(validInterestRate.toString().replace('.', ','));
     setInstallmentsCount(loan.installmentsCount);
     setStartDate(loan.startDate);
     const promissory = loan.promissoryNote || createDefaultPromissoryNote(loan.startDate);
@@ -319,7 +322,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
 
   // Sincronizar juros inicial quando o formulário é aberto (novo empréstimo)
   useEffect(() => {
-    if (!editingLoan && isModalOpen && interestRate === 0.0) {
+    if (!editingLoan && isModalOpen) {
       // Garantir que o campo da nota promissória também tenha 0.0%
       setPromissoryNote(prev => {
         if (prev.interestRate !== 0.0) {
@@ -327,8 +330,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
         }
         return prev;
       });
+      setInterestRate(0.0);
+      setInterestRateDisplay('0,0');
     }
-  }, [isModalOpen, editingLoan, interestRate]);
+  }, [isModalOpen, editingLoan]);
 
   // Atualizar hash inicial do empréstimo quando o cliente for selecionado
   // Hash inicial sempre é #1/001#
@@ -1146,57 +1151,77 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       type="text"
                       inputMode="decimal"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors"
-                      value={interestRate === 0 ? '0,0' : (interestRate !== null && interestRate !== undefined ? interestRate.toString().replace('.', ',') : '0,0')}
+                      value={interestRateDisplay}
                       onChange={e => {
-                        const inputValue = e.target.value.trim();
-                        // Permitir campo vazio temporariamente durante edição
-                        if (inputValue === '' || inputValue === '-') {
+                        let inputValue = e.target.value;
+                        
+                        // Permitir campo vazio durante digitação
+                        if (inputValue === '') {
+                          setInterestRateDisplay('');
                           setInterestRate(0);
                           setPromissoryNote(prev => ({ ...prev, interestRate: 0 }));
                           return;
                         }
-                        // Aceitar apenas números, vírgula e ponto
-                        const cleanedValue = inputValue.replace(/[^\d,.]/g, '');
-                        // Substituir múltiplas vírgulas/pontos por apenas um
-                        const normalizedValue = cleanedValue.replace(/[,.]/g, (match, offset) => {
-                          // Manter apenas o primeiro separador decimal encontrado
-                          const before = cleanedValue.substring(0, offset);
-                          if (before.includes(',') || before.includes('.')) {
-                            return '';
+                        
+                        // Remover caracteres inválidos, mantendo apenas números, vírgula e ponto
+                        let cleaned = inputValue.replace(/[^\d,.]/g, '');
+                        
+                        // Normalizar: aceitar vírgula ou ponto como separador decimal
+                        // Se houver múltiplos separadores, manter apenas o primeiro
+                        let hasDecimal = false;
+                        let normalized = '';
+                        for (let i = 0; i < cleaned.length; i++) {
+                          const char = cleaned[i];
+                          if (char === ',' || char === '.') {
+                            if (!hasDecimal) {
+                              normalized += ',';
+                              hasDecimal = true;
+                            }
+                          } else {
+                            normalized += char;
                           }
-                          return ',';
-                        });
-                        
-                        // Se o valor está vazio após limpeza, definir como 0
-                        if (normalizedValue === '' || normalizedValue === ',') {
-                          setInterestRate(0);
-                          setPromissoryNote(prev => ({ ...prev, interestRate: 0 }));
-                          return;
                         }
                         
-                        // Converter vírgula para ponto para parseFloat
-                        const numValue = parseFloat(normalizedValue.replace(',', '.'));
-                        if (!isNaN(numValue) && numValue >= 0 && isFinite(numValue)) {
-                          // Limitar a 2 casas decimais
-                          const roundedValue = Math.round(numValue * 100) / 100;
-                          setInterestRate(roundedValue);
-                          setPromissoryNote(prev => ({ ...prev, interestRate: roundedValue }));
-                        }
-                      }}
-                      onBlur={e => {
-                        // Garantir que ao sair do campo, sempre tenha um valor válido formatado
-                        const inputValue = e.target.value.trim();
-                        if (inputValue === '' || inputValue === '-' || inputValue === ',') {
+                        // Atualizar o valor exibido
+                        setInterestRateDisplay(normalized);
+                        
+                        // Converter para número e atualizar o estado numérico
+                        if (normalized === '' || normalized === ',') {
                           setInterestRate(0);
                           setPromissoryNote(prev => ({ ...prev, interestRate: 0 }));
                         } else {
-                          // Normalizar vírgula para ponto e garantir formato correto
-                          const normalizedValue = inputValue.replace(',', '.');
-                          const numValue = parseFloat(normalizedValue);
-                          if (!isNaN(numValue) && numValue >= 0) {
+                          const numValue = parseFloat(normalized.replace(',', '.'));
+                          if (!isNaN(numValue) && numValue >= 0 && isFinite(numValue)) {
+                            // Limitar a 2 casas decimais
                             const roundedValue = Math.round(numValue * 100) / 100;
                             setInterestRate(roundedValue);
                             setPromissoryNote(prev => ({ ...prev, interestRate: roundedValue }));
+                          }
+                        }
+                      }}
+                      onBlur={e => {
+                        // Ao sair do campo, garantir formato válido
+                        const inputValue = e.target.value.trim();
+                        
+                        if (inputValue === '' || inputValue === ',' || inputValue === '.') {
+                          setInterestRateDisplay('0,0');
+                          setInterestRate(0);
+                          setPromissoryNote(prev => ({ ...prev, interestRate: 0 }));
+                        } else {
+                          // Normalizar e formatar corretamente
+                          const normalizedValue = inputValue.replace(',', '.');
+                          const numValue = parseFloat(normalizedValue);
+                          
+                          if (!isNaN(numValue) && numValue >= 0) {
+                            const roundedValue = Math.round(numValue * 100) / 100;
+                            setInterestRate(roundedValue);
+                            setInterestRateDisplay(roundedValue.toString().replace('.', ','));
+                            setPromissoryNote(prev => ({ ...prev, interestRate: roundedValue }));
+                          } else {
+                            // Se inválido, resetar para 0
+                            setInterestRateDisplay('0,0');
+                            setInterestRate(0);
+                            setPromissoryNote(prev => ({ ...prev, interestRate: 0 }));
                           }
                         }
                       }}
@@ -1343,57 +1368,77 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       inputMode="decimal"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
                       placeholder="0,0"
-                      value={promissoryNote.interestRate === 0 ? '0,0' : (promissoryNote.interestRate !== null && promissoryNote.interestRate !== undefined ? promissoryNote.interestRate.toString().replace('.', ',') : '0,0')}
+                      value={interestRateDisplay}
                       onChange={e => {
-                        const inputValue = e.target.value.trim();
-                        // Permitir campo vazio temporariamente durante edição
-                        if (inputValue === '' || inputValue === '-') {
-                          handlePromissoryChange('interestRate', 0);
+                        let inputValue = e.target.value;
+                        
+                        // Permitir campo vazio durante digitação
+                        if (inputValue === '') {
+                          setInterestRateDisplay('');
                           setInterestRate(0);
+                          handlePromissoryChange('interestRate', 0);
                           return;
                         }
-                        // Aceitar apenas números, vírgula e ponto
-                        const cleanedValue = inputValue.replace(/[^\d,.]/g, '');
-                        // Substituir múltiplas vírgulas/pontos por apenas um
-                        const normalizedValue = cleanedValue.replace(/[,.]/g, (match, offset) => {
-                          // Manter apenas o primeiro separador decimal encontrado
-                          const before = cleanedValue.substring(0, offset);
-                          if (before.includes(',') || before.includes('.')) {
-                            return '';
+                        
+                        // Remover caracteres inválidos, mantendo apenas números, vírgula e ponto
+                        let cleaned = inputValue.replace(/[^\d,.]/g, '');
+                        
+                        // Normalizar: aceitar vírgula ou ponto como separador decimal
+                        // Se houver múltiplos separadores, manter apenas o primeiro
+                        let hasDecimal = false;
+                        let normalized = '';
+                        for (let i = 0; i < cleaned.length; i++) {
+                          const char = cleaned[i];
+                          if (char === ',' || char === '.') {
+                            if (!hasDecimal) {
+                              normalized += ',';
+                              hasDecimal = true;
+                            }
+                          } else {
+                            normalized += char;
                           }
-                          return ',';
-                        });
-                        
-                        // Se o valor está vazio após limpeza, definir como 0
-                        if (normalizedValue === '' || normalizedValue === ',') {
-                          handlePromissoryChange('interestRate', 0);
-                          setInterestRate(0);
-                          return;
                         }
                         
-                        // Converter vírgula para ponto para parseFloat
-                        const numValue = parseFloat(normalizedValue.replace(',', '.'));
-                        if (!isNaN(numValue) && numValue >= 0 && isFinite(numValue)) {
-                          // Limitar a 2 casas decimais
-                          const roundedValue = Math.round(numValue * 100) / 100;
-                          handlePromissoryChange('interestRate', roundedValue);
-                          setInterestRate(roundedValue);
+                        // Atualizar o valor exibido
+                        setInterestRateDisplay(normalized);
+                        
+                        // Converter para número e atualizar o estado numérico
+                        if (normalized === '' || normalized === ',') {
+                          setInterestRate(0);
+                          handlePromissoryChange('interestRate', 0);
+                        } else {
+                          const numValue = parseFloat(normalized.replace(',', '.'));
+                          if (!isNaN(numValue) && numValue >= 0 && isFinite(numValue)) {
+                            // Limitar a 2 casas decimais
+                            const roundedValue = Math.round(numValue * 100) / 100;
+                            setInterestRate(roundedValue);
+                            handlePromissoryChange('interestRate', roundedValue);
+                          }
                         }
                       }}
                       onBlur={e => {
-                        // Garantir que ao sair do campo, sempre tenha um valor válido formatado
+                        // Ao sair do campo, garantir formato válido
                         const inputValue = e.target.value.trim();
-                        if (inputValue === '' || inputValue === '-' || inputValue === ',') {
-                          handlePromissoryChange('interestRate', 0);
+                        
+                        if (inputValue === '' || inputValue === ',' || inputValue === '.') {
+                          setInterestRateDisplay('0,0');
                           setInterestRate(0);
+                          handlePromissoryChange('interestRate', 0);
                         } else {
-                          // Normalizar vírgula para ponto e garantir formato correto
+                          // Normalizar e formatar corretamente
                           const normalizedValue = inputValue.replace(',', '.');
                           const numValue = parseFloat(normalizedValue);
+                          
                           if (!isNaN(numValue) && numValue >= 0) {
                             const roundedValue = Math.round(numValue * 100) / 100;
-                            handlePromissoryChange('interestRate', roundedValue);
                             setInterestRate(roundedValue);
+                            setInterestRateDisplay(roundedValue.toString().replace('.', ','));
+                            handlePromissoryChange('interestRate', roundedValue);
+                          } else {
+                            // Se inválido, resetar para 0
+                            setInterestRateDisplay('0,0');
+                            setInterestRate(0);
+                            handlePromissoryChange('interestRate', 0);
                           }
                         }
                       }}
