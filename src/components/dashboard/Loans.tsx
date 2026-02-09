@@ -696,6 +696,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
 
     // Gerar notas promissórias para cada parcela
     // Cada parcela tem um hash sequencial: #1/010#, #2/010#, #3/010#, etc.
+    // Agrupar em grupos de até 3 notas por página A4
     const notesHtml = loanInstallments.length > 0 
       ? loanInstallments.map((installment, index) => {
           // Cada parcela usa um hash sequencial baseado no índice (1, 2, 3...)
@@ -707,8 +708,13 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
           const installmentIssueDate = formatDate(promissoryNote.issueDate);
           const installmentDueDateFormatted = formatDate(installmentDueDate);
           
+          // Adicionar quebra de página após cada grupo de 3 notas (índices 2, 5, 8, etc.)
+          // Ou seja, após a 3ª, 6ª, 9ª nota, etc.
+          const shouldBreakPage = (index + 1) % 3 === 0 && index < loanInstallments.length - 1;
+          const pageBreakClass = shouldBreakPage ? 'page-break-after' : '';
+          
           return `
-            <div class="note-container">
+            <div class="note-container ${pageBreakClass}">
               <div class="header-row">
                 <div class="header-left">
                   <h1>NOTA PROMISSÓRIA</h1>
@@ -824,100 +830,117 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             @media print {
               @page {
                 size: A4;
-                margin: 1cm;
+                margin: 0.8cm;
               }
               .note-container {
                 page-break-inside: avoid;
                 break-inside: avoid;
               }
+              .page-break-after {
+                page-break-after: always;
+                break-after: page;
+              }
             }
             body {
               font-family: 'Times New Roman', serif;
-              font-size: 10pt;
-              line-height: 1.4;
+              font-size: 9pt;
+              line-height: 1.3;
               color: #000;
-              padding: 10px;
+              padding: 5px;
               margin: 0;
             }
             .note-container {
               border: 1px solid #000;
-              padding: 20px;
-              margin-bottom: 15px;
-              min-height: 280px;
+              padding: 12px;
+              margin-bottom: 8px;
+              height: calc((100vh - 1.6cm) / 3);
+              max-height: 9.2cm;
+              min-height: 9cm;
               position: relative;
+              display: flex;
+              flex-direction: column;
+              box-sizing: border-box;
             }
             .header-row {
               display: flex;
               justify-content: space-between;
               align-items: flex-start;
-              margin-bottom: 15px;
+              margin-bottom: 8px;
               border-bottom: 1px solid #000;
-              padding-bottom: 10px;
+              padding-bottom: 6px;
+              flex-shrink: 0;
             }
             .header-left {
               flex: 1;
             }
             .header-right {
               text-align: right;
-              font-size: 9pt;
+              font-size: 8pt;
             }
-            .header h1 {
-              font-size: 16pt;
+            .header-left h1 {
+              font-size: 13pt;
               font-weight: bold;
               margin: 0;
               text-transform: uppercase;
-              letter-spacing: 0.5px;
+              letter-spacing: 0.3px;
             }
             .document-number {
-              font-size: 10pt;
-              margin-bottom: 5px;
+              font-size: 9pt;
+              margin-bottom: 3px;
               font-weight: bold;
             }
             .due-date {
-              font-size: 9pt;
+              font-size: 8pt;
             }
             .promise-text {
               text-align: justify;
-              margin: 15px 0;
-              font-size: 10pt;
-              line-height: 1.6;
+              margin: 8px 0;
+              font-size: 9pt;
+              line-height: 1.4;
+              flex-shrink: 0;
+            }
+            .promise-text p {
+              margin: 0;
             }
             .info-section {
-              margin: 12px 0;
-              font-size: 9.5pt;
+              margin: 6px 0;
+              font-size: 8.5pt;
+              flex-shrink: 0;
             }
             .info-row {
-              margin: 5px 0;
+              margin: 3px 0;
             }
             .info-label {
               font-weight: bold;
             }
             .issuer-section {
-              margin-top: 20px;
-              font-size: 9.5pt;
+              margin-top: 8px;
+              font-size: 8.5pt;
+              flex-shrink: 0;
             }
             .issuer-title {
               font-weight: bold;
-              margin-bottom: 8px;
+              margin-bottom: 4px;
             }
             .issuer-info {
-              line-height: 1.5;
+              line-height: 1.4;
             }
             .signature-section {
-              margin-top: 30px;
+              margin-top: auto;
               text-align: center;
               border-top: 1px solid #000;
-              padding-top: 10px;
-              min-height: 60px;
+              padding-top: 6px;
+              min-height: 40px;
+              flex-shrink: 0;
             }
             .signature-name {
               font-weight: bold;
-              margin-top: 8px;
-              font-size: 10pt;
+              margin-top: 6px;
+              font-size: 9pt;
             }
             .signature-label {
-              font-size: 9pt;
-              margin-top: 5px;
+              font-size: 8pt;
+              margin-top: 4px;
               color: #333;
             }
           </style>
