@@ -737,6 +737,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 </p>
               </div>
 
+              <div class="value-highlight">
+                <strong>${formatCurrency(installmentValue)}</strong>
+              </div>
+
               <div class="info-section">
                 <div class="info-row">
                   <span class="info-label">Local de pagamento:</span> ${paymentLocation}
@@ -793,6 +797,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                   a <strong>${creditorName}</strong>${creditorCnpj && creditorCnpj !== 'CNPJ não informado' ? ' CNPJ ' + creditorCnpj : ''} ou à sua ordem 
                   a quantia de <strong>${noteValueWords.toUpperCase()}</strong> em moeda corrente desse país.
                 </p>
+              </div>
+
+              <div class="value-highlight">
+                <strong>${formatCurrency(noteValue)}</strong>
               </div>
 
               <div class="info-section">
@@ -901,6 +909,18 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             }
             .promise-text p {
               margin: 0;
+            }
+            .value-highlight {
+              text-align: center;
+              margin: 10px 0;
+              padding: 8px;
+              border: 2px solid #000;
+              font-size: 12pt;
+              font-weight: bold;
+              flex-shrink: 0;
+            }
+            .value-highlight strong {
+              font-size: 14pt;
             }
             .info-section {
               margin: 6px 0;
