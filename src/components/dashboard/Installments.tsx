@@ -286,20 +286,9 @@ export const InstallmentsView: React.FC = () => {
 
     const pendingAmount = selectedInstallment.amount - (selectedInstallment.amountPaid || 0);
 
-    // IMPORTANTE: Para empréstimos PRICE, o valor a receber deve SEMPRE ser igual ao valor da parcela
-    if (loan.model === LoanModel.PRICE) {
-      // Validar que o valor seja exatamente o valor pendente da parcela
-      if (paymentAmount !== pendingAmount && paymentAmount !== selectedInstallment.amount) {
-        alert(`Para empréstimos PRICE, o valor a receber deve ser sempre igual ao valor da parcela (${formatCurrency(pendingAmount > 0 ? pendingAmount : selectedInstallment.amount)}).`);
-        return;
-      }
-      
-      // Garantir que o valor seja exatamente o valor pendente
-      const finalAmount = pendingAmount > 0 ? pendingAmount : selectedInstallment.amount;
-      payInstallment(selectedInstallment.id, finalAmount, paymentDate);
-      setSelectedInstallment(null);
-      setPaymentAmount(0);
-      setPaymentDate(getTodayDateString());
+    // Validar que o pagamento não exceda o valor pendente da parcela
+    if (paymentAmount > pendingAmount) {
+      alert(`O valor a receber não pode ser maior que o valor pendente da parcela (${formatCurrency(pendingAmount)}).`);
       return;
     }
 
@@ -369,38 +358,45 @@ export const InstallmentsView: React.FC = () => {
       return;
     }
 
-    // Para pagamentos parciais, validar valor mínimo (pelo menos o valor dos juros)
-    // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser SEMPRE calculados
-    // sobre o valor ORIGINAL do empréstimo (loan.totalAmount), não sobre o capital restante
-    // ou o interestAmount da parcela (que pode estar incorreto).
-    // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
-    // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 sempre
-    let interestAmount = 0;
+    // Para pagamentos parciais, validar valor mínimo apenas se a parcela ainda não foi paga parcialmente
+    // Se já foi paga parcialmente, permitir qualquer valor positivo até o valor pendente
+    const hasPartialPayment = (selectedInstallment.amountPaid || 0) > 0;
     
-    if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-      // SEMPRE usar o valor ORIGINAL do capital (loan.amount), não o totalAmount
-      // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
-      // Não usar o interestAmount da parcela, pois pode estar incorreto
-      interestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
-    } else if (loan) {
-      // Para outros modelos, usar o interestAmount da parcela ou calcular
-      interestAmount = selectedInstallment.interestAmount ?? 0;
-      if (interestAmount === 0) {
-        const principal = selectedInstallment.principalAmount ?? selectedInstallment.amount;
-        interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
+    if (!hasPartialPayment) {
+      // Apenas validar valor mínimo se a parcela ainda não foi paga parcialmente
+      // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser SEMPRE calculados
+      // sobre o valor ORIGINAL do empréstimo (loan.amount), não sobre o capital restante
+      // ou o interestAmount da parcela (que pode estar incorreto).
+      // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
+      // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 sempre
+      let interestAmount = 0;
+      
+      if (loan && loan.model === LoanModel.INTEREST_ONLY) {
+        // SEMPRE usar o valor ORIGINAL do capital (loan.amount), não o totalAmount
+        // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
+        // Não usar o interestAmount da parcela, pois pode estar incorreto
+        interestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
+      } else if (loan) {
+        // Para outros modelos (PRICE, etc.), usar o interestAmount da parcela ou calcular
+        interestAmount = selectedInstallment.interestAmount ?? 0;
+        if (interestAmount === 0 && loan.interestRate > 0) {
+          // Se não há interestAmount definido, calcular baseado no principal e taxa
+          const principal = selectedInstallment.principalAmount ?? selectedInstallment.amount;
+          interestAmount = Number((principal * (loan.interestRate / 100)).toFixed(2));
+        }
+      }
+      
+      // Validar que o pagamento seja pelo menos o valor dos juros (apenas para primeira parcela parcial)
+      if (interestAmount > 0 && paymentAmount < interestAmount) {
+        const message = loan?.model === LoanModel.INTEREST_ONLY
+          ? `O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${formatInterestRate(loan?.interestRate ?? 0)} do empréstimo original).`
+          : `O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${formatInterestRate(loan?.interestRate ?? 0)} do empréstimo).`;
+        alert(message);
+        return;
       }
     }
-    
-    // Validar que o pagamento seja pelo menos o valor dos juros (apenas para pagamentos parciais)
-    if (interestAmount > 0 && paymentAmount < interestAmount) {
-      const message = loan?.model === LoanModel.INTEREST_ONLY
-        ? `O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${formatInterestRate(loan?.interestRate ?? 0)} do empréstimo original).`
-        : `O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${formatInterestRate(loan?.interestRate ?? 0)} do empréstimo).`;
-      alert(message);
-      return;
-    }
 
-    // Permitir pagamentos maiores que o valor pendente - o excedente abaterá o capital
+    // Processar pagamento parcial - o valor será aplicado proporcionalmente entre juros e capital
     payInstallment(selectedInstallment.id, paymentAmount, paymentDate);
     setSelectedInstallment(null);
     setPaymentAmount(0);
