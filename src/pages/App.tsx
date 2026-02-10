@@ -3069,15 +3069,44 @@ const App: React.FC = () => {
         return [...updated, ...newInstallments];
       });
     } else {
-      // Lógica para outros modelos de empréstimo
+      // Lógica para outros modelos de empréstimo (PRICE, etc.)
       const paidAmount = Math.min(installment.amount, (installment.amountPaid || 0) + paymentValue);
       const isPaid = paidAmount >= installment.amount;
+
+      // Calcular valores pendentes de juros e capital
+      const interestAmount = installment.interestAmount ?? 0;
+      const principalAmount = installment.principalAmount ?? (installment.amount - interestAmount);
+      
+      // Calcular quanto já foi pago de juros e capital
+      const interestPaidSoFar = installment.paymentHistory?.reduce((sum, p) => sum + (p.interestPaid || 0), 0) || 0;
+      const principalPaidSoFar = installment.paymentHistory?.reduce((sum, p) => sum + (p.principalPaid || 0), 0) || 0;
+      
+      // Calcular valores pendentes
+      const pendingInterest = Math.max(0, interestAmount - interestPaidSoFar);
+      const pendingPrincipal = Math.max(0, principalAmount - principalPaidSoFar);
+      const totalPending = pendingInterest + pendingPrincipal;
+      
+      // Distribuir o pagamento proporcionalmente entre juros e capital
+      let interestPaid = 0;
+      let principalPaid = 0;
+      
+      if (totalPending > 0) {
+        // Primeiro, abater os juros pendentes
+        interestPaid = Math.min(paymentValue, pendingInterest);
+        const remainingPayment = paymentValue - interestPaid;
+        
+        // Depois, abater o capital pendente
+        principalPaid = Math.min(remainingPayment, pendingPrincipal);
+      } else {
+        // Se não há valores pendentes definidos, tratar como pagamento de capital
+        principalPaid = paymentValue;
+      }
 
       // Registrar pagamento no histórico
       const paymentHistoryEntry = {
         amount: paymentValue,
-        interestPaid: 0,
-        principalPaid: paymentValue,
+        interestPaid: interestPaid,
+        principalPaid: principalPaid,
         paymentDate: actualPaymentDate,
         createdAt: new Date().toISOString()
       };
