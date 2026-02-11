@@ -145,7 +145,6 @@ export const DateInput: React.FC<DateInputProps> = ({
       maxLength={10}
       className={className}
       inputMode="numeric"
-      pattern="[0-9/]*"
       autoComplete="off"
     />
   );
