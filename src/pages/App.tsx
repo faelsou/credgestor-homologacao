@@ -3144,12 +3144,97 @@ const App: React.FC = () => {
         }
       }
 
-      setInstallments(prev => prev.map(inst => inst.id === id ? updatedInstallment : inst));
+      setInstallments(prev => {
+        const updated = prev.map(inst => inst.id === id ? updatedInstallment : inst);
+        
+        // Atualizar apenas o empréstimo relacionado à parcela que foi paga
+        // Isso evita atualizar todos os empréstimos e causar muitas requisições simultâneas
+        const loanId = installment.loanId;
+        const related = updated.filter(inst => inst.loanId === loanId);
+        
+        if (related.length > 0) {
+          // Usar setLoans com função callback para obter o estado mais recente
+          setLoans(currentLoans => {
+            const loan = currentLoans.find(l => l.id === loanId);
+            if (!loan) return currentLoans;
+            // Calcular valor em aberto
+            const outstandingAmount = calculateOutstandingAmount(loan, related);
+            
+            // Para empréstimos "somente juros", verificar se capital + todos os juros foram pagos
+            if (loan.model === LoanModel.INTEREST_ONLY) {
+              // Calcular capital total pago através do histórico de pagamentos
+              const totalCapitalPaid = related.reduce((sum, inst) => {
+                if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+                  return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+                }
+                return sum;
+              }, 0);
+              
+              // Verificar se há parcelas pendentes (não pagas completamente)
+              const hasPendingInstallments = related.some(inst => inst.status !== InstallmentStatus.PAID);
+              
+              const isCapitalPaid = totalCapitalPaid >= loan.amount;
+              const allInstallmentsPaid = !hasPendingInstallments;
+              
+              const isLoanPaid = isCapitalPaid && allInstallmentsPaid;
+              const newStatus = isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE;
+              
+              // Só atualizar se o valor ou status realmente mudou
+              const hasChanged = loan.status !== newStatus || 
+                                Math.abs((loan.outstandingAmount || 0) - outstandingAmount) > 0.01;
+              
+              if (hasChanged) {
+                const updatedLoan = { ...loan, status: newStatus, outstandingAmount };
+                
+                // Atualizar no backend se configurado (de forma assíncrona e silenciosa)
+                if (isBackendConfiguredValue && session?.accessToken) {
+                  setTimeout(async () => {
+                    try {
+                      const { updateBackendLoan } = await import('@/services/backendApi');
+                      await updateBackendLoan(session.accessToken, session.tenantId || '', loanId, updatedLoan);
+                    } catch (error) {
+                      console.warn('Erro ao atualizar valor em aberto no backend (não crítico):', error);
+                    }
+                  }, 100);
+                }
+                
+                return currentLoans.map(l => l.id === loanId ? updatedLoan : l);
+              }
+            } else {
+              // Para outros modelos, verificar se todas as parcelas estão pagas
+              const isLoanPaid = related.every(inst => inst.status === InstallmentStatus.PAID || inst.amount <= 0);
+              const newStatus = isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE;
+              
+              // Só atualizar se o valor ou status realmente mudou
+              const hasChanged = loan.status !== newStatus || 
+                                Math.abs((loan.outstandingAmount || 0) - outstandingAmount) > 0.01;
+              
+              if (hasChanged) {
+                const updatedLoan = { ...loan, status: newStatus, outstandingAmount };
+                
+                // Atualizar no backend se configurado (de forma assíncrona e silenciosa)
+                if (isBackendConfiguredValue && session?.accessToken) {
+                  setTimeout(async () => {
+                    try {
+                      const { updateBackendLoan } = await import('@/services/backendApi');
+                      await updateBackendLoan(session.accessToken, session.tenantId || '', loanId, updatedLoan);
+                    } catch (error) {
+                      console.warn('Erro ao atualizar valor em aberto no backend (não crítico):', error);
+                    }
+                  }, 100);
+                }
+                
+                return currentLoans.map(l => l.id === loanId ? updatedLoan : l);
+              }
+            }
+            
+            return currentLoans;
+          });
+        }
+        
+        return updated;
+      });
     }
-
-    // Atualizar status do empréstimo e valor em aberto
-    setLoans(prevLoans => prevLoans.map(l => {
-      const related = installments.filter(inst => inst.loanId === l.id);
       
       if (related.length === 0) {
         return { ...l, status: LoanStatus.ACTIVE, outstandingAmount: l.totalAmount };
@@ -3168,44 +3253,40 @@ const App: React.FC = () => {
           return sum;
         }, 0);
         
-        // Calcular juros totais pagos através do histórico de pagamentos
-        const totalInterestPaid = related.reduce((sum, inst) => {
-          if (inst.paymentHistory && inst.paymentHistory.length > 0) {
-            return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.interestPaid || 0), 0);
-          }
-          return sum;
-        }, 0);
-        
-        // Calcular juros mensais (sempre baseado no capital original)
-        const monthlyInterest = Number((l.amount * (l.interestRate / 100)).toFixed(2));
-        
         // Verificar se há parcelas pendentes (não pagas completamente)
         const hasPendingInstallments = related.some(inst => inst.status !== InstallmentStatus.PAID);
         
         // Empréstimo só está finalizado se:
         // 1. Capital foi totalmente pago (totalCapitalPaid >= loan.amount)
-        // 2. Todos os juros foram pagos (verificar através do histórico)
-        // 3. Não há parcelas pendentes (todas estão PAID)
-        // IMPORTANTE: Como o capital sempre permanece como o valor original nas parcelas,
-        // precisamos verificar através do histórico de pagamentos se foi totalmente pago
+        // 2. Não há parcelas pendentes (todas estão PAID)
         const isCapitalPaid = totalCapitalPaid >= l.amount;
         const allInstallmentsPaid = !hasPendingInstallments;
         
-        // Para verificar se todos os juros foram pagos, verificar se todas as parcelas estão PAID
-        // e se o capital foi pago (isso garante que capital + juros foram pagos)
         const isLoanPaid = isCapitalPaid && allInstallmentsPaid;
-        const updatedLoan = { ...l, status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE, outstandingAmount };
+        const newStatus = isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE;
         
-        // Atualizar no backend se configurado
+        // Só atualizar se o valor ou status realmente mudou
+        const hasChanged = l.status !== newStatus || 
+                          Math.abs((l.outstandingAmount || 0) - outstandingAmount) > 0.01;
+        
+        if (!hasChanged) {
+          return l;
+        }
+        
+        const updatedLoan = { ...l, status: newStatus, outstandingAmount };
+        
+        // Atualizar no backend se configurado (de forma assíncrona e silenciosa)
         if (isBackendConfiguredValue && session?.accessToken) {
-          (async () => {
+          // Usar setTimeout para evitar bloquear a UI e dar tempo para outras operações
+          setTimeout(async () => {
             try {
               const { updateBackendLoan } = await import('@/services/backendApi');
               await updateBackendLoan(session.accessToken, session.tenantId || '', l.id, updatedLoan);
             } catch (error) {
-              console.error('Erro ao atualizar valor em aberto no backend', error);
+              // Erro silencioso - não bloquear a UI, apenas logar
+              console.warn('Erro ao atualizar valor em aberto no backend (não crítico):', error);
             }
-          })();
+          }, 100); // Delay de 100ms para evitar requisições simultâneas
         }
         
         return updatedLoan;
@@ -3213,18 +3294,30 @@ const App: React.FC = () => {
       
       // Para outros modelos, verificar se todas as parcelas estão pagas
       const isLoanPaid = related.every(inst => inst.status === InstallmentStatus.PAID || inst.amount <= 0);
-      const updatedLoan = { ...l, status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE, outstandingAmount };
+      const newStatus = isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE;
       
-      // Atualizar no backend se configurado
+      // Só atualizar se o valor ou status realmente mudou
+      const hasChanged = l.status !== newStatus || 
+                        Math.abs((l.outstandingAmount || 0) - outstandingAmount) > 0.01;
+      
+      if (!hasChanged) {
+        return l;
+      }
+      
+      const updatedLoan = { ...l, status: newStatus, outstandingAmount };
+      
+      // Atualizar no backend se configurado (de forma assíncrona e silenciosa)
       if (isBackendConfiguredValue && session?.accessToken) {
-        (async () => {
+        // Usar setTimeout para evitar bloquear a UI e dar tempo para outras operações
+        setTimeout(async () => {
           try {
             const { updateBackendLoan } = await import('@/services/backendApi');
             await updateBackendLoan(session.accessToken, session.tenantId || '', l.id, updatedLoan);
           } catch (error) {
-            console.error('Erro ao atualizar valor em aberto no backend', error);
+            // Erro silencioso - não bloquear a UI, apenas logar
+            console.warn('Erro ao atualizar valor em aberto no backend (não crítico):', error);
           }
-        })();
+        }, 100); // Delay de 100ms para evitar requisições simultâneas
       }
       
       return updatedLoan;
