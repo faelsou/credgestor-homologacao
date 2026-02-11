@@ -2,7 +2,7 @@ import React, { useContext, useState, useMemo, useCallback } from 'react';
 import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Pencil, FileSpreadsheet } from 'lucide-react';
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, getTodayDateString, isLate, formatInterestRate } from '@/utils';
-import { InstallmentStatus, Installment, UserRole, LoanModel } from '@/types';
+import { InstallmentStatus, Installment, UserRole, LoanModel, LoanStatus } from '@/types';
 
 export const InstallmentsView: React.FC = () => {
   const { installments, clients, loans, payInstallment, updateInstallment, scheduleFuturePayment, user, installmentsInitialFilter, setInstallmentsInitialFilter, installmentsDateRange, setInstallmentsDateRange } = useContext(AppContext);
