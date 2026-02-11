@@ -3235,6 +3235,7 @@ const App: React.FC = () => {
         return updated;
       });
     }
+  }, [installments, loans, user?.role, isBackendConfiguredValue, session]);
 
   const addUser = useCallback(async (newUser: User): Promise<User | null> => {
     // Se usar backend, criar usuário via API do backend
