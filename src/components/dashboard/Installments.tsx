@@ -166,18 +166,24 @@ export const InstallmentsView: React.FC = () => {
       // Para PRICE, sempre usar o valor pendente da parcela completa
       setPaymentAmount(pendingAmount > 0 ? pendingAmount : installment.amount);
     } else {
-      // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser SEMPRE calculados
-      // sobre o valor ORIGINAL do empréstimo (loan.totalAmount), não sobre o capital restante
-      // ou o interestAmount da parcela (que pode estar incorreto).
-      // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
-      // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 sempre
+      // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser calculados
+      // sobre o capital pendente atual (não sobre o capital original)
       let interestAmount = 0;
       
       if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-        // SEMPRE usar o valor ORIGINAL do capital (loan.amount), não o totalAmount
-        // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
-        // Não usar o interestAmount da parcela, pois pode estar incorreto
-        interestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
+        // Calcular capital pendente para determinar os juros
+        const allLoanInstallments = installments.filter(inst => inst.loanId === loan.id);
+        const totalCapitalPaid = allLoanInstallments.reduce((sum, inst) => {
+          if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+            return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+          }
+          return sum;
+        }, 0);
+        const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
+        
+        // Juros devem ser calculados sobre o capital pendente atual
+        // Quando o capital é pago, os juros diminuem proporcionalmente
+        interestAmount = Number((pendingCapital * (loan.interestRate / 100)).toFixed(2));
       } else if (loan) {
         // Para outros modelos, usar o interestAmount da parcela ou calcular
         interestAmount = installment.interestAmount ?? 0;
@@ -195,13 +201,21 @@ export const InstallmentsView: React.FC = () => {
   };
 
   const getInterestAmount = (inst: Installment) => {
-    // IMPORTANTE: Para empréstimos "somente juros", sempre usar o valor original dos juros
-    // baseado no valor original do empréstimo, não no valor salvo na parcela (que pode estar incorreto)
+    // IMPORTANTE: Para empréstimos "somente juros", calcular juros sobre o capital pendente atual
     const loan = loans.find(l => l.id === inst.loanId);
     if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-      // SEMPRE calcular baseado no valor ORIGINAL do capital (loan.amount), não o totalAmount
-      // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
-      return Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
+      // Calcular capital pendente para determinar os juros
+      const allLoanInstallments = installments.filter(i => i.loanId === loan.id);
+      const totalCapitalPaid = allLoanInstallments.reduce((sum, i) => {
+        if (i.paymentHistory && i.paymentHistory.length > 0) {
+          return sum + i.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+        }
+        return sum;
+      }, 0);
+      const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
+      
+      // Juros devem ser calculados sobre o capital pendente atual
+      return Number((pendingCapital * (loan.interestRate / 100)).toFixed(2));
     }
     
     // Para outros modelos, usar o valor salvo na parcela
@@ -305,7 +319,7 @@ export const InstallmentsView: React.FC = () => {
         return loan.totalAmount;
       }
       
-      // Para empréstimos "somente juros", calcular capital + juros pendentes
+      // Para empréstimos "somente juros", calcular capital + juros totais
       if (loan.model === LoanModel.INTEREST_ONLY) {
         // Calcular capital total pago através do histórico de pagamentos
         const totalCapitalPaid = allLoanInstallments.reduce((sum, inst) => {
@@ -315,24 +329,22 @@ export const InstallmentsView: React.FC = () => {
           return sum;
         }, 0);
         
-        // Se o cliente pagou somente juros (capital pago = 0), manter o capital original
-        // Se o cliente pagou juros + capital (capital pago > 0), reduzir o capital pendente
-        const pendingCapital = totalCapitalPaid > 0 
-          ? Math.max(0, loan.amount - totalCapitalPaid) 
-          : loan.amount; // Se só juros foram pagos, manter capital original
+        // Capital pendente = Capital original - Capital pago
+        const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
         
-        // Calcular juros pendentes de TODAS as parcelas (incluindo parcelas PARCIAL)
-        // Para empréstimos INTEREST_ONLY, juros sempre são baseados no capital original
-        const monthlyInterest = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
-        let totalInterest = 0;
+        // IMPORTANTE: VALOR EM ABERTO = Capital pendente + Juros sobre capital pendente
+        // Juros são calculados sobre o capital pendente (não sobre o capital original)
+        // Quando cliente paga apenas juros, o capital não muda, então VALOR EM ABERTO permanece igual
+        // Quando cliente paga juros + capital, o capital diminui e os juros são recalculados sobre o novo capital
+        // Exemplo: R$ 1.000 com 10% = R$ 1.100 inicial
+        //          Cliente paga R$ 200 (R$ 100 juros + R$ 100 capital)
+        //          Capital restante: R$ 900, Juros: 10% de R$ 900 = R$ 90
+        //          VALOR EM ABERTO = R$ 900 + R$ 90 = R$ 990
+        const monthlyInterest = Number((pendingCapital * (loan.interestRate / 100)).toFixed(2));
         
-        for (const inst of allLoanInstallments) {
-          // Para cada parcela, calcular quanto de juros ainda está pendente
-          // Juros da parcela = sempre o valor mensal baseado no capital original
-          const interestPaid = inst.paymentHistory?.reduce((sum, p) => sum + (p.interestPaid || 0), 0) || 0;
-          const pendingInterest = Math.max(0, monthlyInterest - interestPaid);
-          totalInterest += pendingInterest;
-        }
+        // Usar o número de parcelas do empréstimo ou o número de parcelas existentes
+        const totalInstallments = loan.installmentsCount || allLoanInstallments.length || 1;
+        const totalInterest = monthlyInterest * totalInstallments;
         
         const totalOutstanding = pendingCapital + totalInterest;
         return Number(totalOutstanding.toFixed(2));
@@ -363,18 +375,22 @@ export const InstallmentsView: React.FC = () => {
     
     if (!hasPartialPayment) {
       // Apenas validar valor mínimo se a parcela ainda não foi paga parcialmente
-      // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser SEMPRE calculados
-      // sobre o valor ORIGINAL do empréstimo (loan.amount), não sobre o capital restante
-      // ou o interestAmount da parcela (que pode estar incorreto).
-      // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
-      // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 sempre
+      // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser calculados sobre o capital pendente
       let interestAmount = 0;
       
       if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-        // SEMPRE usar o valor ORIGINAL do capital (loan.amount), não o totalAmount
-        // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
-        // Não usar o interestAmount da parcela, pois pode estar incorreto
-        interestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
+        // Calcular capital pendente para determinar os juros
+        const allLoanInstallments = installments.filter(inst => inst.loanId === loan.id);
+        const totalCapitalPaid = allLoanInstallments.reduce((sum, inst) => {
+          if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+            return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+          }
+          return sum;
+        }, 0);
+        const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
+        
+        // Juros devem ser calculados sobre o capital pendente atual
+        interestAmount = Number((pendingCapital * (loan.interestRate / 100)).toFixed(2));
       } else if (loan) {
         // Para outros modelos (PRICE, etc.), usar o interestAmount da parcela ou calcular
         interestAmount = selectedInstallment.interestAmount ?? 0;
@@ -450,11 +466,20 @@ export const InstallmentsView: React.FC = () => {
     setEditDueDate(inst.dueDate);
     
     // IMPORTANTE: Para empréstimos "somente juros", sempre usar os valores corretos
-    // baseados no valor original do empréstimo, não nos valores salvos na parcela (que podem estar incorretos)
+    // baseados no capital pendente atual, não nos valores salvos na parcela (que podem estar incorretos)
     if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-      // SEMPRE calcular baseado no valor ORIGINAL do capital (loan.amount), não o totalAmount
-      // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
-      const correctInterestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
+      // Calcular capital pendente para determinar os juros
+      const allLoanInstallments = installments.filter(i => i.loanId === loan.id);
+      const totalCapitalPaid = allLoanInstallments.reduce((sum, i) => {
+        if (i.paymentHistory && i.paymentHistory.length > 0) {
+          return sum + i.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+        }
+        return sum;
+      }, 0);
+      const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
+      
+      // Juros devem ser calculados sobre o capital pendente atual
+      const correctInterestAmount = Number((pendingCapital * (loan.interestRate / 100)).toFixed(2));
       setEditAmount(correctInterestAmount);
       setEditInterestAmount(correctInterestAmount);
       setEditPrincipalAmount(inst.principalAmount ?? loan.totalAmount);
@@ -500,11 +525,31 @@ export const InstallmentsView: React.FC = () => {
   };
 
   const renderStatus = (inst: Installment, late: boolean) => {
+    const loan = loans.find(l => l.id === inst.loanId);
+    const isInterestOnly = loan?.model === LoanModel.INTEREST_ONLY;
+
     if (inst.status === InstallmentStatus.PAID) {
+      // Para empréstimos somente juros, mostrar "PAGO" em vez de "Pago"
+      if (isInterestOnly) {
+        return <span className="flex items-center gap-1 text-emerald-600 font-bold"><CheckCircle size={14}/> PAGO</span>;
+      }
       return <span className="flex items-center gap-1 text-emerald-600 font-bold"><CheckCircle size={14}/> Pago</span>;
     }
 
     if (inst.status === InstallmentStatus.PARTIAL) {
+      // Para empréstimos somente juros, verificar se houve amortização
+      if (isInterestOnly) {
+        // Verificar se há pagamento de capital no histórico
+        const hasPrincipalPayment = inst.paymentHistory && inst.paymentHistory.length > 0
+          ? inst.paymentHistory.some(p => (p.principalPaid || 0) > 0)
+          : false;
+        
+        if (hasPrincipalPayment) {
+          return <span className="flex items-center gap-1 text-amber-600 font-bold"><Clock size={14}/> Pgto Juros+Amortização</span>;
+        } else {
+          return <span className="flex items-center gap-1 text-amber-600 font-bold"><Clock size={14}/> Pgto Juros</span>;
+        }
+      }
       return <span className="flex items-center gap-1 text-amber-600 font-bold"><Clock size={14}/> Parcial</span>;
     }
 
@@ -554,10 +599,23 @@ export const InstallmentsView: React.FC = () => {
       
       // Status formatado
       let status = '';
+      const isInterestOnly = loan?.model === LoanModel.INTEREST_ONLY;
+      
       if (inst.status === InstallmentStatus.PAID) {
-        status = 'Pago';
+        // Para empréstimos somente juros, mostrar "PAGO" em vez de "Pago"
+        status = isInterestOnly ? 'PAGO' : 'Pago';
       } else if (inst.status === InstallmentStatus.PARTIAL) {
-        status = 'Parcial';
+        // Para empréstimos somente juros, verificar se houve amortização
+        if (isInterestOnly) {
+          // Verificar se há pagamento de capital no histórico
+          const hasPrincipalPayment = inst.paymentHistory && inst.paymentHistory.length > 0
+            ? inst.paymentHistory.some(p => (p.principalPaid || 0) > 0)
+            : false;
+          
+          status = hasPrincipalPayment ? 'Pgto Juros+Amortização' : 'Pgto Juros';
+        } else {
+          status = 'Parcial';
+        }
       } else if (late) {
         status = 'Atrasada';
       } else {
@@ -933,11 +991,19 @@ export const InstallmentsView: React.FC = () => {
                   let displayAmount = selectedInstallment.amount;
                   
                   if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-                    // SEMPRE usar o valor ORIGINAL do capital (loan.amount), não o totalAmount
-                    // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
-                    // Isso corrige automaticamente valores incorretos nas parcelas
-                    minInterestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
-                    // Para INTEREST_ONLY, o valor da parcela deve ser sempre igual aos juros originais
+                    // Calcular capital pendente para determinar os juros
+                    const allLoanInstallments = installments.filter(i => i.loanId === loan.id);
+                    const totalCapitalPaid = allLoanInstallments.reduce((sum, i) => {
+                      if (i.paymentHistory && i.paymentHistory.length > 0) {
+                        return sum + i.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+                      }
+                      return sum;
+                    }, 0);
+                    const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
+                    
+                    // Juros devem ser calculados sobre o capital pendente atual
+                    minInterestAmount = Number((pendingCapital * (loan.interestRate / 100)).toFixed(2));
+                    // Para INTEREST_ONLY, o valor da parcela deve ser sempre igual aos juros calculados sobre capital pendente
                     displayAmount = minInterestAmount;
                   }
                   
@@ -967,9 +1033,20 @@ export const InstallmentsView: React.FC = () => {
                   let displayInterest = selectedInstallment.interestAmount ?? 0;
                   
                   // IMPORTANTE: Para empréstimos "somente juros", sempre mostrar o valor correto dos juros
-                  // baseado no valor ORIGINAL do capital (loan.amount), não no totalAmount ou no valor salvo na parcela
+                  // baseado no capital pendente atual, não no totalAmount ou no valor salvo na parcela
                   if (loan && loan.model === LoanModel.INTEREST_ONLY) {
-                    displayInterest = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
+                    // Calcular capital pendente para determinar os juros
+                    const allLoanInstallments = installments.filter(i => i.loanId === loan.id);
+                    const totalCapitalPaid = allLoanInstallments.reduce((sum, i) => {
+                      if (i.paymentHistory && i.paymentHistory.length > 0) {
+                        return sum + i.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+                      }
+                      return sum;
+                    }, 0);
+                    const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
+                    
+                    // Juros devem ser calculados sobre o capital pendente atual
+                    displayInterest = Number((pendingCapital * (loan.interestRate / 100)).toFixed(2));
                   }
                   
                   // IMPORTANTE: Para empréstimos "somente juros", sempre mostrar o capital original do empréstimo
