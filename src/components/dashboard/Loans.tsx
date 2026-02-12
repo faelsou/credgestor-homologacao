@@ -437,18 +437,17 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
         ? Math.max(0, loan.amount - totalCapitalPaid) 
         : loan.amount; // Se só juros foram pagos, manter capital original
       
-      // Calcular juros pendentes (de parcelas não pagas)
+      // Calcular juros pendentes de TODAS as parcelas (incluindo parcelas PARCIAL)
+      // Para empréstimos INTEREST_ONLY, juros sempre são baseados no capital original
+      const monthlyInterest = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
       let totalInterestPending = 0;
+      
       for (const inst of related) {
-        if (inst.status !== InstallmentStatus.PAID) {
-          const interest = inst.interestAmount ?? 0;
-          if (interest > 0) {
-            // Verificar se os juros desta parcela foram pagos
-            const interestPaid = inst.paymentHistory?.reduce((sum, p) => sum + (p.interestPaid || 0), 0) || 0;
-            const pendingInterest = Math.max(0, interest - interestPaid);
-            totalInterestPending += pendingInterest;
-          }
-        }
+        // Para cada parcela, calcular quanto de juros ainda está pendente
+        // Juros da parcela = sempre o valor mensal baseado no capital original
+        const interestPaid = inst.paymentHistory?.reduce((sum, p) => sum + (p.interestPaid || 0), 0) || 0;
+        const pendingInterest = Math.max(0, monthlyInterest - interestPaid);
+        totalInterestPending += pendingInterest;
       }
       
       const totalOutstanding = pendingCapital + totalInterestPending;
