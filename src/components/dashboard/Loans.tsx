@@ -129,15 +129,15 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   };
 
   // Gerar hashes sequenciais para cada parcela da nota promissória
-  // Formato: #1/010#, #2/010#, #3/010#, etc.
-  // Onde o primeiro número é sequencial (1, 2, 3...) e o segundo é o número de parcelas
+  // Formato: #1/005#, #2/005#, #3/005#, etc.
+  // Onde o primeiro número é o número da parcela (1, 2, 3...) e o segundo é o total de parcelas
   const generateSequentialHashes = (installmentsCount: number): string[] => {
     const hashes: string[] = [];
-    const parcelNumber = installmentsCount.toString().padStart(3, '0');
+    const totalParcels = installmentsCount.toString().padStart(3, '0');
     
-    // Gerar hash sequencial para cada parcela
+    // Gerar hash sequencial para cada parcela: Nº #1/005#, Nº #2/005#, etc.
     for (let i = 1; i <= installmentsCount; i++) {
-      hashes.push(`#${i}/${parcelNumber}#`);
+      hashes.push(`#${i}/${totalParcels}#`);
     }
     
     return hashes;
@@ -639,9 +639,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
     
     // Gerar hashes sequenciais para cada parcela
-    // Formato: #1/010#, #2/010#, #3/010#, etc.
-    // Onde o primeiro número é sequencial (1, 2, 3...) e o segundo é o número de parcelas
-    const hashes = generateSequentialHashes(loan.installmentsCount);
+    // Formato: #1/005#, #2/005#, #3/005#, etc.
+    // Onde o primeiro número é o número da parcela (1, 2, 3...) e o segundo é o total de parcelas
+    const totalInstallments = loanInstallments.length > 0 ? loanInstallments.length : loan.installmentsCount;
+    const hashes = generateSequentialHashes(totalInstallments);
     
     // Dados do credor (empresa)
     const creditorName = issuerData?.name || issuerName || 'Empresa Credora';
@@ -920,6 +921,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
               margin-top: 8px;
               font-size: 8.5pt;
               flex-shrink: 0;
+              margin-bottom: 30px;
             }
             .issuer-title {
               font-weight: bold;
@@ -933,7 +935,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
               text-align: center;
               border-top: 1px solid #000;
               padding-top: 6px;
-              min-height: 40px;
+              min-height: 60px;
               flex-shrink: 0;
             }
             .signature-name {
