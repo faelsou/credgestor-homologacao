@@ -28,3 +28,6 @@ black==24.10.0
 
 # Monitoramento Prometheus
 prometheus-fastapi-instrumentator==7.0.0
+
+# Segurança - Rate Limiting
+slowapi==0.1.9

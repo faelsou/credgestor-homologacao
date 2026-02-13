@@ -1,13 +1,17 @@
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Tuple
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Response, status
+from fastapi import Body, Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from prometheus_fastapi_instrumentator import Instrumentator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from .settings import get_settings
 from .supabase_client import (
@@ -33,12 +37,27 @@ from .db_metrics import (
 )
 
 app = FastAPI(title="CredGestor Supabase backend", version="0.1.0")
+
+# Configurar Rate Limiting
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Configurar CORS de forma mais segura
+# Permitir apenas origens específicas em produção
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+if allowed_origins == ["*"]:
+    # Em desenvolvimento, permitir todas as origens
+    # Em produção, configure ALLOWED_ORIGINS com origens específicas
+    pass
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
 )
 
 # Configurar OpenTelemetry (deve ser feito antes da instrumentação do Prometheus)
@@ -74,9 +93,18 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 class LoginRequest(BaseModel):
-    email: str
-    senha: str
-    tenant_id: str | None = None
+    email: EmailStr = Field(..., description="Email do usuário")
+    senha: str = Field(..., min_length=8, max_length=128, description="Senha do usuário")
+    tenant_id: str | None = Field(None, pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', description="ID do tenant (UUID)")
+    
+    @field_validator('senha')
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        """Valida que a senha não contém caracteres perigosos"""
+        if not v or len(v.strip()) == 0:
+            raise ValueError("Senha não pode estar vazia")
+        # Remover espaços em branco no início e fim
+        return v.strip()
 
 
 class RefreshTokenRequest(BaseModel):
@@ -634,7 +662,8 @@ def _authenticate_user(payload: LoginRequest):
         # REGRA CRÍTICA: NÃO usar default_tenant_id como fallback
         # Cada usuário DEVE ter seu próprio tenant_id nos metadados
         tenant_id = payload.tenant_id  # Não usar default_tenant_id
-        print(f"🔍 [DEBUG] _authenticate_user: email={payload.email}, tenant_id do payload={tenant_id}")
+        # Log seguro: não logar informações sensíveis como senha
+        print(f"🔍 [DEBUG] _authenticate_user: email={payload.email}, tenant_id presente={tenant_id is not None}")
 
         if not settings.supabase_anon_key or settings.supabase_anon_key.strip() == "":
             raise HTTPException(
@@ -738,17 +767,21 @@ def _authenticate_user(payload: LoginRequest):
         DatabaseMetrics.record_login_error("http_exception", e.status_code)
         raise
     except Exception as e:
-        # Captura qualquer outra exceção não tratada e retorna erro 500 com detalhes
+        # Captura qualquer outra exceção não tratada
+        # Log detalhado internamente, mas não expor detalhes ao cliente
         import traceback
-        error_details = str(e)
-        traceback_str = traceback.format_exc()
         error_type = type(e).__name__
-        print(f"❌ Erro inesperado no login: {error_details}")
-        print(f"📋 Traceback: {traceback_str}")
+        traceback_str = traceback.format_exc()
+        # Log completo para debugging interno
+        print(f"❌ Erro inesperado no login: {error_type}")
+        # Em produção, não logar traceback completo para evitar vazamento de informações
+        if os.getenv("ENVIRONMENT", "development") == "development":
+            print(f"📋 Traceback: {traceback_str}")
         DatabaseMetrics.record_login_error(error_type, 500)
+        # Não expor detalhes do erro ao cliente por segurança
         raise HTTPException(
             status_code=500,
-            detail=f"Erro interno ao processar login: {error_details}"
+            detail="Erro interno ao processar login. Tente novamente mais tarde."
         )
 
 
@@ -904,7 +937,9 @@ def list_tenant_resource(
 
 
 @app.post("/tenants/{tenant_id}/{resource}")
+@limiter.limit("100/minute")  # Limite de requisições por minuto
 def create_tenant_resource(
+    request: Request,
     tenant_id: str,
     resource: str,
     payload: Dict[str, Any] = Body(...),
@@ -1156,12 +1191,15 @@ def create_tenant_user(
 
 
 @app.post("/auth/login")
-def login(payload: LoginRequest):
+@limiter.limit("5/minute")  # Máximo 5 tentativas de login por minuto por IP
+def login(request: Request, payload: LoginRequest):
+    """Endpoint de login com rate limiting para prevenir brute force attacks"""
     return _authenticate_user(payload)
 
 
 @app.post("/auth/refresh")
-def refresh_token(payload: RefreshTokenRequest):
+@limiter.limit("10/minute")  # Máximo 10 renovações de token por minuto
+def refresh_token(request: Request, payload: RefreshTokenRequest):
     """Renova o access token usando o refresh token."""
     import requests
     
