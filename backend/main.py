@@ -39,9 +39,21 @@ from .db_metrics import (
 app = FastAPI(title="CredGestor Supabase backend", version="0.1.0")
 
 # Configurar Rate Limiting
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# Nota: slowapi requer que o limiter seja inicializado antes de usar nos decoradores
+try:
+    limiter = Limiter(key_func=get_remote_address)
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+except Exception as e:
+    # Se slowapi não estiver disponível, criar um limiter dummy que não faz nada
+    print(f"⚠️  Aviso: Rate limiting não disponível: {e}")
+    # Criar um objeto dummy que aceita o decorador mas não faz nada
+    class DummyLimiter:
+        def limit(self, *args, **kwargs):
+            def decorator(func):
+                return func
+            return decorator
+    limiter = DummyLimiter()
 
 # Configurar CORS de forma mais segura
 # Permitir apenas origens específicas em produção
