@@ -708,7 +708,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
           const installmentDueDate = installment.dueDate;
           const installmentDueDateWords = formatDateToWords(installmentDueDate);
           const installmentValue = installment.amount;
-          const installmentValueWords = numberToWords(installmentValue);
+          // Usar o valor do empréstimo (capital) ao invés do valor da parcela na descrição
+          const installmentValueWords = numberToWords(promissoryNote.capital);
           const installmentIssueDate = formatDate(promissoryNote.issueDate);
           const installmentDueDateFormatted = formatDate(installmentDueDate);
           
@@ -777,7 +778,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       : (() => {
           // Fallback: gerar uma única nota se não houver parcelas
           const dueDateWords = formatDateToWords(promissoryNote.dueDate);
-          const noteValue = loan.totalAmount;
+          // Usar o valor do empréstimo (capital) ao invés do valor total
+          const noteValue = promissoryNote.capital;
           const noteValueWords = numberToWords(noteValue);
           const issueDate = formatDate(promissoryNote.issueDate);
           
