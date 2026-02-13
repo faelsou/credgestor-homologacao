@@ -1140,7 +1140,8 @@ export const InstallmentsView: React.FC = () => {
                         if (loan && loan.model === LoanModel.INTEREST_ONLY) {
                           // Sempre usar o valor ORIGINAL do capital (loan.amount), não o totalAmount
                           // O totalAmount pode incluir juros, mas os juros devem ser calculados sobre o capital original
-                          interestAmount = Number((loan.amount * (loan.interestRate / 100)).toFixed(2));
+                          // Arredondar juros para cima para garantir que os centavos sejam sempre arredondados para cima
+                          interestAmount = Math.ceil(loan.amount * (loan.interestRate / 100));
                         } else if (loan) {
                           // Para outros modelos, usar o interestAmount da parcela ou calcular
                           interestAmount = selectedInstallment.interestAmount ?? 0;

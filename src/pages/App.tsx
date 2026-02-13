@@ -2499,7 +2499,8 @@ const App: React.FC = () => {
         //          Cliente paga R$ 200 (R$ 100 juros + R$ 100 capital)
         //          Capital restante: R$ 900, Juros: 10% de R$ 900 = R$ 90
         //          VALOR EM ABERTO = R$ 900 + R$ 90 = R$ 990
-        const monthlyInterest = Number((pendingCapital * (loan.interestRate / 100)).toFixed(2));
+        // Arredondar juros para cima para garantir que os centavos sejam sempre arredondados para cima
+        const monthlyInterest = Math.ceil(pendingCapital * (loan.interestRate / 100));
         
         // Usar o número de parcelas do empréstimo ou o número de parcelas existentes
         const totalInstallments = loan.installmentsCount || relatedInstallments.length || 1;
@@ -2813,7 +2814,8 @@ const App: React.FC = () => {
       // Quando o capital é pago, os juros diminuem proporcionalmente
       // Exemplo: R$ 1.000 com 10% = R$ 100 inicial
       //          Após pagar R$ 100 de capital: Capital restante R$ 900, Juros = 10% de R$ 900 = R$ 90
-      const correctInterestAmount = Number((pendingCapital * (loan.interestRate / 100)).toFixed(2));
+      // Arredondar juros para cima para garantir que os centavos sejam sempre arredondados para cima
+      const correctInterestAmount = Math.ceil(pendingCapital * (loan.interestRate / 100));
       
       // IMPORTANTE: Usar o valor correto dos juros baseado no capital pendente
       // Se o interestAmount da parcela estiver incorreto, usar o valor calculado
