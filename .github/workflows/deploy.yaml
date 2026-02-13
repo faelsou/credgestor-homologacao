@@ -321,7 +321,9 @@ jobs:
           echo "${{ steps.meta.outputs.tags }}" | tr ',' '\n' | sed 's/^/  - /'
 
       - name: 🔒 Scan Docker image with Trivy
+        id: trivy-scan
         uses: aquasecurity/trivy-action@master
+        continue-on-error: true
         with:
           image-ref: ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY }}-${{ matrix.component }}:latest
           format: 'sarif'
@@ -331,9 +333,21 @@ jobs:
           # Scan apenas se a imagem foi criada (push bem-sucedido)
           only-fixed: false
 
+      - name: ✅ Check if SARIF file exists
+        id: check-sarif
+        if: always() && github.event_name != 'pull_request'
+        run: |
+          if [ -f "trivy-image-${{ matrix.component }}.sarif" ]; then
+            echo "✅ SARIF file exists"
+            echo "file_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ SARIF file not found, skipping upload"
+            echo "file_exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: 📤 Upload Trivy image scan results
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && github.event_name != 'pull_request'
+        if: always() && github.event_name != 'pull_request' && steps.check-sarif.outputs.file_exists == 'true'
         with:
           sarif_file: 'trivy-image-${{ matrix.component }}.sarif'
           wait-for-processing: false
