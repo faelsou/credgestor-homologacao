@@ -840,7 +840,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             @media print {
               @page {
                 size: A4;
-                margin: 0.8cm;
+                margin: 0.5cm;
               }
               .note-container {
                 page-break-inside: avoid;
@@ -853,19 +853,19 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             }
             body {
               font-family: 'Times New Roman', serif;
-              font-size: 9pt;
-              line-height: 1.3;
+              font-size: 8pt;
+              line-height: 1.2;
               color: #000;
-              padding: 5px;
+              padding: 3px;
               margin: 0;
             }
             .note-container {
               border: 1px solid #000;
-              padding: 12px;
-              margin-bottom: 8px;
-              height: calc((100vh - 1.6cm) / 3);
-              max-height: 9.2cm;
-              min-height: 9cm;
+              padding: 8px;
+              margin-bottom: 5px;
+              height: calc((100vh - 1cm) / 3);
+              max-height: 9.5cm;
+              min-height: 9.2cm;
               position: relative;
               display: flex;
               flex-direction: column;
@@ -875,9 +875,9 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
               display: flex;
               justify-content: space-between;
               align-items: flex-start;
-              margin-bottom: 8px;
+              margin-bottom: 5px;
               border-bottom: 1px solid #000;
-              padding-bottom: 6px;
+              padding-bottom: 4px;
               flex-shrink: 0;
             }
             .header-left {
@@ -885,73 +885,73 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             }
             .header-right {
               text-align: right;
-              font-size: 8pt;
+              font-size: 7pt;
             }
             .header-left h1 {
-              font-size: 13pt;
+              font-size: 11pt;
               font-weight: bold;
               margin: 0;
               text-transform: uppercase;
-              letter-spacing: 0.3px;
+              letter-spacing: 0.2px;
             }
             .document-number {
-              font-size: 9pt;
-              margin-bottom: 3px;
+              font-size: 8pt;
+              margin-bottom: 2px;
               font-weight: bold;
             }
             .due-date {
-              font-size: 8pt;
+              font-size: 7pt;
             }
             .promise-text {
               text-align: justify;
-              margin: 8px 0;
-              font-size: 9pt;
-              line-height: 1.4;
+              margin: 5px 0;
+              font-size: 8pt;
+              line-height: 1.3;
               flex-shrink: 0;
             }
             .promise-text p {
               margin: 0;
             }
             .info-section {
-              margin: 6px 0;
-              font-size: 8.5pt;
+              margin: 4px 0;
+              font-size: 7.5pt;
               flex-shrink: 0;
             }
             .info-row {
-              margin: 3px 0;
+              margin: 2px 0;
             }
             .info-label {
               font-weight: bold;
             }
             .issuer-section {
-              margin-top: 8px;
-              font-size: 8.5pt;
+              margin-top: 5px;
+              font-size: 7.5pt;
               flex-shrink: 0;
-              margin-bottom: 30px;
+              margin-bottom: 15px;
             }
             .issuer-title {
               font-weight: bold;
-              margin-bottom: 4px;
+              margin-bottom: 2px;
             }
             .issuer-info {
-              line-height: 1.4;
+              line-height: 1.3;
             }
             .signature-section {
               margin-top: auto;
               text-align: center;
               border-top: 1px solid #000;
-              padding-top: 6px;
-              min-height: 60px;
+              padding-top: 4px;
+              min-height: 40px;
               flex-shrink: 0;
             }
             .signature-name {
               font-weight: bold;
-              margin-top: 6px;
-              font-size: 9pt;
+              margin-top: 4px;
+              font-size: 8pt;
             }
             .signature-label {
-              font-size: 8pt;
-              margin-top: 4px;
+              font-size: 7pt;
+              margin-top: 2px;
               color: #333;
             }
           </style>
