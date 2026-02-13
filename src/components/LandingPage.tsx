@@ -64,14 +64,15 @@ export const LandingPage: React.FC<{ onLogin: () => void }> = () => {
     setIsSubmitting(true);
     
     try {
-    const success = await login(email, password);
-    setIsSubmitting(false);
-    if (success) {
-      setShowAuthModal(false);
-      resetAuthForm();
-      return;
-    }
-    setError('Credenciais inválidas ou problema ao conectar ao backend.');
+      const success = await login(email, password);
+      setIsSubmitting(false);
+      if (success) {
+        setShowAuthModal(false);
+        resetAuthForm();
+        return;
+      }
+      // Se retornou false sem lançar erro, mostrar mensagem genérica
+      setError('Credenciais inválidas ou problema ao conectar ao backend.');
     } catch (error) {
       setIsSubmitting(false);
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao fazer login';

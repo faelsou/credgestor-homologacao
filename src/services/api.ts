@@ -184,13 +184,40 @@ export async function loginWithBackend(email: string, password: string): Promise
       body: JSON.stringify(payload),
     });
 
+    // Ler a resposta como texto primeiro para verificar se é HTML
+    const responseText = await response.text().catch(() => '');
+    const isHtml = responseText.trim().startsWith('<');
+
+    // Verificar se é erro 405 (Method Not Allowed) - geralmente indica problema de roteamento
+    if (response.status === 405) {
+      console.error('❌ Erro 405 (Method Not Allowed) no login:', {
+        status: response.status,
+        statusText: response.statusText,
+        url: CONFIGURED_LOGIN_URL,
+        isHtmlResponse: isHtml,
+        responsePreview: isHtml ? responseText.substring(0, 200) : responseText
+      });
+      
+      if (isHtml) {
+        throw new Error('Erro 405: A requisição não está chegando ao backend. Verifique se o Traefik está roteando corretamente a rota /api para o backend.');
+      } else {
+        throw new Error('Erro 405: Método POST não permitido. Verifique a configuração do servidor.');
+      }
+    }
+
     let body;
     try {
-      body = await toJson(response);
+      // Tentar fazer parse do JSON
+      body = responseText ? JSON.parse(responseText) : null;
     } catch (parseError) {
       console.error('❌ Erro ao parsear resposta do servidor:', parseError);
-      const text = await response.text().catch(() => 'Resposta não disponível');
-      console.error('📄 Resposta do servidor (texto):', text);
+      console.error('📄 Resposta do servidor (texto):', isHtml ? 'HTML recebido (possível problema de roteamento)' : responseText.substring(0, 500));
+      
+      // Se for HTML, provavelmente é um problema de roteamento
+      if (isHtml && response.status >= 400) {
+        throw new Error(`Erro ${response.status}: A resposta do servidor é HTML, indicando que a requisição não chegou ao backend. Verifique o roteamento.`);
+      }
+      
       throw new Error(`Erro ${response.status}: ${response.statusText || 'Resposta inválida do servidor'}`);
     }
     

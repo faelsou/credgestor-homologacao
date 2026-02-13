@@ -2026,8 +2026,10 @@ const App: React.FC = () => {
         console.error('❌ Falha ao autenticar via backend:', error);
         if (error instanceof Error) {
           console.error('📝 Mensagem de erro:', error.message);
+          // Propagar o erro para que o componente possa exibir a mensagem específica
+          throw error;
         }
-        return false;
+        throw new Error('Erro desconhecido ao fazer login');
       }
     }
 
