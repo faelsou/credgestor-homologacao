@@ -742,8 +742,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 <div class="info-row">
                   <span class="info-label">Data da Emissão:</span> ${installmentIssueDate}
                 </div>
+                ${promissoryNote.capital > 0 ? `<div class="info-row">
+                  <span class="info-label">Valor do Empréstimo:</span> ${formatCurrency(promissoryNote.capital)}
+                </div>` : ''}
                 ${installmentValue > 0 ? `<div class="info-row">
-                  <span class="info-label">Valor:</span> ${formatCurrency(installmentValue)}
+                  <span class="info-label">Valor da Parcela:</span> ${formatCurrency(installmentValue)}
                 </div>` : ''}
                 <div class="info-row">
                   <span class="info-label">Parcela:</span> ${installment.number} de ${loanInstallments.length}
@@ -803,8 +806,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 <div class="info-row">
                   <span class="info-label">Data da Emissão:</span> ${issueDate}
                 </div>
+                ${promissoryNote.capital > 0 ? `<div class="info-row">
+                  <span class="info-label">Valor do Empréstimo:</span> ${formatCurrency(promissoryNote.capital)}
+                </div>` : ''}
                 ${noteValue > 0 ? `<div class="info-row">
-                  <span class="info-label">Valor:</span> ${formatCurrency(noteValue)}
+                  <span class="info-label">Valor Total:</span> ${formatCurrency(noteValue)}
                 </div>` : ''}
               </div>
 
