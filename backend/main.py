@@ -7,11 +7,30 @@ from typing import Any, Dict, List, Tuple
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, Field
+# Importar EmailStr e field_validator de forma opcional para compatibilidade
+try:
+    from pydantic import EmailStr, field_validator
+    PYDANTIC_V2_FEATURES = True
+except ImportError:
+    # Fallback para versões antigas do Pydantic
+    PYDANTIC_V2_FEATURES = False
+    EmailStr = str  # Usar str como fallback
+    def field_validator(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 from prometheus_fastapi_instrumentator import Instrumentator
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
+
+# Importar slowapi de forma opcional para não quebrar se não estiver instalado
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.util import get_remote_address
+    SLOWAPI_AVAILABLE = True
+except ImportError:
+    SLOWAPI_AVAILABLE = False
+    print("⚠️  Aviso: slowapi não está disponível. Rate limiting desabilitado.")
 
 from .settings import get_settings
 from .supabase_client import (
@@ -40,20 +59,26 @@ app = FastAPI(title="CredGestor Supabase backend", version="0.1.0")
 
 # Configurar Rate Limiting
 # Nota: slowapi requer que o limiter seja inicializado antes de usar nos decoradores
-try:
-    limiter = Limiter(key_func=get_remote_address)
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-except Exception as e:
-    # Se slowapi não estiver disponível, criar um limiter dummy que não faz nada
-    print(f"⚠️  Aviso: Rate limiting não disponível: {e}")
-    # Criar um objeto dummy que aceita o decorador mas não faz nada
+limiter = None
+if SLOWAPI_AVAILABLE:
+    try:
+        limiter = Limiter(key_func=get_remote_address)
+        app.state.limiter = limiter
+        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+        print("✅ Rate limiting habilitado com slowapi")
+    except Exception as e:
+        print(f"⚠️  Aviso: Erro ao inicializar rate limiting: {e}")
+        limiter = None
+
+# Criar um objeto dummy que aceita o decorador mas não faz nada se slowapi não estiver disponível
+if limiter is None:
     class DummyLimiter:
         def limit(self, *args, **kwargs):
             def decorator(func):
                 return func
             return decorator
     limiter = DummyLimiter()
+    print("⚠️  Rate limiting desabilitado (slowapi não disponível)")
 
 # Configurar CORS de forma mais segura
 # Permitir apenas origens específicas em produção
@@ -105,18 +130,28 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr = Field(..., description="Email do usuário")
+    email: str = Field(..., description="Email do usuário", min_length=1)
     senha: str = Field(..., min_length=8, max_length=128, description="Senha do usuário")
-    tenant_id: str | None = Field(None, pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', description="ID do tenant (UUID)")
+    tenant_id: str | None = Field(None, description="ID do tenant (UUID)")
     
-    @field_validator('senha')
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        """Valida que a senha não contém caracteres perigosos"""
-        if not v or len(v.strip()) == 0:
-            raise ValueError("Senha não pode estar vazia")
-        # Remover espaços em branco no início e fim
-        return v.strip()
+    def __init__(self, **data):
+        # Validação e sanitização da senha
+        if 'senha' in data:
+            senha = data.get('senha', '')
+            if not senha or len(senha.strip()) == 0:
+                raise ValueError("Senha não pode estar vazia")
+            if len(senha.strip()) < 8:
+                raise ValueError("Senha deve ter no mínimo 8 caracteres")
+            data['senha'] = senha.strip()
+        
+        # Validação básica de email
+        if 'email' in data:
+            email = data.get('email', '').strip()
+            if not email or '@' not in email:
+                raise ValueError("Email inválido")
+            data['email'] = email.lower()
+        
+        super().__init__(**data)
 
 
 class RefreshTokenRequest(BaseModel):
