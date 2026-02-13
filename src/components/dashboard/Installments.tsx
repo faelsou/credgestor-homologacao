@@ -531,10 +531,7 @@ export const InstallmentsView: React.FC = () => {
     const isInterestOnly = loan?.model === LoanModel.INTEREST_ONLY;
 
     if (inst.status === InstallmentStatus.PAID) {
-      // Para empréstimos somente juros, mostrar "PAGO" em vez de "Pago"
-      if (isInterestOnly) {
-        return <span className="flex items-center gap-1 text-emerald-600 font-bold"><CheckCircle size={14}/> PAGO</span>;
-      }
+      // Parcelas pagas de todos os empréstimos
       return <span className="flex items-center gap-1 text-emerald-600 font-bold"><CheckCircle size={14}/> Pago</span>;
     }
 
@@ -552,7 +549,7 @@ export const InstallmentsView: React.FC = () => {
           return <span className="flex items-center gap-1 text-amber-600 font-bold"><Clock size={14}/> Pgto Juros</span>;
         }
       }
-      return <span className="flex items-center gap-1 text-amber-600 font-bold"><Clock size={14}/> Parcial</span>;
+      return <span className="flex items-center gap-1 text-amber-600 font-bold"><Clock size={14}/> Pgto Juros</span>;
     }
 
     if (late) {
