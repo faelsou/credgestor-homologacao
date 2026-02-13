@@ -4,7 +4,7 @@
  */
 
 import { Client, User, UserRole } from '@/types';
-import { normalizeUserRole, stripNonDigits } from '@/utils';
+import { normalizeUserRole, stripNonDigits, sanitizeString, sanitizeEmail, sanitizeText, sanitizeCpfCnpj } from '@/utils';
 
 // Em produção, se VITE_API_BASE_URL não estiver configurada, usa o mesmo domínio do frontend
 const getApiBaseUrl = () => {
@@ -332,24 +332,24 @@ export async function createClient(
   }
   const effectiveTenantId = tenantId;
 
-  // Monta o payload no formato esperado pelo backend
+  // Monta o payload no formato esperado pelo backend com sanitização
   const payload = {
-    nome: client.name,
-    nome_completo: client.name,
-    cpf_cnpj: stripNonDigits(client.cpf),
+    nome: sanitizeString(client.name, 200),
+    nome_completo: sanitizeString(client.name, 200),
+    cpf_cnpj: sanitizeCpfCnpj(client.cpf),
     tipo_pessoa: 'PF', // Padrão: Pessoa Física
-    email: client.email || null,
+    email: client.email ? sanitizeEmail(client.email) : null,
     telefone: stripNonDigits(client.phone) || null,
     celular: stripNonDigits(client.phone) || null,
     whatsapp: stripNonDigits(client.phone) || null,
-    endereco: client.street || null,
-    complemento: client.complement || null,
-    bairro: client.neighborhood || null,
-    cidade: client.city || null,
-    estado: client.state || null,
+    endereco: sanitizeString(client.street, 200) || null,
+    complemento: sanitizeString(client.complement, 200) || null,
+    bairro: sanitizeString(client.neighborhood, 100) || null,
+    cidade: sanitizeString(client.city, 100) || null,
+    estado: sanitizeString(client.state, 2) || null,
     cep: stripNonDigits(client.cep) || null,
     data_nascimento: client.birthDate || null,
-    observacoes: client.notes || null,
+    observacoes: client.notes ? sanitizeText(client.notes, 5000) : null,
   };
 
   const endpoint = `tenants/${effectiveTenantId}/clients`;

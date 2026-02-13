@@ -237,6 +237,71 @@ export const generatePromissoryNoteNumber = (
  * Converte um número para extenso em português brasileiro
  * Usado para notas promissórias e documentos oficiais
  */
+/**
+ * Sanitiza strings para prevenir XSS e injeção de código
+ * Remove caracteres perigosos e limita o tamanho
+ */
+export const sanitizeString = (input: string | null | undefined, maxLength: number = 1000): string => {
+  if (!input) return '';
+  
+  // Limitar tamanho primeiro
+  let sanitized = input.substring(0, maxLength);
+  
+  // Remover caracteres de controle e tags HTML
+  sanitized = sanitized
+    .replace(/[<>]/g, '') // Remove < e >
+    .replace(/[\x00-\x1F\x7F]/g, '') // Remove caracteres de controle
+    .trim();
+  
+  return sanitized;
+};
+
+/**
+ * Sanitiza email removendo caracteres perigosos
+ */
+export const sanitizeEmail = (email: string | null | undefined): string => {
+  if (!email) return '';
+  
+  // Remover espaços e caracteres perigosos, manter apenas caracteres válidos para email
+  return email
+    .trim()
+    .toLowerCase()
+    .replace(/[<>\"'`]/g, '') // Remove caracteres perigosos
+    .substring(0, 254); // Limite máximo de email
+};
+
+/**
+ * Sanitiza texto de observações/notas removendo HTML e limitando tamanho
+ */
+export const sanitizeText = (text: string | null | undefined, maxLength: number = 5000): string => {
+  if (!text) return '';
+  
+  let sanitized = text.substring(0, maxLength);
+  
+  // Remover tags HTML básicas
+  sanitized = sanitized
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/javascript:/gi, '')
+    .replace(/on\w+\s*=/gi, '')
+    .trim();
+  
+  return sanitized;
+};
+
+/**
+ * Valida e sanitiza CPF/CNPJ
+ */
+export const sanitizeCpfCnpj = (value: string | null | undefined): string => {
+  if (!value) return '';
+  
+  // Remove tudo exceto dígitos
+  const digits = stripNonDigits(value);
+  
+  // Limita a 14 dígitos (tamanho máximo de CNPJ)
+  return digits.substring(0, 14);
+};
+
 export const numberToWords = (value: number): string => {
   const unidades = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove'];
   const dezAteDezenove = ['dez', 'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
