@@ -53,9 +53,12 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   };
 
   const calculatePriceInstallment = (principal: number, rateDecimal: number, periods: number) => {
-    if (rateDecimal === 0) return principal / periods;
+    if (rateDecimal === 0) return Math.ceil(principal / periods);
+    // Fórmula baseada em: ARREDONDAR.PARA.CIMA(principal/((POTÊNCIA(1+rateDecimal;periods)-1)/(rateDecimal*(POTÊNCIA(1+rateDecimal;periods))));0)
     const factor = Math.pow(1 + rateDecimal, periods);
-    return principal * ((rateDecimal * factor) / (factor - 1));
+    const installment = principal * ((rateDecimal * factor) / (factor - 1));
+    // Arredondar para cima para garantir que os centavos sejam sempre arredondados para cima
+    return Math.ceil(installment);
   };
 
   type SchedulePreviewItem = { number: number; dueDate: string; amount: number; interest: number; principal: number };
@@ -85,7 +88,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
           break;
         }
         case LoanModel.INTEREST_ONLY: {
-          interestPortion = amount * rateDecimal;
+          // Arredondar juros para cima para garantir que os centavos sejam sempre arredondados para cima
+          interestPortion = Math.ceil(amount * rateDecimal);
           principalPortion = i === installmentsCount ? amount : 0;
           installmentAmount = interestPortion + principalPortion;
           break;
@@ -182,7 +186,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
       // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 de juros sempre
       const rateDecimal = interestRate / 100;
-      const originalInterestAmount = Number((amount * rateDecimal).toFixed(2));
+      // Arredondar juros para cima para garantir que os centavos sejam sempre arredondados para cima
+      const originalInterestAmount = Math.ceil(amount * rateDecimal);
       
       // Criar apenas a primeira parcela com somente juros
       // O principalAmount representa o capital total em aberto
@@ -442,7 +447,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       //          Cliente paga R$ 200 (R$ 100 juros + R$ 100 capital)
       //          Capital restante: R$ 900, Juros: 10% de R$ 900 = R$ 90
       //          VALOR EM ABERTO = R$ 900 + R$ 90 = R$ 990
-      const monthlyInterest = Number((pendingCapital * (loan.interestRate / 100)).toFixed(2));
+      // Arredondar juros para cima para garantir que os centavos sejam sempre arredondados para cima
+      const monthlyInterest = Math.ceil(pendingCapital * (loan.interestRate / 100));
       
       // Usar o número de parcelas do empréstimo ou o número de parcelas existentes
       const totalInstallments = loan.installmentsCount || related.length || 1;

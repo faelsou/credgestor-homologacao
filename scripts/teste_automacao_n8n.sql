@@ -29,11 +29,16 @@ CREATE OR REPLACE FUNCTION calculate_price_installment(
     rate_decimal NUMERIC,
     periods INTEGER
 ) RETURNS NUMERIC AS $$
+DECLARE
+    installment NUMERIC;
 BEGIN
     IF rate_decimal = 0 THEN
-        RETURN principal / NULLIF(periods, 0);
+        RETURN CEIL(principal / NULLIF(periods, 0));
     END IF;
-    RETURN principal * ((rate_decimal * POWER(1 + rate_decimal, periods)) / (POWER(1 + rate_decimal, periods) - 1));
+    -- Fórmula baseada em: ARREDONDAR.PARA.CIMA(principal/((POTÊNCIA(1+rate_decimal;periods)-1)/(rate_decimal*(POTÊNCIA(1+rate_decimal;periods))));0)
+    installment := principal * ((rate_decimal * POWER(1 + rate_decimal, periods)) / (POWER(1 + rate_decimal, periods) - 1));
+    -- Arredondar para cima para garantir que os centavos sejam sempre arredondados para cima
+    RETURN CEIL(installment);
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 

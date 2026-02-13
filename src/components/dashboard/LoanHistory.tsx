@@ -79,7 +79,8 @@ export const LoanHistoryView: React.FC = () => {
       //          Cliente paga R$ 200 (R$ 100 juros + R$ 100 capital)
       //          Capital restante: R$ 900, Juros: 10% de R$ 900 = R$ 90
       //          VALOR EM ABERTO = R$ 900 + R$ 90 = R$ 990
-      const monthlyInterest = Number((pendingCapital * (loan.interestRate / 100)).toFixed(2));
+      // Arredondar juros para cima para garantir que os centavos sejam sempre arredondados para cima
+      const monthlyInterest = Math.ceil(pendingCapital * (loan.interestRate / 100));
       
       // Usar o número de parcelas do empréstimo ou o número de parcelas existentes
       const totalInstallments = loan.installmentsCount || related.length || 1;
