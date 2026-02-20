@@ -815,7 +815,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                   <span class="info-label">Data da Emissão:</span> ${issueDate}
                 </div>
                 ${promissoryNote.capital > 0 ? `<div class="info-row">
-                  <span class="info-label">Valor do Empréstimo:</span> ${formatCurrency(promissoryNote.capital)}
+                  <span class="info-label">Valor:</span> ${formatCurrency(promissoryNote.capital)}
                 </div>` : ''}
                 ${noteValue > 0 ? `<div class="info-row">
                   <span class="info-label">Valor Total:</span> ${formatCurrency(noteValue)}
@@ -848,7 +848,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             @media print {
               @page {
                 size: A4;
-                margin: 0.5cm;
+                margin: 2cm 2.5cm;
               }
               .note-container {
                 page-break-inside: avoid;
