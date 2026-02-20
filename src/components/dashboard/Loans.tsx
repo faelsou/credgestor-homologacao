@@ -724,12 +724,17 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 <div class="header-left">
                   <h1>NOTA PROMISSÓRIA</h1>
                 </div>
-                <div class="header-right">
+                <div class="header-center">
                   <div class="document-number">
-                    <strong>Nº</strong> ${installmentHash}
+                    <strong>N°</strong> ${installmentHash}
                   </div>
+                </div>
+                <div class="header-right">
                   <div class="due-date">
                     <strong>Vencimento:</strong> ${installmentDueDateWords}
+                  </div>
+                  <div class="header-value">
+                    ${formatCurrency(installmentValue)}
                   </div>
                 </div>
               </div>
@@ -748,15 +753,6 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 </div>
                 <div class="info-row">
                   <span class="info-label">Data da Emissão:</span> ${installmentIssueDate}
-                </div>
-                ${promissoryNote.capital > 0 ? `<div class="info-row">
-                  <span class="info-label">Valor do Empréstimo:</span> ${formatCurrency(promissoryNote.capital)}
-                </div>` : ''}
-                ${installmentValue > 0 ? `<div class="info-row">
-                  <span class="info-label">Valor da Parcela:</span> ${formatCurrency(installmentValue)}
-                </div>` : ''}
-                <div class="info-row">
-                  <span class="info-label">Parcela:</span> ${installment.number} de ${loanInstallments.length}
                 </div>
               </div>
 
@@ -789,12 +785,17 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 <div class="header-left">
                   <h1>NOTA PROMISSÓRIA</h1>
                 </div>
-                <div class="header-right">
+                <div class="header-center">
                   <div class="document-number">
-                    <strong>Nº</strong> ${promissoryNote.numberHash}
+                    <strong>N°</strong> ${promissoryNote.numberHash}
                   </div>
+                </div>
+                <div class="header-right">
                   <div class="due-date">
                     <strong>Vencimento:</strong> ${dueDateWords}
+                  </div>
+                  <div class="header-value">
+                    ${formatCurrency(noteValue)}
                   </div>
                 </div>
               </div>
@@ -814,12 +815,6 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 <div class="info-row">
                   <span class="info-label">Data da Emissão:</span> ${issueDate}
                 </div>
-                ${promissoryNote.capital > 0 ? `<div class="info-row">
-                  <span class="info-label">Valor:</span> ${formatCurrency(promissoryNote.capital)}
-                </div>` : ''}
-                ${noteValue > 0 ? `<div class="info-row">
-                  <span class="info-label">Valor Total:</span> ${formatCurrency(noteValue)}
-                </div>` : ''}
               </div>
 
               <div class="issuer-section">
@@ -891,7 +886,12 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             .header-left {
               flex: 1;
             }
+            .header-center {
+              flex: 1;
+              text-align: center;
+            }
             .header-right {
+              flex: 1;
               text-align: right;
               font-size: 7pt;
             }
@@ -904,11 +904,15 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             }
             .document-number {
               font-size: 8pt;
-              margin-bottom: 2px;
               font-weight: bold;
             }
             .due-date {
               font-size: 7pt;
+              margin-bottom: 2px;
+            }
+            .header-value {
+              font-size: 8pt;
+              font-weight: bold;
             }
             .promise-text {
               text-align: justify;
