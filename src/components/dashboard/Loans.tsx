@@ -761,7 +761,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 <div class="issuer-info">
                   <strong>${debtorName}</strong><br>
                   CPF: ${debtorCpf ? formatCpf(debtorCpf) : 'não informado'}<br>
-                  Endereço: ${debtorAddress}${debtorAddress && debtorCity ? ',' : ''}${debtorCity ? ' ' + debtorCity : ''}${debtorState ? '/' + debtorState : ''}${debtorCep ? ' - CEP:' + formatCep(debtorCep) : ''}
+                  Endereço: ${debtorAddress}${debtorCep ? ' - CEP: ' + formatCep(debtorCep) : ''}${debtorCity && debtorState ? ' - ' + debtorCity.toUpperCase() + '/' + debtorState.toUpperCase() : ''}
                 </div>
               </div>
 
@@ -822,7 +822,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 <div class="issuer-info">
                   <strong>${debtorName}</strong><br>
                   CPF: ${debtorCpf ? formatCpf(debtorCpf) : 'não informado'}<br>
-                  Endereço: ${debtorAddress}${debtorAddress && debtorCity ? ',' : ''}${debtorCity ? ' ' + debtorCity : ''}${debtorState ? '/' + debtorState : ''}${debtorCep ? ' - CEP:' + formatCep(debtorCep) : ''}
+                  Endereço: ${debtorAddress}${debtorCep ? ' - CEP: ' + formatCep(debtorCep) : ''}${debtorCity && debtorState ? ' - ' + debtorCity.toUpperCase() + '/' + debtorState.toUpperCase() : ''}
                 </div>
               </div>
 
@@ -849,6 +849,9 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 page-break-inside: avoid;
                 break-inside: avoid;
               }
+              .note-container:last-child {
+                margin-bottom: 0;
+              }
               .page-break-after {
                 page-break-after: always;
                 break-after: page;
@@ -859,28 +862,27 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
               font-size: 8pt;
               line-height: 1.2;
               color: #000;
-              padding: 3px;
+              padding: 0;
               margin: 0;
             }
             .note-container {
               border: 1px solid #000;
-              padding: 8px;
-              margin-bottom: 5px;
-              height: calc((100vh - 1cm) / 3);
-              max-height: 9.5cm;
-              min-height: 9.2cm;
+              padding: 6px;
+              margin-bottom: 0;
+              height: 8.5cm;
               position: relative;
               display: flex;
               flex-direction: column;
               box-sizing: border-box;
+              page-break-inside: avoid;
             }
             .header-row {
               display: flex;
               justify-content: space-between;
               align-items: flex-start;
-              margin-bottom: 5px;
+              margin-bottom: 3px;
               border-bottom: 1px solid #000;
-              padding-bottom: 4px;
+              padding-bottom: 2px;
               flex-shrink: 0;
             }
             .header-left {
@@ -916,30 +918,30 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             }
             .promise-text {
               text-align: justify;
-              margin: 5px 0;
+              margin: 3px 0;
               font-size: 8pt;
-              line-height: 1.3;
+              line-height: 1.25;
               flex-shrink: 0;
             }
             .promise-text p {
               margin: 0;
             }
             .info-section {
-              margin: 4px 0;
+              margin: 2px 0;
               font-size: 7.5pt;
               flex-shrink: 0;
             }
             .info-row {
-              margin: 2px 0;
+              margin: 1px 0;
             }
             .info-label {
               font-weight: bold;
             }
             .issuer-section {
-              margin-top: 5px;
+              margin-top: 3px;
               font-size: 7.5pt;
               flex-shrink: 0;
-              margin-bottom: 15px;
+              margin-bottom: 5px;
             }
             .issuer-title {
               font-weight: bold;
@@ -952,8 +954,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
               margin-top: auto;
               text-align: center;
               border-top: 1px solid #000;
-              padding-top: 4px;
-              min-height: 40px;
+              padding-top: 2px;
+              min-height: 25px;
               flex-shrink: 0;
             }
             .signature-name {
