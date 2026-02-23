@@ -2247,12 +2247,49 @@ const App: React.FC = () => {
   }, [session, isBackendConfiguredValue]);
 
   const updateLoan = useCallback(async (loan: Loan, generatedInstallments: Installment[]) => {
+    // IMPORTANTE: Preservar parcelas que já foram pagas (status PAID) para manter o histórico
+    // Apenas atualizar parcelas pendentes (status PENDING) com as novas datas
+    const existingInstallments = installments.filter(inst => inst.loanId === loan.id);
+    const paidInstallments = existingInstallments.filter(inst => inst.status === InstallmentStatus.PAID);
+    
     if (isBackendConfiguredValue && session?.accessToken) {
       try {
-        const { updateBackendLoan } = await import('@/services/backendApi');
+        const { updateBackendLoan, createBackendInstallment, deleteBackendInstallment } = await import('@/services/backendApi');
         await updateBackendLoan(session.accessToken, requireTenantId(session.tenantId, 'atualizar empréstimo'), loan.id, loan);
+        
+        // Identificar parcelas pendentes antigas que serão substituídas
+        const pendingInstallments = existingInstallments.filter(inst => inst.status !== InstallmentStatus.PAID);
+        
+        // Atualizar parcelas no backend:
+        // 1. Deletar parcelas pendentes antigas que foram substituídas
+        for (const oldInst of pendingInstallments) {
+          try {
+            await deleteBackendInstallment(session.accessToken, requireTenantId(session.tenantId, 'deletar parcelas'), oldInst.id);
+          } catch (error) {
+            console.error(`Erro ao deletar parcela antiga ${oldInst.id} no backend`, error);
+          }
+        }
+        
+        // 2. Criar novas parcelas geradas (substituem as pendentes antigas)
+        for (const newInst of generatedInstallments) {
+          try {
+            await createBackendInstallment(session.accessToken, requireTenantId(session.tenantId, 'criar parcelas'), newInst);
+          } catch (error) {
+            console.error(`Erro ao criar parcela ${newInst.id} no backend`, error);
+          }
+        }
+        
+        // 3. Parcelas pagas são preservadas automaticamente (não são deletadas nem atualizadas)
+        
         setLoans(prev => prev.map(item => item.id === loan.id ? loan : item));
-        setInstallments(prev => prev.filter(inst => inst.loanId !== loan.id).concat(generatedInstallments));
+        setInstallments(prev => {
+          // Remover parcelas pendentes antigas e adicionar as novas
+          // Preservar parcelas pagas (status PAID)
+          const withoutOldPending = prev.filter(inst => 
+            inst.loanId !== loan.id || inst.status === InstallmentStatus.PAID
+          );
+          return [...withoutOldPending, ...generatedInstallments];
+        });
         return;
       } catch (error) {
         console.error('Erro ao atualizar empréstimo via backend API', error);
@@ -2260,8 +2297,15 @@ const App: React.FC = () => {
       }
     }
     setLoans(prev => prev.map(item => item.id === loan.id ? loan : item));
-    setInstallments(prev => prev.filter(inst => inst.loanId !== loan.id).concat(generatedInstallments));
-  }, [session, isBackendConfiguredValue]);
+    setInstallments(prev => {
+      // Remover parcelas pendentes antigas e adicionar as novas
+      // Preservar parcelas pagas (status PAID) para manter histórico
+      const withoutOldPending = prev.filter(inst => 
+        inst.loanId !== loan.id || inst.status === InstallmentStatus.PAID
+      );
+      return [...withoutOldPending, ...generatedInstallments];
+    });
+  }, [session, isBackendConfiguredValue, installments]);
 
   const deleteLoan = useCallback(async (id: string) => {
     if (isBackendConfiguredValue && session?.accessToken) {
