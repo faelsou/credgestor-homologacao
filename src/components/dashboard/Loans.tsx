@@ -707,7 +707,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
           const installmentHash = hashes[index] || hashes[0];
           const installmentDueDate = installment.dueDate;
           const installmentDueDateWords = formatDateToWords(installmentDueDate);
-          const installmentValue = installment.amount;
+          // Usar o valor total do empréstimo (capital) ao invés do valor da parcela
+          const installmentValue = promissoryNote.capital;
           // Usar o valor do empréstimo (capital) ao invés do valor da parcela na descrição
           const installmentValueWords = numberToWords(promissoryNote.capital);
           const installmentIssueDate = formatDate(promissoryNote.issueDate);
@@ -884,7 +885,6 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
               justify-content: space-between;
               align-items: flex-start;
               margin-bottom: 3px;
-              border-bottom: 1px solid #000;
               padding-bottom: 2px;
               flex-shrink: 0;
             }
@@ -956,6 +956,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             .signature-section {
               margin-top: auto;
               text-align: center;
+              border-top: 1px solid #000;
               padding-top: 2px;
               min-height: 25px;
               flex-shrink: 0;
