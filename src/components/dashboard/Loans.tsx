@@ -853,6 +853,9 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 margin-bottom: 0;
               }
               .page-break-after {
+                margin-bottom: 0;
+              }
+              .page-break-after {
                 page-break-after: always;
                 break-after: page;
               }
@@ -868,8 +871,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             .note-container {
               border: 1px solid #000;
               padding: 6px;
-              margin-bottom: 0;
-              height: 8.5cm;
+              margin-bottom: 0.5cm;
+              height: 8.2cm;
               position: relative;
               display: flex;
               flex-direction: column;
