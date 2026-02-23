@@ -956,7 +956,6 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             .signature-section {
               margin-top: auto;
               text-align: center;
-              border-top: 1px solid #000;
               padding-top: 2px;
               min-height: 25px;
               flex-shrink: 0;
