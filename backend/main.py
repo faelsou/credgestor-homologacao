@@ -921,12 +921,68 @@ async def slack_interactions(request: Request):
             except ValueError:
                 pass  # Se timestamp não for válido, continuar
         
-        # Obter body como texto para verificação de assinatura
+        # Ler body primeiro para validação de assinatura
         body_bytes = await request.body()
         body = body_bytes.decode('utf-8')
         
-        # Verificar assinatura do Slack
+        # Parse payload (Slack envia como form-data)
+        # Nota: Como já lemos o body, precisamos parsear manualmente
+        # O Slack envia: payload=<json_encoded>
+        payload_str = ""
+        if "payload=" in body:
+            payload_str = body.split("payload=", 1)[1]
+            # Decodificar URL encoding se necessário
+            import urllib.parse
+            payload_str = urllib.parse.unquote(payload_str)
+        else:
+            # Tentar ler como form-data (pode não funcionar após ler body)
+            try:
+                form_data = await request.form()
+                payload_str = form_data.get('payload', '{}')
+            except Exception:
+                # Se não conseguir, tentar parsear JSON direto do body
+                try:
+                    body_json = json.loads(body)
+                    payload_str = json.dumps(body_json.get('payload', {}))
+                except:
+                    payload_str = '{}'
+        
+        if not payload_str:
+            return {"ok": True}
+        
+        payload = json.loads(payload_str)
+        
+        # Processar URL verification ANTES de validar assinatura
+        # (URL verification do Slack sempre tem assinatura válida quando vem do Slack)
+        # Para testes manuais, permitimos sem assinatura válida
+        if payload.get('type') == 'url_verification':
+            challenge = payload.get('challenge', '')
+            print(f"✅ URL verification recebida, retornando challenge: {challenge}")
+            # Validar assinatura se configurado, mas NUNCA bloquear URL verification
+            # (permite tanto testes do Slack quanto testes manuais)
+            if slack_signing_secret and signature:
+                try:
+                    sig_basestring = f"v0:{timestamp}:{body}"
+                    my_signature = 'v0=' + hmac.new(
+                        slack_signing_secret.encode(),
+                        sig_basestring.encode(),
+                        hashlib.sha256
+                    ).hexdigest()
+                    if hmac.compare_digest(my_signature, signature):
+                        print(f"✅ Assinatura válida para URL verification")
+                    else:
+                        print(f"⚠️  Assinatura inválida para URL verification, mas permitindo (pode ser teste manual)")
+                except Exception as e:
+                    print(f"⚠️  Erro ao validar assinatura: {e}, mas permitindo URL verification")
+            elif not signature:
+                print(f"⚠️  Sem assinatura na requisição, mas permitindo URL verification (teste manual)")
+            return {"challenge": challenge}
+        
+        # Para outros tipos de interação, validar assinatura obrigatoriamente
         if slack_signing_secret:
+            if not signature:
+                raise HTTPException(status_code=403, detail="Missing signature")
+            
             sig_basestring = f"v0:{timestamp}:{body}"
             my_signature = 'v0=' + hmac.new(
                 slack_signing_secret.encode(),
@@ -935,21 +991,12 @@ async def slack_interactions(request: Request):
             ).hexdigest()
             
             if not hmac.compare_digest(my_signature, signature):
+                print(f"⚠️  Assinatura inválida. Esperado: {my_signature[:20]}..., Recebido: {signature[:20]}...")
                 raise HTTPException(status_code=403, detail="Invalid signature")
+        else:
+            print("⚠️  SLACK_SIGNING_SECRET não configurado. Validação de assinatura desabilitada.")
         
-        # Parse payload (Slack envia como form-data)
-        form_data = await request.form()
-        payload_str = form_data.get('payload', '{}')
-        
-        if not payload_str:
-            return {"ok": True}
-        
-        payload = json.loads(payload_str)
-        
-        # Processar URL verification (quando Slack testa o endpoint)
-        if payload.get('type') == 'url_verification':
-            return {"challenge": payload.get('challenge', '')}
-        
+        # Para outros tipos de interação, validar assinatura se configurado
         # Processar interação
         if payload.get('type') == 'block_actions':
             actions = payload.get('actions', [])
