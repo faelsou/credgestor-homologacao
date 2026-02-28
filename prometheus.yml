@@ -1,0 +1,140 @@
+# Configuração completa do Prometheus para CredGestor
+# Use este arquivo no Portainer para configurar o Prometheus
+
+global:
+  scrape_interval: 15s      # Intervalo de coleta padrão
+  evaluation_interval: 15s  # Intervalo de avaliação de regras
+  external_labels:
+    cluster: 'credgestor-production'
+    environment: 'production'
+
+# Configuração de alertas
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Regras de alerta
+rule_files:
+  - "alert_rules.yml"
+
+scrape_configs:
+  # ============================================
+  # Prometheus self-monitoring
+  # ============================================
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          component: 'monitoring'
+
+  # ============================================
+  # CredGestor API - Coleta de métricas da API
+  # ============================================
+  - job_name: 'credgestor-api'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: '/metrics'
+    static_configs:
+      # Opção 1: Via HTTPS através do Traefik (Recomendado)
+      - targets: ['credgestor.app.br:443']
+        labels:
+          service: 'credgestor-api'
+          environment: 'production'
+          instance: 'api-https'
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true  # Ajuste conforme seu certificado
+    
+    # Opção 2: Via HTTP direto (descomente se necessário)
+    # - targets: ['167.235.76.26:8000']
+    #   labels:
+    #     service: 'credgestor-api'
+    #     environment: 'production'
+    #     instance: 'api-http'
+    # scheme: http
+
+  # ============================================
+  # cAdvisor - Métricas de containers Docker
+  # ============================================
+  - job_name: 'cadvisor'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          service: 'cadvisor'
+          component: 'container-metrics'
+    # Se o cAdvisor estiver em outro host/porta, ajuste:
+    # - targets: ['localhost:8080']
+
+  # ============================================
+  # Node Exporter - Métricas do sistema/host
+  # ============================================
+  - job_name: 'node-exporter'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node-exporter'
+          component: 'host-metrics'
+    # Se o node-exporter estiver em outro host/porta, ajuste:
+    # - targets: ['localhost:9100']
+
+  # ============================================
+  # Docker Swarm Service Discovery (Opcional)
+  # ============================================
+  # Descomente se quiser usar service discovery automático
+  # - job_name: 'docker-swarm'
+  #   docker_sd_configs:
+  #     - host: unix:///var/run/docker.sock
+  #       role: tasks
+  #       filters:
+  #         - name: label
+  #           values: ["prometheus.io/scrape=true"]
+  #   relabel_configs:
+  #     - source_labels: [__meta_docker_container_label_prometheus_io_job]
+  #       target_label: job
+  #     - source_labels: [__meta_docker_container_label_prometheus_io_port]
+  #       target_label: __address__
+  #       regex: (.+)
+  #       replacement: $1:8000
+  #     - source_labels: [__meta_docker_container_name]
+  #       target_label: container_name
+  #     - source_labels: [__meta_docker_service_name]
+  #       target_label: service_name
+
+  # ============================================
+  # PostgreSQL Exporter (Opcional)
+  # ============================================
+  # Descomente se tiver PostgreSQL Exporter configurado
+  # - job_name: 'postgres'
+  #   scrape_interval: 15s
+  #   static_configs:
+  #     - targets: ['postgres-exporter:9187']
+  #       labels:
+  #         service: 'postgres'
+  #         component: 'database'
+
+  # ============================================
+  # Traefik Metrics (Opcional)
+  # ============================================
+  # Descomente se o Traefik estiver expondo métricas
+  # - job_name: 'traefik'
+  #   scrape_interval: 15s
+  #   static_configs:
+  #     - targets: ['traefik:8080']
+  #       labels:
+  #         service: 'traefik'
+  #         component: 'reverse-proxy'
+  #   metrics_path: '/metrics'
+
+# ============================================
+# Configurações de retenção (opcional)
+# ============================================
+# storage:
+#   tsdb:
+#     path: /prometheus
+#     retention.time: 15d
+#     retention.size: 10GB

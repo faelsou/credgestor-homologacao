@@ -1,0 +1,14 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Instalar dependências
+RUN pip install --no-cache-dir docker requests
+
+# Copiar script do autoscaler
+COPY scripts/autoscaler.py /app/autoscaler.py
+
+# Tornar executável
+RUN chmod +x /app/autoscaler.py
+
+CMD ["python", "/app/autoscaler.py"]

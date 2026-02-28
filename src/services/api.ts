@@ -4,7 +4,7 @@
  */
 
 import { Client, User, UserRole } from '@/types';
-import { normalizeUserRole, stripNonDigits } from '@/utils';
+import { normalizeUserRole, stripNonDigits, sanitizeString, sanitizeEmail, sanitizeText, sanitizeCpfCnpj } from '@/utils';
 
 // Em produção, se VITE_API_BASE_URL não estiver configurada, usa o mesmo domínio do frontend
 const getApiBaseUrl = () => {
@@ -184,13 +184,40 @@ export async function loginWithBackend(email: string, password: string): Promise
       body: JSON.stringify(payload),
     });
 
+    // Ler a resposta como texto primeiro para verificar se é HTML
+    const responseText = await response.text().catch(() => '');
+    const isHtml = responseText.trim().startsWith('<');
+
+    // Verificar se é erro 405 (Method Not Allowed) - geralmente indica problema de roteamento
+    if (response.status === 405) {
+      console.error('❌ Erro 405 (Method Not Allowed) no login:', {
+        status: response.status,
+        statusText: response.statusText,
+        url: CONFIGURED_LOGIN_URL,
+        isHtmlResponse: isHtml,
+        responsePreview: isHtml ? responseText.substring(0, 200) : responseText
+      });
+      
+      if (isHtml) {
+        throw new Error('Erro 405: A requisição não está chegando ao backend. Verifique se o Traefik está roteando corretamente a rota /api para o backend.');
+      } else {
+        throw new Error('Erro 405: Método POST não permitido. Verifique a configuração do servidor.');
+      }
+    }
+
     let body;
     try {
-      body = await toJson(response);
+      // Tentar fazer parse do JSON
+      body = responseText ? JSON.parse(responseText) : null;
     } catch (parseError) {
       console.error('❌ Erro ao parsear resposta do servidor:', parseError);
-      const text = await response.text().catch(() => 'Resposta não disponível');
-      console.error('📄 Resposta do servidor (texto):', text);
+      console.error('📄 Resposta do servidor (texto):', isHtml ? 'HTML recebido (possível problema de roteamento)' : responseText.substring(0, 500));
+      
+      // Se for HTML, provavelmente é um problema de roteamento
+      if (isHtml && response.status >= 400) {
+        throw new Error(`Erro ${response.status}: A resposta do servidor é HTML, indicando que a requisição não chegou ao backend. Verifique o roteamento.`);
+      }
+      
       throw new Error(`Erro ${response.status}: ${response.statusText || 'Resposta inválida do servidor'}`);
     }
     
@@ -305,22 +332,24 @@ export async function createClient(
   }
   const effectiveTenantId = tenantId;
 
-  // Monta o payload no formato esperado pelo backend
+  // Monta o payload no formato esperado pelo backend com sanitização
   const payload = {
-    nome: client.name,
-    nome_completo: client.name,
-    cpf_cnpj: stripNonDigits(client.cpf),
+    nome: sanitizeString(client.name, 200),
+    nome_completo: sanitizeString(client.name, 200),
+    cpf_cnpj: sanitizeCpfCnpj(client.cpf),
     tipo_pessoa: 'PF', // Padrão: Pessoa Física
-    email: client.email || null,
+    email: client.email ? sanitizeEmail(client.email) : null,
     telefone: stripNonDigits(client.phone) || null,
     celular: stripNonDigits(client.phone) || null,
     whatsapp: stripNonDigits(client.phone) || null,
-    endereco: client.street || null,
-    cidade: client.city || null,
-    estado: client.state || null,
+    endereco: sanitizeString(client.street, 200) || null,
+    complemento: sanitizeString(client.complement, 200) || null,
+    bairro: sanitizeString(client.neighborhood, 100) || null,
+    cidade: sanitizeString(client.city, 100) || null,
+    estado: sanitizeString(client.state, 2) || null,
     cep: stripNonDigits(client.cep) || null,
     data_nascimento: client.birthDate || null,
-    observacoes: client.notes || null,
+    observacoes: client.notes ? sanitizeText(client.notes, 5000) : null,
   };
 
   const endpoint = `tenants/${effectiveTenantId}/clients`;
@@ -402,6 +431,8 @@ export async function updateClient(
     celular: stripNonDigits(client.phone) || null,
     whatsapp: stripNonDigits(client.phone) || null,
     endereco: client.street || null,
+    complemento: client.complement || null,
+    bairro: client.neighborhood || null,
     cidade: client.city || null,
     estado: client.state || null,
     cep: stripNonDigits(client.cep) || null,
@@ -492,7 +523,16 @@ export async function deleteClient(
   });
 
   const body = await toJson(response);
-  assertOk(response, body);
+  
+  if (!response.ok) {
+    // Criar erro com status code e mensagem detalhada
+    const errorMessage = body?.detail || body?.error || body?.erro || body?.message || 
+                        `Erro ${response.status}: ${response.statusText}`;
+    const error: any = new Error(errorMessage);
+    error.status = response.status;
+    error.detail = body?.detail || errorMessage;
+    throw error;
+  }
 }
 
 export interface ForgotPasswordResponse {

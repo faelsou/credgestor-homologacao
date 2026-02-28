@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
-import { Plus, Calculator, Pencil, Trash2, FileText, Clock8, Search } from 'lucide-react';
+import { Plus, Calculator, Pencil, Trash2, FileText, Clock8, Search, RotateCcw, Scale } from 'lucide-react';
 import { AppContext } from '@/pages/App';
-import { formatCurrency, formatDate, generateNoteHash, getTodayDateString } from '@/utils';
+import { formatCurrency, formatDate, generateNoteHash, getTodayDateString, numberToWords, formatCpf, formatCep, formatInterestRate } from '@/utils';
 import { LoanStatus, Installment, InstallmentStatus, UserRole, Loan, PromissoryNote, IndicationType, Client, LoanModel } from '@/types';
 
 interface LoansViewProps {
@@ -10,7 +10,7 @@ interface LoansViewProps {
 }
 
 export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit }) => {
-  const { loans, clients, installments, addLoan, updateLoan, deleteLoan, user, scheduleFuturePayment } = useContext(AppContext);
+  const { loans, clients, installments, addLoan, updateLoan, deleteLoan, user, scheduleFuturePayment, reopenLoan } = useContext(AppContext);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
   const [promiseModal, setPromiseModal] = useState<{ loan: Loan; installment: Installment } | null>(null);
@@ -19,24 +19,26 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const [promiseDate, setPromiseDate] = useState(getTodayDateString());
   const [promiseLateFee, setPromiseLateFee] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<LoanStatus | 'ALL'>('ALL');
   
   // Form State
   const [selectedClientId, setSelectedClientId] = useState('');
   const [amount, setAmount] = useState(1000);
-  const [interestRate, setInterestRate] = useState(20); // 20%
+  const [interestRate, setInterestRate] = useState(0.0); // 0.0% - deve ser preenchido manualmente
+  const [interestRateDisplay, setInterestRateDisplay] = useState('0,0'); // Valor exibido no campo
   const [installmentsCount, setInstallmentsCount] = useState(1);
   const [startDate, setStartDate] = useState(getTodayDateString());
   const [loanModel, setLoanModel] = useState<LoanModel>(LoanModel.PRICE);
-  const createDefaultPromissoryNote = (baseDate: string): PromissoryNote => ({
+  const createDefaultPromissoryNote = (baseDate: string, defaultInterestRate: number = 0.0): PromissoryNote => ({
     capital: amount,
-    interestRate: interestRate,
+    interestRate: defaultInterestRate,
     issueDate: baseDate,
     dueDate: baseDate,
     indication: 'Sem Garantia',
-    numberHash: generateNoteHash(),
+    numberHash: '', // Será gerado automaticamente quando o cliente for selecionado
     observation: ''
   });
-  const [promissoryNote, setPromissoryNote] = useState<PromissoryNote>(createDefaultPromissoryNote(startDate));
+  const [promissoryNote, setPromissoryNote] = useState<PromissoryNote>(createDefaultPromissoryNote(startDate, 0.0));
 
   const addMonths = (dateString: string, months: number) => {
     // Parse a data no formato YYYY-MM-DD evitando problemas de fuso horário
@@ -51,9 +53,12 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   };
 
   const calculatePriceInstallment = (principal: number, rateDecimal: number, periods: number) => {
-    if (rateDecimal === 0) return principal / periods;
+    if (rateDecimal === 0) return Math.ceil(principal / periods);
+    // Fórmula baseada em: ARREDONDAR.PARA.CIMA(principal/((POTÊNCIA(1+rateDecimal;periods)-1)/(rateDecimal*(POTÊNCIA(1+rateDecimal;periods))));0)
     const factor = Math.pow(1 + rateDecimal, periods);
-    return principal * ((rateDecimal * factor) / (factor - 1));
+    const installment = principal * ((rateDecimal * factor) / (factor - 1));
+    // Arredondar para cima para garantir que os centavos sejam sempre arredondados para cima
+    return Math.ceil(installment);
   };
 
   type SchedulePreviewItem = { number: number; dueDate: string; amount: number; interest: number; principal: number };
@@ -83,7 +88,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
           break;
         }
         case LoanModel.INTEREST_ONLY: {
-          interestPortion = amount * rateDecimal;
+          // Arredondar juros para cima para garantir que os centavos sejam sempre arredondados para cima
+          interestPortion = Math.ceil(amount * rateDecimal);
           principalPortion = i === installmentsCount ? amount : 0;
           installmentAmount = interestPortion + principalPortion;
           break;
@@ -126,15 +132,31 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setPromissoryNote(prev => ({ ...prev, [field]: value }));
   };
 
+  // Gerar hashes sequenciais para cada parcela da nota promissória
+  // Formato: #1/005#, #2/005#, #3/005#, etc.
+  // Onde o primeiro número é o número da parcela (1, 2, 3...) e o segundo é o total de parcelas
+  const generateSequentialHashes = (installmentsCount: number): string[] => {
+    const hashes: string[] = [];
+    const totalParcels = installmentsCount.toString().padStart(3, '0');
+    
+    // Gerar hash sequencial para cada parcela: Nº #1/005#, Nº #2/005#, etc.
+    for (let i = 1; i <= installmentsCount; i++) {
+      hashes.push(`#${i}/${totalParcels}#`);
+    }
+    
+    return hashes;
+  };
+
   const resetForm = () => {
     setSelectedClientId('');
     setAmount(1000);
-    setInterestRate(20);
+    setInterestRate(0.0);
+    setInterestRateDisplay('0,0');
     setInstallmentsCount(1);
     setLoanModel(LoanModel.PRICE);
     const today = getTodayDateString();
     setStartDate(today);
-    setPromissoryNote(createDefaultPromissoryNote(today));
+    setPromissoryNote(createDefaultPromissoryNote(today, 0.0));
     setEditingLoan(null);
   };
 
@@ -158,6 +180,15 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
         alert('Erro ao gerar parcela inicial.');
         return;
       }
+      
+      // IMPORTANTE: Para empréstimos "somente juros", os juros devem ser SEMPRE calculados
+      // sobre o valor ORIGINAL do empréstimo (amount), não sobre valores calculados do schedulePreview.
+      // Isso garante que a taxa de juros permaneça constante do início ao fim do empréstimo.
+      // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100,00 de juros sempre
+      const rateDecimal = interestRate / 100;
+      // Arredondar juros para cima para garantir que os centavos sejam sempre arredondados para cima
+      const originalInterestAmount = Math.ceil(amount * rateDecimal);
+      
       // Criar apenas a primeira parcela com somente juros
       // O principalAmount representa o capital total em aberto
       generatedInstallments = [{
@@ -166,8 +197,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
         clientId: selectedClientId,
         number: 1,
         dueDate: firstScheduleItem.dueDate,
-        amount: firstScheduleItem.interest, // Apenas juros para pagar agora
-        interestAmount: firstScheduleItem.interest,
+        amount: originalInterestAmount, // SEMPRE usar o valor original dos juros
+        interestAmount: originalInterestAmount, // SEMPRE usar o valor original dos juros
         principalAmount: amount, // Capital total em aberto (será reduzido conforme pagamentos)
         amountPaid: 0,
         status: InstallmentStatus.PENDING
@@ -189,13 +220,30 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     }
 
     const lastDueDate = generatedInstallments[generatedInstallments.length - 1]?.dueDate || startDate;
+    
+    // Hash inicial do empréstimo sempre é #1/001#
+    // Este hash é usado apenas para identificar o empréstimo
+    // As notas promissórias terão hashes sequenciais: #1/010#, #2/010#, #3/010#, etc.
+    let noteNumber = promissoryNote.numberHash;
+    if (!noteNumber) {
+      // Hash inicial sempre começa com #1/001#
+      noteNumber = '#1/001#';
+    } else {
+      // Se já existe um hash, manter o formato mas garantir que seja válido
+      const match = noteNumber.match(/#(\d+)\/(\d+)#/);
+      if (!match) {
+        // Se o formato estiver incorreto, resetar para #1/001#
+        noteNumber = '#1/001#';
+      }
+    }
+    
     const promissoryToSave: PromissoryNote = {
       ...promissoryNote,
       capital: Number(promissoryNote.capital || amount),
       interestRate: Number(promissoryNote.interestRate || interestRate),
       issueDate: promissoryNote.issueDate || startDate,
       dueDate: promissoryNote.dueDate || lastDueDate,
-      numberHash: promissoryNote.numberHash || generateNoteHash()
+      numberHash: noteNumber
     };
 
     const loanToPersist: Loan = {
@@ -227,16 +275,27 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
 
   const getClientName = (id: string) => clients.find(c => c.id === id)?.name || 'Desconhecido';
 
-  // Filtrar empréstimos por busca
+  // Filtrar empréstimos por busca e status
   const filteredLoans = useMemo(() => {
-    if (!searchTerm.trim()) return loans;
-    const searchLower = searchTerm.toLowerCase();
-    return loans.filter(loan => {
-      const client = clients.find(c => c.id === loan.clientId);
-      const clientName = client?.name || getClientName(loan.clientId);
-      return clientName.toLowerCase().includes(searchLower);
-    });
-  }, [loans, clients, searchTerm]);
+    let filtered = loans;
+    
+    // Filtro por busca
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(loan => {
+        const client = clients.find(c => c.id === loan.clientId);
+        const clientName = client?.name || getClientName(loan.clientId);
+        return clientName.toLowerCase().includes(searchLower);
+      });
+    }
+    
+    // Filtro por status
+    if (statusFilter !== 'ALL') {
+      filtered = filtered.filter(loan => loan.status === statusFilter);
+    }
+    
+    return filtered;
+  }, [loans, clients, searchTerm, statusFilter]);
 
   const canAdd = user?.role === UserRole.ADMIN;
 
@@ -244,10 +303,18 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setEditingLoan(loan);
     setSelectedClientId(loan.clientId);
     setAmount(loan.amount);
-    setInterestRate(loan.interestRate);
+    // Garantir que o valor de juros seja sempre um número válido (0 ou maior)
+    const validInterestRate = loan.interestRate !== null && loan.interestRate !== undefined ? loan.interestRate : 0;
+    setInterestRate(validInterestRate);
+    setInterestRateDisplay(validInterestRate.toString().replace('.', ','));
     setInstallmentsCount(loan.installmentsCount);
     setStartDate(loan.startDate);
-    setPromissoryNote(loan.promissoryNote || createDefaultPromissoryNote(loan.startDate));
+    const promissory = loan.promissoryNote || createDefaultPromissoryNote(loan.startDate);
+    // Garantir que o interestRate da nota promissória também seja válido
+    if (promissory.interestRate === null || promissory.interestRate === undefined) {
+      promissory.interestRate = validInterestRate;
+    }
+    setPromissoryNote(promissory);
     setLoanModel(loan.model || LoanModel.PRICE);
     setIsModalOpen(true);
   };
@@ -257,6 +324,45 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       deleteLoan(loan.id);
     }
   };
+
+  // Sincronizar juros inicial quando o formulário é aberto (novo empréstimo)
+  useEffect(() => {
+    if (!editingLoan && isModalOpen) {
+      // Garantir que o campo da nota promissória também tenha 0.0%
+      setPromissoryNote(prev => {
+        if (prev.interestRate !== 0.0) {
+          return { ...prev, interestRate: 0.0 };
+        }
+        return prev;
+      });
+      setInterestRate(0.0);
+      setInterestRateDisplay('0,0');
+    }
+  }, [isModalOpen, editingLoan]);
+
+  // Atualizar hash inicial do empréstimo quando o cliente for selecionado
+  // Hash inicial sempre é #1/001#
+  useEffect(() => {
+    if (selectedClientId && !editingLoan) {
+      setPromissoryNote(prev => {
+        // Se não há hash ou o hash não é #1/001#, definir como #1/001#
+        if (!prev.numberHash || prev.numberHash !== '#1/001#') {
+          return { ...prev, numberHash: '#1/001#' };
+        }
+        return prev;
+      });
+    }
+  }, [selectedClientId, editingLoan]);
+
+  // Atualizar data de vencimento com a última parcela da simulação
+  useEffect(() => {
+    if (schedulePreview.length > 0 && !editingLoan) {
+      const lastInstallment = schedulePreview[schedulePreview.length - 1];
+      if (lastInstallment && lastInstallment.dueDate) {
+        setPromissoryNote(prev => ({ ...prev, dueDate: lastInstallment.dueDate }));
+      }
+    }
+  }, [schedulePreview, editingLoan]);
 
   useEffect(() => {
     if (!editingLoanId) return;
@@ -309,32 +415,46 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
 
   // Função para calcular o valor em aberto do empréstimo
   const calculateOutstandingAmount = (loan: Loan): number => {
+    // Se o empréstimo foi finalizado, valor em aberto deve ser sempre 0
+    if (loan.status === LoanStatus.PAID) {
+      return 0;
+    }
+    
     const related = installments.filter(inst => inst.loanId === loan.id);
     
     if (related.length === 0) {
       return loan.totalAmount;
     }
     
-    // Para empréstimos "somente juros", calcular capital + juros pendentes
+    // Para empréstimos "somente juros", calcular capital + juros totais
     if (loan.model === LoanModel.INTEREST_ONLY) {
-      let totalOutstanding = 0;
-      
-      // Soma todo o capital pendente
-      for (const inst of related) {
-        const principal = inst.principalAmount ?? 0;
-        if (principal > 0) {
-          totalOutstanding += principal;
+      // Calcular capital total pago através do histórico de pagamentos
+      const totalCapitalPaid = related.reduce((sum, inst) => {
+        if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+          return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
         }
-      }
+        return sum;
+      }, 0);
       
-      // Soma todos os juros pendentes
-      for (const inst of related) {
-        const interest = inst.interestAmount ?? 0;
-        if (interest > 0) {
-          totalOutstanding += interest;
-        }
-      }
+      // Capital pendente = Capital original - Capital pago
+      const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
       
+      // IMPORTANTE: VALOR EM ABERTO = Capital pendente + Juros sobre capital pendente
+      // Juros são calculados sobre o capital pendente (não sobre o capital original)
+      // Quando cliente paga apenas juros, o capital não muda, então VALOR EM ABERTO permanece igual
+      // Quando cliente paga juros + capital, o capital diminui e os juros são recalculados sobre o novo capital
+      // Exemplo: R$ 1.000 com 10% = R$ 1.100 inicial
+      //          Cliente paga R$ 200 (R$ 100 juros + R$ 100 capital)
+      //          Capital restante: R$ 900, Juros: 10% de R$ 900 = R$ 90
+      //          VALOR EM ABERTO = R$ 900 + R$ 90 = R$ 990
+      // Arredondar juros para cima para garantir que os centavos sejam sempre arredondados para cima
+      const monthlyInterest = Math.ceil(pendingCapital * (loan.interestRate / 100));
+      
+      // Usar o número de parcelas do empréstimo ou o número de parcelas existentes
+      const totalInstallments = loan.installmentsCount || related.length || 1;
+      const totalInterest = monthlyInterest * totalInstallments;
+      
+      const totalOutstanding = pendingCapital + totalInterest;
       return Number(totalOutstanding.toFixed(2));
     }
     
@@ -438,10 +558,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
           <div class="section"><span class="label">Emitente:</span> <span class="value">${client.name}</span></div>
           <div class="section"><span class="label">CPF:</span> <span class="value">${client.cpf}</span></div>
           <div class="section"><span class="label">Contato:</span> <span class="value">${client.phone} / ${client.email || 'sem email'}</span></div>
-          <div class="section"><span class="label">Endereço:</span> <span class="value">${client.street}${client.complement ? ', ' + client.complement : ''} - ${client.neighborhood}, ${client.city}/${client.state} - CEP ${client.cep}</span></div>
+          <div class="section"><span class="label">Endereço:</span> <span class="value">${client.street}${client.complement ? ', ' + client.complement : ''}${client.neighborhood ? ' - ' + client.neighborhood : ''}, ${client.city}/${client.state} - CEP ${client.cep}</span></div>
           <div class="card">
             <div class="section"><span class="label">Capital:</span> <span class="value">${formatCurrency(promissoryNote.capital)}</span></div>
-            <div class="section"><span class="label">Juros:</span> <span class="value">${promissoryNote.interestRate}%</span></div>
+            <div class="section"><span class="label">Juros:</span> <span class="value">${formatInterestRate(promissoryNote.interestRate)}</span></div>
             <div class="section"><span class="label">Emissão:</span> <span class="value">${formatDate(promissoryNote.issueDate)}</span></div>
             <div class="section"><span class="label">Vencimento:</span> <span class="value">${formatDate(promissoryNote.dueDate)}</span></div>
             <div class="section"><span class="label">Indicação:</span> <span class="value">${promissoryNote.indication}</span></div>
@@ -485,6 +605,386 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     printable.print();
   };
 
+  /**
+   * Gera nota promissória no formato oficial aceito por cartórios para protesto
+   * Formato baseado nos requisitos legais brasileiros
+   * Gera uma nota promissória para cada parcela do empréstimo
+   */
+  const generateOfficialPromissoryNote = (
+    safeClientName: string,
+    client: Client,
+    loan: Loan,
+    issuerName: string,
+    issuerData?: {
+      name?: string;
+      cnpj?: string;
+      address?: string;
+      city?: string;
+      state?: string;
+      cep?: string;
+    }
+  ) => {
+    if (!loan.promissoryNote) {
+      alert('Nota promissória não encontrada para este empréstimo.');
+      return;
+    }
+
+    const printable = window.open('', '_blank', 'width=800,height=1100');
+    const fileName = `Nota_Promissoria_${safeClientName || 'cliente'}.pdf`;
+
+    if (!printable) {
+      alert('Não foi possível abrir o gerador de PDF. Verifique o bloqueio de pop-ups.');
+      return;
+    }
+
+    const { promissoryNote } = loan;
+    
+    // Buscar parcelas do empréstimo e ordenar por data de vencimento
+    const loanInstallments = installments
+      .filter(inst => inst.loanId === loan.id)
+      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+    
+    // Gerar hashes sequenciais para cada parcela
+    // Formato: #1/005#, #2/005#, #3/005#, etc.
+    // Onde o primeiro número é o número da parcela (1, 2, 3...) e o segundo é o total de parcelas
+    const totalInstallments = loanInstallments.length > 0 ? loanInstallments.length : loan.installmentsCount;
+    const hashes = generateSequentialHashes(totalInstallments);
+    
+    // Dados do credor (empresa)
+    const creditorName = issuerData?.name || issuerName || 'Empresa Credora';
+    const creditorCnpj = issuerData?.cnpj || 'CNPJ não informado';
+    const creditorAddress = issuerData?.address || 'Endereço não informado';
+    const creditorCity = issuerData?.city || 'Cidade não informada';
+    const creditorState = issuerData?.state || 'Estado não informado';
+    const creditorCep = issuerData?.cep || 'CEP não informado';
+    
+    // Dados do devedor (cliente)
+    const debtorName = client.name;
+    const debtorCpf = client.cpf || 'CPF não informado';
+    const debtorAddress = `${client.street || ''}${client.complement ? ', ' + client.complement : ''}${client.neighborhood ? ' - ' + client.neighborhood : ''}`.trim() || 'Endereço não informado';
+    const debtorCity = client.city || 'Cidade não informada';
+    const debtorState = client.state || 'Estado não informado';
+    const debtorCep = client.cep || 'CEP não informado';
+    
+    // Local de pagamento (cidade e estado do devedor/cliente)
+    const paymentLocation = `${debtorCity}/${debtorState}`;
+
+    // Formatar data de vencimento para texto extenso
+    const formatDateToWords = (dateStr: string): string => {
+      // Normalizar a data (pode vir em YYYY-MM-DD ou outro formato)
+      let normalizedDate = dateStr;
+      if (dateStr.includes('T')) {
+        normalizedDate = dateStr.split('T')[0];
+      } else if (dateStr.includes(' ')) {
+        normalizedDate = dateStr.split(' ')[0];
+      }
+      
+      // Parse a data no formato YYYY-MM-DD
+      const [year, month, day] = normalizedDate.split('-').map(Number);
+      
+      const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 
+                     'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+      
+      const dayWords = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove', 'dez',
+                       'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove',
+                       'vinte', 'vinte e um', 'vinte e dois', 'vinte e três', 'vinte e quatro', 'vinte e cinco',
+                       'vinte e seis', 'vinte e sete', 'vinte e oito', 'vinte e nove', 'trinta', 'trinta e um'];
+      
+      const yearWords = numberToWords(year).replace('reais', '').trim();
+      
+      const dayWord = dayWords[day] || day.toString();
+      const monthWord = months[month - 1] || '';
+      
+      return `${dayWord.toUpperCase()} de ${monthWord.toUpperCase()} de ${yearWords.toUpperCase()}`;
+    };
+
+    // Gerar notas promissórias para cada parcela
+    // Cada parcela tem um hash sequencial: #1/010#, #2/010#, #3/010#, etc.
+    // Agrupar em grupos de até 3 notas por página A4
+    const notesHtml = loanInstallments.length > 0 
+      ? loanInstallments.map((installment, index) => {
+          // Cada parcela usa um hash sequencial baseado no índice (1, 2, 3...)
+          const installmentHash = hashes[index] || hashes[0];
+          const installmentDueDate = installment.dueDate;
+          const installmentDueDateWords = formatDateToWords(installmentDueDate);
+          // Usar o valor total do empréstimo (capital) ao invés do valor da parcela
+          const installmentValue = promissoryNote.capital;
+          // Usar o valor do empréstimo (capital) ao invés do valor da parcela na descrição
+          const installmentValueWords = numberToWords(promissoryNote.capital);
+          const installmentIssueDate = formatDate(promissoryNote.issueDate);
+          const installmentDueDateFormatted = formatDate(installmentDueDate);
+          
+          // Adicionar quebra de página após cada grupo de 3 notas (índices 2, 5, 8, etc.)
+          // Ou seja, após a 3ª, 6ª, 9ª nota, etc.
+          const shouldBreakPage = (index + 1) % 3 === 0 && index < loanInstallments.length - 1;
+          const pageBreakClass = shouldBreakPage ? 'page-break-after' : '';
+          
+          return `
+            <div class="note-container ${pageBreakClass}">
+              <div class="header-row">
+                <div class="header-left">
+                  <h1>NOTA PROMISSÓRIA</h1>
+                </div>
+                <div class="header-center">
+                  <div class="document-number">
+                    <strong>N°</strong> ${installmentHash}
+                  </div>
+                </div>
+                <div class="header-right">
+                  <div class="due-date">
+                    <strong>Vencimento:</strong> ${installmentDueDateWords}
+                  </div>
+                  <div class="header-value">
+                    ${formatCurrency(installmentValue)}
+                  </div>
+                </div>
+              </div>
+
+              <div class="promise-text">
+                <p>
+                  No dia <strong>${installmentDueDateWords}</strong> pagarei por esta única via de <strong>NOTA PROMISSÓRIA</strong> 
+                  a <strong>${creditorName}</strong>${creditorCnpj && creditorCnpj !== 'CNPJ não informado' ? ' CNPJ ' + creditorCnpj : ''} ou à sua ordem 
+                  a quantia de <strong>${installmentValueWords.toUpperCase()}</strong> em moeda corrente desse país.
+                </p>
+              </div>
+
+              <div class="info-section">
+                <div class="info-row">
+                  <span class="info-label">Local de pagamento:</span> ${paymentLocation}
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Data da Emissão:</span> ${installmentIssueDate}
+                </div>
+              </div>
+
+              <div class="issuer-section">
+                <div class="issuer-title">Nome do Emitente:</div>
+                <div class="issuer-info">
+                  <strong>${debtorName}</strong><br>
+                  CPF: ${debtorCpf ? formatCpf(debtorCpf) : 'não informado'}<br>
+                  Endereço: ${debtorAddress}${debtorCep ? ' - CEP: ' + formatCep(debtorCep) : ''}${debtorCity && debtorState ? ' - ' + debtorCity.toUpperCase() + '/' + debtorState.toUpperCase() : ''}
+                </div>
+              </div>
+
+              <div class="signature-section">
+                <div class="signature-label">Assinatura do Emitente</div>
+              </div>
+            </div>
+          `;
+        }).join('')
+      : (() => {
+          // Fallback: gerar uma única nota se não houver parcelas
+          const dueDateWords = formatDateToWords(promissoryNote.dueDate);
+          // Usar o valor do empréstimo (capital) ao invés do valor total
+          const noteValue = promissoryNote.capital;
+          const noteValueWords = numberToWords(noteValue);
+          const issueDate = formatDate(promissoryNote.issueDate);
+          
+          return `
+            <div class="note-container">
+              <div class="header-row">
+                <div class="header-left">
+                  <h1>NOTA PROMISSÓRIA</h1>
+                </div>
+                <div class="header-center">
+                  <div class="document-number">
+                    <strong>N°</strong> ${promissoryNote.numberHash}
+                  </div>
+                </div>
+                <div class="header-right">
+                  <div class="due-date">
+                    <strong>Vencimento:</strong> ${dueDateWords}
+                  </div>
+                  <div class="header-value">
+                    ${formatCurrency(noteValue)}
+                  </div>
+                </div>
+              </div>
+
+              <div class="promise-text">
+                <p>
+                  No dia <strong>${dueDateWords}</strong> pagarei por esta única via de <strong>NOTA PROMISSÓRIA</strong> 
+                  a <strong>${creditorName}</strong>${creditorCnpj && creditorCnpj !== 'CNPJ não informado' ? ' CNPJ ' + creditorCnpj : ''} ou à sua ordem 
+                  a quantia de <strong>${noteValueWords.toUpperCase()}</strong> em moeda corrente desse país.
+                </p>
+              </div>
+
+              <div class="info-section">
+                <div class="info-row">
+                  <span class="info-label">Local de pagamento:</span> ${paymentLocation}
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Data da Emissão:</span> ${issueDate}
+                </div>
+              </div>
+
+              <div class="issuer-section">
+                <div class="issuer-title">Nome do Emitente:</div>
+                <div class="issuer-info">
+                  <strong>${debtorName}</strong><br>
+                  CPF: ${debtorCpf ? formatCpf(debtorCpf) : 'não informado'}<br>
+                  Endereço: ${debtorAddress}${debtorCep ? ' - CEP: ' + formatCep(debtorCep) : ''}${debtorCity && debtorState ? ' - ' + debtorCity.toUpperCase() + '/' + debtorState.toUpperCase() : ''}
+                </div>
+              </div>
+
+              <div class="signature-section">
+                <div class="signature-label">Assinatura do Emitente</div>
+              </div>
+            </div>
+          `;
+        })();
+
+    printable.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>${fileName}</title>
+          <style>
+            @media print {
+              @page {
+                size: A4;
+                margin: 2cm 2.5cm;
+              }
+              .note-container {
+                page-break-inside: avoid;
+                break-inside: avoid;
+              }
+              .note-container:last-child {
+                margin-bottom: 0;
+              }
+              .page-break-after {
+                margin-bottom: 0;
+              }
+              .page-break-after {
+                page-break-after: always;
+                break-after: page;
+              }
+            }
+            body {
+              font-family: 'Times New Roman', serif;
+              font-size: 8pt;
+              line-height: 1.2;
+              color: #000;
+              padding: 0;
+              margin: 0;
+            }
+            .note-container {
+              border: 1px solid #000;
+              padding: 6px;
+              margin-bottom: 0.5cm;
+              height: 8.2cm;
+              position: relative;
+              display: flex;
+              flex-direction: column;
+              box-sizing: border-box;
+              page-break-inside: avoid;
+            }
+            .header-row {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              margin-bottom: 3px;
+              padding-bottom: 2px;
+              flex-shrink: 0;
+            }
+            .header-left {
+              flex: 1;
+            }
+            .header-center {
+              flex: 1;
+              text-align: center;
+            }
+            .header-right {
+              flex: 1;
+              text-align: right;
+              font-size: 7pt;
+            }
+            .header-left h1 {
+              font-size: 11pt;
+              font-weight: bold;
+              margin: 0;
+              text-transform: uppercase;
+              letter-spacing: 0.2px;
+            }
+            .document-number {
+              font-size: 8pt;
+              font-weight: bold;
+            }
+            .due-date {
+              font-size: 7pt;
+              margin-bottom: 2px;
+            }
+            .header-value {
+              font-size: 8pt;
+              font-weight: bold;
+            }
+            .promise-text {
+              text-align: justify;
+              margin: 3px 0;
+              font-size: 8pt;
+              line-height: 1.25;
+              flex-shrink: 0;
+            }
+            .promise-text p {
+              margin: 0;
+            }
+            .info-section {
+              margin: 2px 0;
+              font-size: 7.5pt;
+              flex-shrink: 0;
+            }
+            .info-row {
+              margin: 1px 0;
+            }
+            .info-label {
+              font-weight: bold;
+            }
+            .issuer-section {
+              margin-top: 3px;
+              font-size: 7.5pt;
+              flex-shrink: 0;
+              margin-bottom: 5px;
+            }
+            .issuer-title {
+              font-weight: bold;
+              margin-bottom: 2px;
+            }
+            .issuer-info {
+              line-height: 1.3;
+            }
+            .signature-section {
+              margin-top: auto;
+              text-align: center;
+              border-top: 1px solid #000;
+              padding-top: 2px;
+              min-height: 25px;
+              flex-shrink: 0;
+            }
+            .signature-name {
+              font-weight: bold;
+              margin-top: 4px;
+              font-size: 8pt;
+            }
+            .signature-label {
+              font-size: 7pt;
+              margin-top: 2px;
+              color: #333;
+            }
+          </style>
+        </head>
+        <body>
+          ${notesHtml}
+        </body>
+      </html>
+    `);
+    
+    printable.document.title = fileName;
+    printable.document.close();
+    printable.focus();
+    printable.print();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -499,16 +999,32 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
         )}
       </div>
 
-      {/* Campo de Busca */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-        <input
-          type="text"
-          className="w-full pl-10 pr-4 py-3 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
-          placeholder="Buscar por nome do cliente..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-        />
+      {/* Filtros: Busca e Status */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input
+              type="text"
+              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:border-emerald-500 transition-colors text-slate-700"
+              placeholder="Buscar por nome do cliente..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div>
+            <select
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:border-emerald-500 transition-colors text-slate-700"
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as LoanStatus | 'ALL')}
+            >
+              <option value="ALL">Todos os status</option>
+              <option value={LoanStatus.ACTIVE}>Em Aberto</option>
+              <option value={LoanStatus.PAID}>Finalizado</option>
+              <option value={LoanStatus.DEFAULTED}>Em Atraso</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <div className="overflow-x-auto bg-white rounded-xl border border-slate-200 shadow-sm">
@@ -584,8 +1100,25 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                         }
                         className="p-2 rounded-lg hover:bg-emerald-50 text-emerald-600"
                         aria-label="Gerar PDF da nota"
+                        title="Gerar resumo do empréstimo"
                       >
                         <FileText size={18} />
+                      </button>
+                      <button
+                        onClick={() =>
+                          loanClient &&
+                          generateOfficialPromissoryNote(
+                            clientName,
+                            loanClient,
+                            loan,
+                            user?.name || 'Empresa credora'
+                          )
+                        }
+                        className="p-2 rounded-lg hover:bg-blue-50 text-blue-600"
+                        aria-label="Gerar Nota Promissória Oficial"
+                        title="Gerar Nota Promissória no formato oficial para cartório"
+                      >
+                        <Scale size={18} />
                       </button>
                       {loan.status !== LoanStatus.PAID && (
                         <button
@@ -594,6 +1127,16 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                           aria-label="Agendar recebimento"
                         >
                           <Clock8 size={18} />
+                        </button>
+                      )}
+                      {loan.status === LoanStatus.PAID && (
+                        <button
+                          onClick={() => reopenLoan(loan.id)}
+                          className="p-2 rounded-lg hover:bg-blue-50 text-blue-600"
+                          aria-label="Reabrir empréstimo"
+                          title="Reabrir empréstimo finalizado"
+                        >
+                          <RotateCcw size={18} />
                         </button>
                       )}
                       <button
@@ -672,15 +1215,84 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Juros (%)</label>
                     <input
-                      type="number"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors"
-                      value={interestRate}
+                      value={interestRateDisplay}
                       onChange={e => {
-                        const value = parseFloat(e.target.value);
-                        setInterestRate(value);
-                        setPromissoryNote(prev => ({ ...prev, interestRate: value }));
+                        let inputValue = e.target.value;
+                        
+                        // Permitir campo vazio durante digitação
+                        if (inputValue === '') {
+                          setInterestRateDisplay('');
+                          setInterestRate(0);
+                          setPromissoryNote(prev => ({ ...prev, interestRate: 0 }));
+                          return;
+                        }
+                        
+                        // Remover caracteres inválidos, mantendo apenas números, vírgula e ponto
+                        let cleaned = inputValue.replace(/[^\d,.]/g, '');
+                        
+                        // Normalizar: aceitar vírgula ou ponto como separador decimal
+                        // Se houver múltiplos separadores, manter apenas o primeiro
+                        let hasDecimal = false;
+                        let normalized = '';
+                        for (let i = 0; i < cleaned.length; i++) {
+                          const char = cleaned[i];
+                          if (char === ',' || char === '.') {
+                            if (!hasDecimal) {
+                              normalized += ',';
+                              hasDecimal = true;
+                            }
+                          } else {
+                            normalized += char;
+                          }
+                        }
+                        
+                        // Atualizar o valor exibido
+                        setInterestRateDisplay(normalized);
+                        
+                        // Converter para número e atualizar o estado numérico
+                        if (normalized === '' || normalized === ',') {
+                          setInterestRate(0);
+                          setPromissoryNote(prev => ({ ...prev, interestRate: 0 }));
+                        } else {
+                          const numValue = parseFloat(normalized.replace(',', '.'));
+                          if (!isNaN(numValue) && numValue >= 0 && isFinite(numValue)) {
+                            // Limitar a 2 casas decimais
+                            const roundedValue = Math.round(numValue * 100) / 100;
+                            setInterestRate(roundedValue);
+                            setPromissoryNote(prev => ({ ...prev, interestRate: roundedValue }));
+                          }
+                        }
                       }}
+                      onBlur={e => {
+                        // Ao sair do campo, garantir formato válido
+                        const inputValue = e.target.value.trim();
+                        
+                        if (inputValue === '' || inputValue === ',' || inputValue === '.') {
+                          setInterestRateDisplay('0,0');
+                          setInterestRate(0);
+                          setPromissoryNote(prev => ({ ...prev, interestRate: 0 }));
+                        } else {
+                          // Normalizar e formatar corretamente
+                          const normalizedValue = inputValue.replace(',', '.');
+                          const numValue = parseFloat(normalizedValue);
+                          
+                          if (!isNaN(numValue) && numValue >= 0) {
+                            const roundedValue = Math.round(numValue * 100) / 100;
+                            setInterestRate(roundedValue);
+                            setInterestRateDisplay(roundedValue.toString().replace('.', ','));
+                            setPromissoryNote(prev => ({ ...prev, interestRate: roundedValue }));
+                          } else {
+                            // Se inválido, resetar para 0
+                            setInterestRateDisplay('0,0');
+                            setInterestRate(0);
+                            setPromissoryNote(prev => ({ ...prev, interestRate: 0 }));
+                          }
+                        }
+                      }}
+                      placeholder="0,0"
                     />
                 </div>
               </div>
@@ -791,10 +1403,14 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Hash da Nota</label>
                     <input
-                      readOnly
-                      className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
+                      className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
                       value={promissoryNote.numberHash}
+                      onChange={e => handlePromissoryChange('numberHash', e.target.value)}
+                      placeholder="#1/001#"
                     />
+                    <p className="text-xs text-slate-500 mt-1">
+                      Hash inicial do empréstimo: #1/001#. As notas promissórias terão hashes sequenciais: #1/010#, #2/010#, #3/010#, etc.
+                    </p>
                   </div>
                 </div>
 
@@ -815,12 +1431,84 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                     <label className="block text-sm font-medium text-slate-700 mb-1">Juros (%)</label>
                     <input
                       required
-                      type="number"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
-                      placeholder="Ex: 8"
-                      value={promissoryNote.interestRate}
-                      onChange={e => handlePromissoryChange('interestRate', parseFloat(e.target.value))}
+                      placeholder="0,0"
+                      value={interestRateDisplay}
+                      onChange={e => {
+                        let inputValue = e.target.value;
+                        
+                        // Permitir campo vazio durante digitação
+                        if (inputValue === '') {
+                          setInterestRateDisplay('');
+                          setInterestRate(0);
+                          handlePromissoryChange('interestRate', 0);
+                          return;
+                        }
+                        
+                        // Remover caracteres inválidos, mantendo apenas números, vírgula e ponto
+                        let cleaned = inputValue.replace(/[^\d,.]/g, '');
+                        
+                        // Normalizar: aceitar vírgula ou ponto como separador decimal
+                        // Se houver múltiplos separadores, manter apenas o primeiro
+                        let hasDecimal = false;
+                        let normalized = '';
+                        for (let i = 0; i < cleaned.length; i++) {
+                          const char = cleaned[i];
+                          if (char === ',' || char === '.') {
+                            if (!hasDecimal) {
+                              normalized += ',';
+                              hasDecimal = true;
+                            }
+                          } else {
+                            normalized += char;
+                          }
+                        }
+                        
+                        // Atualizar o valor exibido
+                        setInterestRateDisplay(normalized);
+                        
+                        // Converter para número e atualizar o estado numérico
+                        if (normalized === '' || normalized === ',') {
+                          setInterestRate(0);
+                          handlePromissoryChange('interestRate', 0);
+                        } else {
+                          const numValue = parseFloat(normalized.replace(',', '.'));
+                          if (!isNaN(numValue) && numValue >= 0 && isFinite(numValue)) {
+                            // Limitar a 2 casas decimais
+                            const roundedValue = Math.round(numValue * 100) / 100;
+                            setInterestRate(roundedValue);
+                            handlePromissoryChange('interestRate', roundedValue);
+                          }
+                        }
+                      }}
+                      onBlur={e => {
+                        // Ao sair do campo, garantir formato válido
+                        const inputValue = e.target.value.trim();
+                        
+                        if (inputValue === '' || inputValue === ',' || inputValue === '.') {
+                          setInterestRateDisplay('0,0');
+                          setInterestRate(0);
+                          handlePromissoryChange('interestRate', 0);
+                        } else {
+                          // Normalizar e formatar corretamente
+                          const normalizedValue = inputValue.replace(',', '.');
+                          const numValue = parseFloat(normalizedValue);
+                          
+                          if (!isNaN(numValue) && numValue >= 0) {
+                            const roundedValue = Math.round(numValue * 100) / 100;
+                            setInterestRate(roundedValue);
+                            setInterestRateDisplay(roundedValue.toString().replace('.', ','));
+                            handlePromissoryChange('interestRate', roundedValue);
+                          } else {
+                            // Se inválido, resetar para 0
+                            setInterestRateDisplay('0,0');
+                            setInterestRate(0);
+                            handlePromissoryChange('interestRate', 0);
+                          }
+                        }
+                      }}
                     />
                   </div>
                 </div>

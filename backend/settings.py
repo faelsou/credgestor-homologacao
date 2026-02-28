@@ -30,6 +30,20 @@ class Settings(BaseSettings):
     default_tenant_id: str | None = None
     frontend_url: str | None = None  # URL do frontend para redirects (ex: https://credgestor.app.br)
     
+    # Configurações de timeout para Supabase (em segundos)
+    supabase_timeout: float = 30.0  # Timeout padrão para requisições
+    supabase_connection_timeout: float = 10.0  # Timeout para estabelecer conexão
+    
+    # Configurações OpenTelemetry
+    otel_service_name: str = "credgestor-api"
+    otel_service_version: str = "0.1.0"
+    otel_exporter_otlp_endpoint: str | None = None  # Ex: http://localhost:4318
+    otel_exporter_otlp_headers: str | None = None  # Ex: "key1=value1,key2=value2"
+    otel_traces_exporter: str = "otlp"  # otlp, console, none
+    otel_metrics_exporter: str = "otlp"  # otlp, console, none
+    otel_logs_exporter: str = "otlp"  # otlp, console, none
+    otel_resource_attributes: str | None = None  # Ex: "service.name=api,service.version=1.0"
+    
     @field_validator('supabase_anon_key', 'default_tenant_id', mode='before')
     @classmethod
     def empty_str_to_none(cls, v):

@@ -1,0 +1,219 @@
+{
+  "name": "CredGestor Alert Rules",
+  "type": "dashboard",
+  "dashboard": {
+    "title": "CredGestor - Alertas",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Erro de Conexão no Login",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(login_connection_errors_total[5m]) > 0",
+            "refId": "A"
+          }
+        ],
+        "alert": {
+          "name": "LoginConnectionError",
+          "message": "Erro de conexão durante login detectado",
+          "frequency": "30s",
+          "conditions": [
+            {
+              "type": "query",
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "reducer": {
+                "type": "last",
+                "params": []
+              },
+              "evaluator": {
+                "params": [0],
+                "type": "gt"
+              }
+            }
+          ],
+          "executionErrorState": "alerting",
+          "noDataState": "no_data",
+          "for": "1m"
+        }
+      },
+      {
+        "id": 2,
+        "title": "Taxa Alta de Erros de Login",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(login_errors_total[5m])",
+            "refId": "A"
+          }
+        ],
+        "alert": {
+          "name": "LoginErrorsHigh",
+          "message": "Taxa alta de erros de login: {{ $value }} erros/segundo",
+          "frequency": "30s",
+          "conditions": [
+            {
+              "type": "query",
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "reducer": {
+                "type": "avg",
+                "params": []
+              },
+              "evaluator": {
+                "params": [0.1],
+                "type": "gt"
+              }
+            }
+          ],
+          "executionErrorState": "alerting",
+          "noDataState": "no_data",
+          "for": "2m"
+        }
+      },
+      {
+        "id": 3,
+        "title": "Erro em CRUD de Clientes",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(client_crud_errors_total[5m])",
+            "refId": "A"
+          }
+        ],
+        "alert": {
+          "name": "ClientCRUDError",
+          "message": "Erro em operação CRUD de clientes. Operação: {{ $labels.operation }}, Tipo: {{ $labels.error_type }}",
+          "frequency": "30s",
+          "conditions": [
+            {
+              "type": "query",
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "reducer": {
+                "type": "last",
+                "params": []
+              },
+              "evaluator": {
+                "params": [0],
+                "type": "gt"
+              }
+            }
+          ],
+          "executionErrorState": "alerting",
+          "noDataState": "no_data",
+          "for": "1m"
+        }
+      },
+      {
+        "id": 4,
+        "title": "Erro em CRUD de Empréstimos",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(loan_crud_errors_total[5m])",
+            "refId": "A"
+          }
+        ],
+        "alert": {
+          "name": "LoanCRUDError",
+          "message": "Erro em operação CRUD de empréstimos. Operação: {{ $labels.operation }}, Tipo: {{ $labels.error_type }}",
+          "frequency": "30s",
+          "conditions": [
+            {
+              "type": "query",
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "reducer": {
+                "type": "last",
+                "params": []
+              },
+              "evaluator": {
+                "params": [0],
+                "type": "gt"
+              }
+            }
+          ],
+          "executionErrorState": "alerting",
+          "noDataState": "no_data",
+          "for": "1m"
+        }
+      },
+      {
+        "id": 5,
+        "title": "Erro em CRUD de Parcelas",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(installment_crud_errors_total[5m])",
+            "refId": "A"
+          }
+        ],
+        "alert": {
+          "name": "InstallmentCRUDError",
+          "message": "Erro em operação CRUD de parcelas. Operação: {{ $labels.operation }}, Tipo: {{ $labels.error_type }}",
+          "frequency": "30s",
+          "conditions": [
+            {
+              "type": "query",
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "reducer": {
+                "type": "last",
+                "params": []
+              },
+              "evaluator": {
+                "params": [0],
+                "type": "gt"
+              }
+            }
+          ],
+          "executionErrorState": "alerting",
+          "noDataState": "no_data",
+          "for": "1m"
+        }
+      },
+      {
+        "id": 6,
+        "title": "Erro de Conexão com Banco de Dados",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(db_connection_errors_total[5m])",
+            "refId": "A"
+          }
+        ],
+        "alert": {
+          "name": "DatabaseConnectionError",
+          "message": "Erro de conexão com banco de dados. Tipo: {{ $labels.error_type }}",
+          "frequency": "30s",
+          "conditions": [
+            {
+              "type": "query",
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "reducer": {
+                "type": "last",
+                "params": []
+              },
+              "evaluator": {
+                "params": [0],
+                "type": "gt"
+              }
+            }
+          ],
+          "executionErrorState": "alerting",
+          "noDataState": "no_data",
+          "for": "1m"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,159 @@
+groups:
+  - name: credgestor_alerts
+    interval: 30s
+    rules:
+      # ============================================
+      # Alertas de Erro de Login
+      # ============================================
+      - alert: LoginConnectionError
+        expr: rate(login_connection_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: authentication
+        annotations:
+          summary: "Erro de conexão durante login detectado"
+          description: "{{ $value }} erros de conexão durante login nos últimos 5 minutos"
+          runbook_url: "https://docs.credgestor.app.br/runbooks/login-connection-error"
+
+      - alert: LoginErrorsHigh
+        expr: rate(login_errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: high
+          component: authentication
+        annotations:
+          summary: "Taxa alta de erros de login"
+          description: "Taxa de {{ $value | humanize }} erros de login por segundo nos últimos 5 minutos"
+          runbook_url: "https://docs.credgestor.app.br/runbooks/login-errors"
+
+      # ============================================
+      # Alertas de Erro de CRUD - Clientes
+      # ============================================
+      - alert: ClientCRUDError
+        expr: rate(client_crud_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: high
+          component: crud
+          resource: clients
+        annotations:
+          summary: "Erro em operação CRUD de clientes"
+          description: "{{ $value }} erros em operações CRUD de clientes nos últimos 5 minutos. Operação: {{ $labels.operation }}, Tipo: {{ $labels.error_type }}"
+          runbook_url: "https://docs.credgestor.app.br/runbooks/client-crud-error"
+
+      - alert: ClientCRUDErrorHigh
+        expr: rate(client_crud_errors_total[5m]) > 0.5
+        for: 2m
+        labels:
+          severity: critical
+          component: crud
+          resource: clients
+        annotations:
+          summary: "Taxa alta de erros em CRUD de clientes"
+          description: "Taxa de {{ $value | humanize }} erros por segundo em operações CRUD de clientes"
+          runbook_url: "https://docs.credgestor.app.br/runbooks/client-crud-error"
+
+      # ============================================
+      # Alertas de Erro de CRUD - Empréstimos
+      # ============================================
+      - alert: LoanCRUDError
+        expr: rate(loan_crud_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: high
+          component: crud
+          resource: loans
+        annotations:
+          summary: "Erro em operação CRUD de empréstimos"
+          description: "{{ $value }} erros em operações CRUD de empréstimos nos últimos 5 minutos. Operação: {{ $labels.operation }}, Tipo: {{ $labels.error_type }}"
+          runbook_url: "https://docs.credgestor.app.br/runbooks/loan-crud-error"
+
+      - alert: LoanCRUDErrorHigh
+        expr: rate(loan_crud_errors_total[5m]) > 0.5
+        for: 2m
+        labels:
+          severity: critical
+          component: crud
+          resource: loans
+        annotations:
+          summary: "Taxa alta de erros em CRUD de empréstimos"
+          description: "Taxa de {{ $value | humanize }} erros por segundo em operações CRUD de empréstimos"
+          runbook_url: "https://docs.credgestor.app.br/runbooks/loan-crud-error"
+
+      # ============================================
+      # Alertas de Erro de CRUD - Parcelas
+      # ============================================
+      - alert: InstallmentCRUDError
+        expr: rate(installment_crud_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: high
+          component: crud
+          resource: installments
+        annotations:
+          summary: "Erro em operação CRUD de parcelas"
+          description: "{{ $value }} erros em operações CRUD de parcelas nos últimos 5 minutos. Operação: {{ $labels.operation }}, Tipo: {{ $labels.error_type }}"
+          runbook_url: "https://docs.credgestor.app.br/runbooks/installment-crud-error"
+
+      - alert: InstallmentCRUDErrorHigh
+        expr: rate(installment_crud_errors_total[5m]) > 0.5
+        for: 2m
+        labels:
+          severity: critical
+          component: crud
+          resource: installments
+        annotations:
+          summary: "Taxa alta de erros em CRUD de parcelas"
+          description: "Taxa de {{ $value | humanize }} erros por segundo em operações CRUD de parcelas"
+          runbook_url: "https://docs.credgestor.app.br/runbooks/installment-crud-error"
+
+      # ============================================
+      # Alertas Gerais de CRUD
+      # ============================================
+      - alert: CRUDErrorAny
+        expr: rate(crud_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: medium
+          component: crud
+        annotations:
+          summary: "Erro em operação CRUD detectado"
+          description: "{{ $value }} erros em operações CRUD nos últimos 5 minutos. Tabela: {{ $labels.table }}, Operação: {{ $labels.operation }}, Tipo: {{ $labels.error_type }}"
+          runbook_url: "https://docs.credgestor.app.br/runbooks/crud-error"
+
+      - alert: CRUDErrorHigh
+        expr: rate(crud_errors_total[5m]) > 1
+        for: 2m
+        labels:
+          severity: critical
+          component: crud
+        annotations:
+          summary: "Taxa alta de erros em operações CRUD"
+          description: "Taxa de {{ $value | humanize }} erros por segundo em operações CRUD"
+          runbook_url: "https://docs.credgestor.app.br/runbooks/crud-error"
+
+      # ============================================
+      # Alertas de Conexão com Banco de Dados
+      # ============================================
+      - alert: DatabaseConnectionError
+        expr: rate(db_connection_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Erro de conexão com banco de dados"
+          description: "{{ $value }} erros de conexão com banco de dados nos últimos 5 minutos. Tipo: {{ $labels.error_type }}"
+          runbook_url: "https://docs.credgestor.app.br/runbooks/database-connection-error"
+
+      - alert: DatabaseQueryError
+        expr: rate(db_query_errors_total[5m]) > 0.5
+        for: 2m
+        labels:
+          severity: high
+          component: database
+        annotations:
+          summary: "Taxa alta de erros em queries ao banco"
+          description: "Taxa de {{ $value | humanize }} erros por segundo em queries. Tabela: {{ $labels.table }}, Operação: {{ $labels.operation }}"
+          runbook_url: "https://docs.credgestor.app.br/runbooks/database-query-error"

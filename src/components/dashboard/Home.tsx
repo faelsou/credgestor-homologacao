@@ -4,55 +4,31 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContai
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, isLate } from '@/utils';
 import { InstallmentStatus, LoanStatus, LoanModel } from '@/types';
-
-type DateRange = '1D' | '7D' | '1M' | '3M' | 'ALL';
+import { DateInput } from '@/components/DateInput';
 
 export const DashboardHome: React.FC = () => {
   const { clients, installments, loans, setView } = useContext(AppContext);
   
-  // Função para calcular datas baseado no range
-  const getDateRange = (range: DateRange): { start: string; end: string } => {
+  // Inicializar datas para últimos 7 dias
+  const getInitialDates = (): { start: string; end: string } => {
     const today = new Date();
     today.setHours(23, 59, 59, 999);
     const end = today.toISOString().split('T')[0];
     
     const start = new Date();
-    
-    switch (range) {
-      case '1D':
-        start.setHours(0, 0, 0, 0);
-        break;
-      case '7D':
-        start.setDate(start.getDate() - 7);
-        start.setHours(0, 0, 0, 0);
-        break;
-      case '1M':
-        start.setMonth(start.getMonth() - 1);
-        start.setHours(0, 0, 0, 0);
-        break;
-      case '3M':
-        start.setMonth(start.getMonth() - 3);
-        start.setHours(0, 0, 0, 0);
-        break;
-      case 'ALL':
-        start.setFullYear(2020, 0, 1);
-        start.setHours(0, 0, 0, 0);
-        break;
-    }
+    start.setDate(start.getDate() - 7);
+    start.setHours(0, 0, 0, 0);
     
     return { start: start.toISOString().split('T')[0], end };
   };
 
-  // Inicializar datas para 7D
-  const initialDates = getDateRange('7D');
+  const initialDates = getInitialDates();
   
-  // Estados para filtros de data - Dashboard Parcelados
-  const [parceladosDateRange, setParceladosDateRange] = useState<DateRange>('7D');
+  // Estados para filtros de data - Dashboard Parcelados (apenas datas manuais)
   const [parceladosStartDate, setParceladosStartDate] = useState<string>(initialDates.start);
   const [parceladosEndDate, setParceladosEndDate] = useState<string>(initialDates.end);
   
-  // Estados para filtros de data - Dashboard Somente Juros
-  const [jurosDateRange, setJurosDateRange] = useState<DateRange>('7D');
+  // Estados para filtros de data - Dashboard Somente Juros (apenas datas manuais)
   const [jurosStartDate, setJurosStartDate] = useState<string>(initialDates.start);
   const [jurosEndDate, setJurosEndDate] = useState<string>(initialDates.end);
 
@@ -77,39 +53,41 @@ export const DashboardHome: React.FC = () => {
     return dateStr;
   };
 
-  // Aplicar filtros de data para parcelados
+  // Aplicar filtros de data para parcelados (apenas datas manuais)
   const parceladosFilteredData = useMemo(() => {
-    const { start, end } = parceladosDateRange === 'ALL' && parceladosStartDate && parceladosEndDate
-      ? { start: parceladosStartDate, end: parceladosEndDate }
-      : getDateRange(parceladosDateRange);
+    // Usar apenas datas manuais
+    if (!parceladosStartDate || !parceladosEndDate) {
+      return [];
+    }
     
     // Normalizar datas de início e fim para comparação
-    const startNormalized = normalizeDateString(start);
-    const endNormalized = normalizeDateString(end);
+    const startNormalized = normalizeDateString(parceladosStartDate);
+    const endNormalized = normalizeDateString(parceladosEndDate);
 
     const parceladosLoanIds = new Set(parceladosLoans.map(l => l.id));
     return installments.filter(inst => {
       const dueNormalized = normalizeDateString(inst.dueDate);
       return parceladosLoanIds.has(inst.loanId) && dueNormalized >= startNormalized && dueNormalized <= endNormalized;
     });
-  }, [installments, parceladosLoans, parceladosDateRange, parceladosStartDate, parceladosEndDate]);
+  }, [installments, parceladosLoans, parceladosStartDate, parceladosEndDate]);
 
-  // Aplicar filtros de data para somente juros
+  // Aplicar filtros de data para somente juros (apenas datas manuais)
   const jurosFilteredData = useMemo(() => {
-    const { start, end } = jurosDateRange === 'ALL' && jurosStartDate && jurosEndDate
-      ? { start: jurosStartDate, end: jurosEndDate }
-      : getDateRange(jurosDateRange);
+    // Usar apenas datas manuais
+    if (!jurosStartDate || !jurosEndDate) {
+      return [];
+    }
     
     // Normalizar datas de início e fim para comparação
-    const startNormalized = normalizeDateString(start);
-    const endNormalized = normalizeDateString(end);
+    const startNormalized = normalizeDateString(jurosStartDate);
+    const endNormalized = normalizeDateString(jurosEndDate);
 
     const jurosLoanIds = new Set(jurosLoans.map(l => l.id));
     return installments.filter(inst => {
       const dueNormalized = normalizeDateString(inst.dueDate);
       return jurosLoanIds.has(inst.loanId) && dueNormalized >= startNormalized && dueNormalized <= endNormalized;
     });
-  }, [installments, jurosLoans, jurosDateRange, jurosStartDate, jurosEndDate]);
+  }, [installments, jurosLoans, jurosStartDate, jurosEndDate]);
 
   // Estatísticas para empréstimos parcelados
   const parceladosStats = useMemo(() => {
@@ -126,14 +104,24 @@ export const DashboardHome: React.FC = () => {
     const lateCount = parceladosFilteredData.filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate)).length;
     const activeCount = parceladosLoans.filter(l => l.status === LoanStatus.ACTIVE).length;
     
+    // Capital das parcelas (amortização)
     const capital = parceladosFilteredData.reduce((acc, curr) => 
       acc + (curr.principalAmount ?? Math.max(0, curr.amount - (curr.interestAmount ?? 0))), 0
     );
+    // Lucro (juros) das parcelas
     const interest = parceladosFilteredData.reduce((acc, curr) => 
       acc + (curr.interestAmount ?? Math.max(0, curr.amount - (curr.principalAmount ?? curr.amount))), 0
     );
+    
+    // Capital total emprestado (soma dos valores emprestados dos empréstimos ativos)
+    const capitalEmprestado = parceladosLoans
+      .filter(l => l.status === LoanStatus.ACTIVE)
+      .reduce((acc, curr) => acc + curr.amount, 0);
+    
+    // Valor total: Lucro + Parcelas + Capital
+    const valorTotal = interest + total + capitalEmprestado;
 
-    return { total, received, receivable, late, lateCount, activeCount, capital, interest };
+    return { total, received, receivable, late, lateCount, activeCount, capital, interest, capitalEmprestado, valorTotal };
   }, [parceladosFilteredData, parceladosLoans]);
 
   // Estatísticas para empréstimos somente juros
@@ -151,14 +139,20 @@ export const DashboardHome: React.FC = () => {
     const lateCount = jurosFilteredData.filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate)).length;
     const activeCount = jurosLoans.filter(l => l.status === LoanStatus.ACTIVE).length;
     
+    // Valor dos juros
     const interest = jurosFilteredData.reduce((acc, curr) => 
       acc + (curr.interestAmount ?? curr.amount), 0
     );
-    const capital = jurosFilteredData.reduce((acc, curr) => 
-      acc + (curr.principalAmount ?? 0), 0
-    );
+    
+    // Capital total emprestado (soma dos valores emprestados dos empréstimos ativos)
+    const capitalEmprestado = jurosLoans
+      .filter(l => l.status === LoanStatus.ACTIVE)
+      .reduce((acc, curr) => acc + curr.amount, 0);
+    
+    // Valor dos Juros + Capital
+    const jurosMaisCapital = interest + capitalEmprestado;
 
-    return { total, received, receivable, late, lateCount, activeCount, capital, interest };
+    return { total, received, receivable, late, lateCount, activeCount, capital: capitalEmprestado, interest, jurosMaisCapital };
   }, [jurosFilteredData, jurosLoans]);
 
   // Dados para gráfico de linha - Parcelados
@@ -261,7 +255,7 @@ export const DashboardHome: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `emprestimos_parcelados_${parceladosDateRange}_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `emprestimos_parcelados_${parceladosStartDate}_${parceladosEndDate}_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -301,68 +295,48 @@ export const DashboardHome: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `emprestimos_somente_juros_${jurosDateRange}_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `emprestimos_somente_juros_${jurosStartDate}_${jurosEndDate}_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
-  // Componente de filtro de data
+  // Componente de filtro de data (apenas inserção manual)
   const DateFilter = ({ 
-    dateRange, 
-    setDateRange, 
     startDate, 
     setStartDate, 
     endDate, 
     setEndDate 
   }: {
-    dateRange: DateRange;
-    setDateRange: (range: DateRange) => void;
     startDate: string;
     setStartDate: (date: string) => void;
     endDate: string;
     setEndDate: (date: string) => void;
   }) => (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2 flex-wrap">
-        {(['1D', '7D', '1M', '3M', 'ALL'] as DateRange[]).map(range => (
-          <button
-            key={range}
-            onClick={() => {
-              setDateRange(range);
-              if (range !== 'ALL') {
-                const { start, end } = getDateRange(range);
-                setStartDate(start);
-                setEndDate(end);
-              }
-            }}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-              dateRange === range
-                ? 'bg-emerald-600 text-white shadow-md'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            {range === 'ALL' ? 'Tudo' : range}
-          </button>
-        ))}
+    <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-2 flex-1 min-w-[280px]">
+        <Calendar size={18} className="text-slate-500 flex-shrink-0" />
+        <label className="text-sm text-slate-600 font-medium whitespace-nowrap">Data Inicial:</label>
+        <DateInput
+          value={startDate}
+          onChange={(value) => {
+            setStartDate(value);
+          }}
+          className="flex-1 border-2 border-slate-300 rounded-lg px-4 py-3 text-base bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all min-w-[160px] cursor-text"
+          placeholder="DD/MM/AAAA"
+        />
       </div>
-      {dateRange === 'ALL' && (
-        <div className="flex items-center gap-2">
-          <Calendar size={16} className="text-slate-500" />
-          <input
-            type="date"
-            value={startDate}
-            onChange={e => setStartDate(e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
-          <span className="text-slate-500">até</span>
-          <input
-            type="date"
-            value={endDate}
-            onChange={e => setEndDate(e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-      )}
+      <div className="flex items-center gap-2 flex-1 min-w-[280px]">
+        <span className="text-slate-500 text-sm font-medium">até</span>
+        <label className="text-sm text-slate-600 font-medium whitespace-nowrap">Data Final:</label>
+        <DateInput
+          value={endDate}
+          onChange={(value) => {
+            setEndDate(value);
+          }}
+          className="flex-1 border-2 border-slate-300 rounded-lg px-4 py-3 text-base bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all min-w-[160px] cursor-text"
+          placeholder="DD/MM/AAAA"
+        />
+      </div>
     </div>
   );
 
@@ -401,13 +375,42 @@ export const DashboardHome: React.FC = () => {
           <div className="space-y-3">
             <p className="text-xs uppercase font-semibold text-slate-500">Filtro por Período</p>
             <DateFilter
-              dateRange={parceladosDateRange}
-              setDateRange={setParceladosDateRange}
               startDate={parceladosStartDate}
               setStartDate={setParceladosStartDate}
               endDate={parceladosEndDate}
               setEndDate={setParceladosEndDate}
             />
+          </div>
+
+          {/* Informações do Empréstimo Price */}
+          <div className="space-y-3">
+            <p className="text-xs uppercase font-semibold text-slate-500">Informações do Empréstimo Price</p>
+            <div className="grid grid-cols-2 gap-3">
+              <StatCard
+                title="Valor dinheiro emprestado"
+                value={formatCurrency(parceladosStats.capitalEmprestado)}
+                icon={<DollarSign className="text-slate-600" size={20} />}
+                bg="bg-slate-50"
+              />
+              <StatCard
+                title="Valor das parcelas"
+                value={formatCurrency(parceladosStats.total)}
+                icon={<DollarSign className="text-blue-600" size={20} />}
+                bg="bg-blue-50"
+              />
+              <StatCard
+                title="Valor de lucro referente as parcelas"
+                value={formatCurrency(parceladosStats.interest)}
+                icon={<TrendingUp className="text-emerald-600" size={20} />}
+                bg="bg-emerald-50"
+              />
+              <StatCard
+                title="Valor lucro + Parcelas + Capital"
+                value={formatCurrency(parceladosStats.valorTotal)}
+                icon={<DollarSign className="text-emerald-600" size={20} />}
+                bg="bg-emerald-100"
+              />
+            </div>
           </div>
 
           {/* Estatísticas */}
@@ -418,10 +421,9 @@ export const DashboardHome: React.FC = () => {
               icon={<TrendingUp className="text-emerald-600" size={20} />}
               bg="bg-emerald-50"
               onClick={() => {
-                const { start, end } = parceladosDateRange === 'ALL' && parceladosStartDate && parceladosEndDate
-                  ? { start: parceladosStartDate, end: parceladosEndDate }
-                  : getDateRange(parceladosDateRange);
-                setView('installments', 'PAID', { start, end });
+                if (parceladosStartDate && parceladosEndDate) {
+                  setView('installments', 'PAID', { start: parceladosStartDate, end: parceladosEndDate });
+                }
               }}
             />
             <StatCard
@@ -430,10 +432,9 @@ export const DashboardHome: React.FC = () => {
               icon={<TrendingDown className="text-blue-600" size={20} />}
               bg="bg-blue-50"
               onClick={() => {
-                const { start, end } = parceladosDateRange === 'ALL' && parceladosStartDate && parceladosEndDate
-                  ? { start: parceladosStartDate, end: parceladosEndDate }
-                  : getDateRange(parceladosDateRange);
-                setView('installments', 'PENDING', { start, end });
+                if (parceladosStartDate && parceladosEndDate) {
+                  setView('installments', 'PENDING', { start: parceladosStartDate, end: parceladosEndDate });
+                }
               }}
             />
             <StatCard
@@ -443,10 +444,9 @@ export const DashboardHome: React.FC = () => {
               icon={<AlertTriangle className="text-red-600" size={20} />}
               bg="bg-red-50"
               onClick={() => {
-                const { start, end } = parceladosDateRange === 'ALL' && parceladosStartDate && parceladosEndDate
-                  ? { start: parceladosStartDate, end: parceladosEndDate }
-                  : getDateRange(parceladosDateRange);
-                setView('installments', 'LATE', { start, end });
+                if (parceladosStartDate && parceladosEndDate) {
+                  setView('installments', 'LATE', { start: parceladosStartDate, end: parceladosEndDate });
+                }
               }}
             />
             <StatCard
@@ -457,23 +457,7 @@ export const DashboardHome: React.FC = () => {
             />
           </div>
 
-          {/* Capital e Juros */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <div className="flex items-center gap-2 mb-2">
-                <DollarSign className="text-slate-600" size={16} />
-                <p className="text-xs uppercase font-semibold text-slate-500">Capital</p>
-              </div>
-              <p className="text-xl font-bold text-slate-800">{formatCurrency(parceladosStats.capital)}</p>
-            </div>
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <div className="flex items-center gap-2 mb-2">
-                <Percent className="text-slate-600" size={16} />
-                <p className="text-xs uppercase font-semibold text-slate-500">Juros</p>
-              </div>
-              <p className="text-xl font-bold text-slate-800">{formatCurrency(parceladosStats.interest)}</p>
-            </div>
-          </div>
+
 
           {/* Gráfico */}
           <div className="space-y-3">
@@ -552,13 +536,37 @@ export const DashboardHome: React.FC = () => {
           <div className="space-y-3">
             <p className="text-xs uppercase font-semibold text-slate-500">Filtro por Período</p>
             <DateFilter
-              dateRange={jurosDateRange}
-              setDateRange={setJurosDateRange}
               startDate={jurosStartDate}
               setStartDate={setJurosStartDate}
               endDate={jurosEndDate}
               setEndDate={setJurosEndDate}
             />
+          </div>
+
+          {/* Informações do Empréstimo Somente Juros */}
+          <div className="space-y-3">
+            <p className="text-xs uppercase font-semibold text-slate-500">Informações do Empréstimo Somente Juros</p>
+            <div className="grid grid-cols-2 gap-3">
+              <StatCard
+                title="Capital (dinheiro emprestado)"
+                value={formatCurrency(jurosStats.capital)}
+                icon={<DollarSign className="text-slate-600" size={20} />}
+                bg="bg-slate-50"
+              />
+              <StatCard
+                title="Valor do Juros"
+                value={formatCurrency(jurosStats.interest)}
+                icon={<Percent className="text-emerald-600" size={20} />}
+                bg="bg-emerald-50"
+              />
+              <StatCard
+                title="Valor do Juros + Capital"
+                value={formatCurrency(jurosStats.jurosMaisCapital)}
+                icon={<DollarSign className="text-emerald-600" size={20} />}
+                bg="bg-emerald-100"
+                className="col-span-2"
+              />
+            </div>
           </div>
 
           {/* Estatísticas */}
@@ -569,10 +577,9 @@ export const DashboardHome: React.FC = () => {
               icon={<TrendingUp className="text-emerald-600" size={20} />}
               bg="bg-emerald-50"
               onClick={() => {
-                const { start, end } = jurosDateRange === 'ALL' && jurosStartDate && jurosEndDate
-                  ? { start: jurosStartDate, end: jurosEndDate }
-                  : getDateRange(jurosDateRange);
-                setView('installments', 'PAID', { start, end });
+                if (jurosStartDate && jurosEndDate) {
+                  setView('installments', 'PAID', { start: jurosStartDate, end: jurosEndDate });
+                }
               }}
             />
             <StatCard
@@ -581,10 +588,9 @@ export const DashboardHome: React.FC = () => {
               icon={<TrendingDown className="text-blue-600" size={20} />}
               bg="bg-blue-50"
               onClick={() => {
-                const { start, end } = jurosDateRange === 'ALL' && jurosStartDate && jurosEndDate
-                  ? { start: jurosStartDate, end: jurosEndDate }
-                  : getDateRange(jurosDateRange);
-                setView('installments', 'PENDING', { start, end });
+                if (jurosStartDate && jurosEndDate) {
+                  setView('installments', 'PENDING', { start: jurosStartDate, end: jurosEndDate });
+                }
               }}
             />
             <StatCard
@@ -594,10 +600,9 @@ export const DashboardHome: React.FC = () => {
               icon={<AlertTriangle className="text-red-600" size={20} />}
               bg="bg-red-50"
               onClick={() => {
-                const { start, end } = jurosDateRange === 'ALL' && jurosStartDate && jurosEndDate
-                  ? { start: jurosStartDate, end: jurosEndDate }
-                  : getDateRange(jurosDateRange);
-                setView('installments', 'LATE', { start, end });
+                if (jurosStartDate && jurosEndDate) {
+                  setView('installments', 'LATE', { start: jurosStartDate, end: jurosEndDate });
+                }
               }}
             />
             <StatCard
@@ -608,23 +613,7 @@ export const DashboardHome: React.FC = () => {
             />
           </div>
 
-          {/* Capital e Juros */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <div className="flex items-center gap-2 mb-2">
-                <DollarSign className="text-slate-600" size={16} />
-                <p className="text-xs uppercase font-semibold text-slate-500">Capital em Aberto</p>
-              </div>
-              <p className="text-xl font-bold text-slate-800">{formatCurrency(jurosStats.capital)}</p>
-            </div>
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <div className="flex items-center gap-2 mb-2">
-                <Percent className="text-slate-600" size={16} />
-                <p className="text-xs uppercase font-semibold text-slate-500">Juros</p>
-              </div>
-              <p className="text-xl font-bold text-slate-800">{formatCurrency(jurosStats.interest)}</p>
-            </div>
-          </div>
+
 
           {/* Gráfico */}
           <div className="space-y-3">
@@ -687,7 +676,8 @@ const StatCard = ({
   subtext, 
   icon, 
   bg,
-  onClick
+  onClick,
+  className
 }: { 
   title: string; 
   value: string; 
@@ -695,9 +685,10 @@ const StatCard = ({
   icon: React.ReactNode; 
   bg: string;
   onClick?: () => void;
+  className?: string;
 }) => (
   <div 
-    className={`p-4 rounded-xl border border-slate-200 ${bg} ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+    className={`p-4 rounded-xl border border-slate-200 ${bg} ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''} ${className || ''}`}
     onClick={onClick}
   >
     <div className="flex items-center justify-between mb-2">

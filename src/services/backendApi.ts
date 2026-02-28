@@ -128,6 +128,8 @@ export async function createBackendClient(
     celular: stripNonDigits(client.phone) || null,
     whatsapp: stripNonDigits(client.phone) || null,
     endereco: client.street || null,
+    complemento: client.complement || null,
+    bairro: client.neighborhood || null,
     cidade: client.city || null,
     estado: client.state || null,
     cep: stripNonDigits(client.cep) || null,
@@ -177,6 +179,8 @@ export async function updateBackendClient(
     celular: stripNonDigits(client.phone) || null,
     whatsapp: stripNonDigits(client.phone) || null,
     endereco: client.street || null,
+    complemento: client.complement || null,
+    bairro: client.neighborhood || null,
     cidade: client.city || null,
     estado: client.state || null,
     cep: stripNonDigits(client.cep) || null,
@@ -747,6 +751,13 @@ export async function fetchBackendUsers(
   });
 
   const body = await toJson(response);
+  
+  // Tratamento especial para 404 - recurso pode não existir ou não estar disponível
+  if (response.status === 404) {
+    const errorMessage = body?.detail || body?.error || body?.message || 'Resource \'users\' is not tenant scoped or does not exist.';
+    throw new Error(errorMessage);
+  }
+  
   assertOk(response, body);
 
   const records = Array.isArray(body) ? body : body?.data || [];

@@ -1109,21 +1109,50 @@ export const ClientsView: React.FC = () => {
   const handleEditClient = (client: Client) => {
     setEditingClientId(client.id);
     setNewClient({
-      ...client
+      name: client.name || '',
+      cpf: client.cpf || '',
+      phone: client.phone || '',
+      email: client.email || '',
+      birthDate: client.birthDate || '',
+      cep: client.cep || '',
+      street: client.street || '',
+      complement: client.complement || '',
+      neighborhood: client.neighborhood || '',
+      city: client.city || '',
+      state: client.state || '',
+      status: client.status || 'active'
     });
     setIsModalOpen(true);
   };
 
-  const handleDeleteClient = (clientId: string) => {
+  const handleDeleteClient = async (clientId: string) => {
     const clientLoans = loans.filter(loan => loan.clientId === clientId);
+    
+    // Montar mensagem de confirmação
+    let confirmMessage = 'Deseja realmente excluir este cliente e seus registros?';
     if (clientLoans.length > 0) {
-      if (!confirm(`Este cliente possui ${clientLoans.length} empréstimo(s). Deseja realmente excluir?`)) {
-        return;
-      }
+      confirmMessage = `Este cliente possui ${clientLoans.length} empréstimo(s).\n\nTodos os empréstimos e parcelas associadas serão excluídos automaticamente junto com o cliente.\n\nDeseja realmente continuar?`;
     }
 
-    if (confirm('Deseja realmente excluir este cliente e seus registros?')) {
-      deleteClient(clientId);
+    if (confirm(confirmMessage)) {
+      try {
+        await deleteClient(clientId);
+      } catch (error: any) {
+        // Extrair mensagem de erro do backend
+        let errorMessage = 'Não foi possível excluir o cliente.';
+        
+        if (error?.message) {
+          errorMessage = error.message;
+        } else if (typeof error === 'string') {
+          errorMessage = error;
+        } else if (error?.detail) {
+          errorMessage = error.detail;
+        } else if (error?.response?.data?.detail) {
+          errorMessage = error.response.data.detail;
+        }
+        
+        alert(`❌ Erro ao excluir cliente: ${errorMessage}`);
+      }
     }
   };
 

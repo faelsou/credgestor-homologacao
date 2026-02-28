@@ -1,3 +1,5 @@
+import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Tuple
@@ -6,11 +8,33 @@ import hmac
 import hashlib
 import time
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Request, status
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+# Importar EmailStr e field_validator de forma opcional para compatibilidade
+try:
+    from pydantic import EmailStr, field_validator
+    PYDANTIC_V2_FEATURES = True
+except ImportError:
+    # Fallback para versões antigas do Pydantic
+    PYDANTIC_V2_FEATURES = False
+    EmailStr = str  # Usar str como fallback
+    def field_validator(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 from prometheus_fastapi_instrumentator import Instrumentator
+
+# Importar slowapi de forma opcional para não quebrar se não estiver instalado
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.util import get_remote_address
+    SLOWAPI_AVAILABLE = True
+except ImportError:
+    SLOWAPI_AVAILABLE = False
+    print("⚠️  Aviso: slowapi não está disponível. Rate limiting desabilitado.")
 
 from .settings import get_settings
 from .supabase_client import (
@@ -18,15 +42,67 @@ from .supabase_client import (
     get_supabase_anon_client,
     get_supabase_client,
 )
+from .supabase_helpers import test_supabase_connection
+from .otel_config import setup_opentelemetry
+
+# Importar métricas de banco de dados no nível do módulo para garantir que sejam registradas
+# no registry do Prometheus e expostas no endpoint /metrics
+from .db_metrics import (
+    db_connection_errors_total,
+    db_connection_status,
+    db_connection_duration_seconds,
+    db_query_duration_seconds,
+    db_query_errors_total,
+    db_timeouts_total,
+    db_last_successful_query_timestamp,
+    db_last_failed_query_timestamp,
+    DatabaseMetrics,
+)
 
 app = FastAPI(title="CredGestor Supabase backend", version="0.1.0")
+
+# Configurar Rate Limiting
+# Nota: slowapi requer que o limiter seja inicializado antes de usar nos decoradores
+limiter = None
+if SLOWAPI_AVAILABLE:
+    try:
+        limiter = Limiter(key_func=get_remote_address)
+        app.state.limiter = limiter
+        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+        print("✅ Rate limiting habilitado com slowapi")
+    except Exception as e:
+        print(f"⚠️  Aviso: Erro ao inicializar rate limiting: {e}")
+        limiter = None
+
+# Criar um objeto dummy que aceita o decorador mas não faz nada se slowapi não estiver disponível
+if limiter is None:
+    class DummyLimiter:
+        def limit(self, *args, **kwargs):
+            def decorator(func):
+                return func
+            return decorator
+    limiter = DummyLimiter()
+    print("⚠️  Rate limiting desabilitado (slowapi não disponível)")
+
+# Configurar CORS de forma mais segura
+# Permitir apenas origens específicas em produção
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+if allowed_origins == ["*"]:
+    # Em desenvolvimento, permitir todas as origens
+    # Em produção, configure ALLOWED_ORIGINS com origens específicas
+    pass
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
 )
+
+# Configurar OpenTelemetry (deve ser feito antes da instrumentação do Prometheus)
+setup_opentelemetry(app)
 
 # Instrumentação Prometheus para métricas da API
 instrumentator = Instrumentator(
@@ -58,9 +134,28 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 class LoginRequest(BaseModel):
-    email: str
-    senha: str
-    tenant_id: str | None = None
+    email: str = Field(..., description="Email do usuário", min_length=1)
+    senha: str = Field(..., min_length=8, max_length=128, description="Senha do usuário")
+    tenant_id: str | None = Field(None, description="ID do tenant (UUID)")
+    
+    def __init__(self, **data):
+        # Validação e sanitização da senha
+        if 'senha' in data:
+            senha = data.get('senha', '')
+            if not senha or len(senha.strip()) == 0:
+                raise ValueError("Senha não pode estar vazia")
+            if len(senha.strip()) < 8:
+                raise ValueError("Senha deve ter no mínimo 8 caracteres")
+            data['senha'] = senha.strip()
+        
+        # Validação básica de email
+        if 'email' in data:
+            email = data.get('email', '').strip()
+            if not email or '@' not in email:
+                raise ValueError("Email inválido")
+            data['email'] = email.lower()
+        
+        super().__init__(**data)
 
 
 class RefreshTokenRequest(BaseModel):
@@ -89,9 +184,14 @@ class AuthContext:
 
 @app.on_event("startup")
 def ensure_client() -> None:
-    """Warm up the Supabase client on startup."""
+    """Warm up the Supabase client on startup e registra métricas."""
     try:
+        # Warm up do cliente Supabase
         get_supabase_client()
+        
+        # Inicializar status de conexão
+        DatabaseMetrics.record_connection_success(0.0)  # Marcar como conectado
+        
     except Exception as e:
         # Log error but don't crash the server - allows healthcheck to work
         print(
@@ -112,23 +212,26 @@ def _format_error(error: Any) -> str:
 
 def _apply_filters(table: str, filters: List[Tuple[str, Any]] | None = None):
     try:
-        supabase = get_supabase_admin_client()
-        query = supabase.table(table).select("*")
-        # DEBUG: Log dos filtros aplicados
-        if filters:
-            print(f"🔍 [DEBUG] Aplicando filtros na tabela '{table}':")
-            for column, value in filters:
-                print(f"   - {column} = {value}")
-            query = query.eq(column, value)
-        else:
-            print(f"⚠️  [DEBUG] ATENÇÃO: Nenhum filtro aplicado na tabela '{table}'!")
-        response = query.execute()
-        error = getattr(response, "error", None)
-        if error:
-            raise HTTPException(status_code=500, detail=_format_error(error))
-        result_count = len(response.data or [])
-        print(f"✅ [DEBUG] Retornando {result_count} registros da tabela '{table}'")
-        return response.data or []
+        from .supabase_helpers import db_operation_metrics
+        
+        with db_operation_metrics(table=table, operation="select"):
+            supabase = get_supabase_admin_client()
+            query = supabase.table(table).select("*")
+            # DEBUG: Log dos filtros aplicados
+            if filters:
+                print(f"🔍 [DEBUG] Aplicando filtros na tabela '{table}':")
+                for column, value in filters:
+                    print(f"   - {column} = {value}")
+                query = query.eq(column, value)
+            else:
+                print(f"⚠️  [DEBUG] ATENÇÃO: Nenhum filtro aplicado na tabela '{table}'!")
+            response = query.execute()
+            error = getattr(response, "error", None)
+            if error:
+                raise HTTPException(status_code=500, detail=_format_error(error))
+            result_count = len(response.data or [])
+            print(f"✅ [DEBUG] Retornando {result_count} registros da tabela '{table}'")
+            return response.data or []
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
     except Exception as e:
@@ -139,15 +242,25 @@ def _apply_filters(table: str, filters: List[Tuple[str, Any]] | None = None):
 
 def _insert_row(table: str, payload: Dict[str, Any]):
     try:
-        supabase = get_supabase_admin_client()
-        response = supabase.table(table).insert(payload).execute()
-        error = getattr(response, "error", None)
-        if error:
-            raise HTTPException(status_code=400, detail=_format_error(error))
-        return response.data or []
+        from .supabase_helpers import db_operation_metrics
+        
+        with db_operation_metrics(table=table, operation="insert"):
+            supabase = get_supabase_admin_client()
+            response = supabase.table(table).insert(payload).execute()
+            error = getattr(response, "error", None)
+            if error:
+                error_type = type(error).__name__ if hasattr(error, '__class__') else "database_error"
+                DatabaseMetrics.record_crud_error(table, "insert", error_type, 400)
+                raise HTTPException(status_code=400, detail=_format_error(error))
+            return response.data or []
+    except HTTPException:
+        raise
     except RuntimeError as e:
+        DatabaseMetrics.record_crud_error(table, "insert", "configuration_error", 500)
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
     except Exception as e:
+        error_type = type(e).__name__
+        DatabaseMetrics.record_crud_error(table, "insert", error_type, 500)
         raise HTTPException(
             status_code=500, detail=f"Erro ao inserir no banco de dados: {str(e)}"
         )
@@ -160,23 +273,33 @@ def _update_row(
     tenant_filter: Tuple[str, Any] | None = None,
 ):
     try:
-        supabase = get_supabase_admin_client()
-        query = supabase.table(table).update(payload).eq("id", record_id)
+        from .supabase_helpers import db_operation_metrics
+        
+        with db_operation_metrics(table=table, operation="update"):
+            supabase = get_supabase_admin_client()
+            query = supabase.table(table).update(payload).eq("id", record_id)
 
-        if tenant_filter:
-            column, value = tenant_filter
-            query = query.eq(column, value)
+            if tenant_filter:
+                column, value = tenant_filter
+                query = query.eq(column, value)
 
-        response = query.execute()
+            response = query.execute()
 
-        error = getattr(response, "error", None)
-        if error:
-            raise HTTPException(status_code=400, detail=_format_error(error))
+            error = getattr(response, "error", None)
+            if error:
+                error_type = type(error).__name__ if hasattr(error, '__class__') else "database_error"
+                DatabaseMetrics.record_crud_error(table, "update", error_type, 400)
+                raise HTTPException(status_code=400, detail=_format_error(error))
 
-        return response.data or []
+            return response.data or []
+    except HTTPException:
+        raise
     except RuntimeError as e:
+        DatabaseMetrics.record_crud_error(table, "update", "configuration_error", 500)
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
     except Exception as e:
+        error_type = type(e).__name__
+        DatabaseMetrics.record_crud_error(table, "update", error_type, 500)
         raise HTTPException(
             status_code=500, detail=f"Erro ao atualizar no banco de dados: {str(e)}"
         )
@@ -186,23 +309,33 @@ def _delete_row(
     table: str, record_id: str, tenant_filter: Tuple[str, Any] | None = None
 ):
     try:
-        supabase = get_supabase_admin_client()
-        query = supabase.table(table).delete().eq("id", record_id)
+        from .supabase_helpers import db_operation_metrics
+        
+        with db_operation_metrics(table=table, operation="delete"):
+            supabase = get_supabase_admin_client()
+            query = supabase.table(table).delete().eq("id", record_id)
 
-        if tenant_filter:
-            column, value = tenant_filter
-            query = query.eq(column, value)
+            if tenant_filter:
+                column, value = tenant_filter
+                query = query.eq(column, value)
 
-        response = query.execute()
+            response = query.execute()
 
-        error = getattr(response, "error", None)
-        if error:
-            raise HTTPException(status_code=400, detail=_format_error(error))
+            error = getattr(response, "error", None)
+            if error:
+                error_type = type(error).__name__ if hasattr(error, '__class__') else "database_error"
+                DatabaseMetrics.record_crud_error(table, "delete", error_type, 400)
+                raise HTTPException(status_code=400, detail=_format_error(error))
 
-        return response.data or []
+            return response.data or []
+    except HTTPException:
+        raise
     except RuntimeError as e:
+        DatabaseMetrics.record_crud_error(table, "delete", "configuration_error", 500)
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
     except Exception as e:
+        error_type = type(e).__name__
+        DatabaseMetrics.record_crud_error(table, "delete", error_type, 500)
         raise HTTPException(
             status_code=500, detail=f"Erro ao deletar do banco de dados: {str(e)}"
         )
@@ -580,7 +713,8 @@ def _authenticate_user(payload: LoginRequest):
         # REGRA CRÍTICA: NÃO usar default_tenant_id como fallback
         # Cada usuário DEVE ter seu próprio tenant_id nos metadados
         tenant_id = payload.tenant_id  # Não usar default_tenant_id
-        print(f"🔍 [DEBUG] _authenticate_user: email={payload.email}, tenant_id do payload={tenant_id}")
+        # Log seguro: não logar informações sensíveis como senha
+        print(f"🔍 [DEBUG] _authenticate_user: email={payload.email}, tenant_id presente={tenant_id is not None}")
 
         if not settings.supabase_anon_key or settings.supabase_anon_key.strip() == "":
             raise HTTPException(
@@ -588,12 +722,24 @@ def _authenticate_user(payload: LoginRequest):
             )
 
         supabase = get_supabase_anon_client()
-        auth_response = supabase.auth.sign_in_with_password(
-            {"email": payload.email, "password": payload.senha}
-        )
+        try:
+            auth_response = supabase.auth.sign_in_with_password(
+                {"email": payload.email, "password": payload.senha}
+            )
+        except Exception as e:
+            # Erro de conexão durante login
+            error_type = type(e).__name__
+            DatabaseMetrics.record_login_connection_error(error_type)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro ao conectar ao servidor de autenticação: {str(e)}"
+            )
+        
         error = getattr(auth_response, "error", None)
         if error:
-            raise HTTPException(status_code=401, detail=_format_error(error))
+            error_msg = _format_error(error)
+            DatabaseMetrics.record_login_error("authentication_error", 401)
+            raise HTTPException(status_code=401, detail=error_msg)
 
         user = getattr(auth_response, "user", None)
         session = getattr(auth_response, "session", None)
@@ -602,15 +748,18 @@ def _authenticate_user(payload: LoginRequest):
             session = session or auth_response.get("session")
 
         if not user or not session:
+            DatabaseMetrics.record_login_error("session_error", 401)
             raise HTTPException(status_code=401, detail="Falha ao autenticar usuário.")
 
         user_id = _get_user_id(user)
         if not user_id:
+            DatabaseMetrics.record_login_error("invalid_user", 401)
             raise HTTPException(status_code=401, detail="Usuário inválido.")
 
         resolved_tenant_id = _resolve_tenant_id(user, tenant_id)
         print(f"🔍 [DEBUG] _authenticate_user: resolved_tenant_id={resolved_tenant_id}")
         if not resolved_tenant_id:
+            DatabaseMetrics.record_login_error("tenant_not_found", 400)
             raise HTTPException(
                 status_code=400,
                 detail="tenant_id não informado ou não identificado para o usuário. Entre em contato com o administrador.",
@@ -664,26 +813,74 @@ def _authenticate_user(payload: LoginRequest):
             "refresh_expires_at": refresh_expires_at.isoformat(),
             "usuario": user_payload,
         }
-    except HTTPException:
-        # Re-raise HTTPExceptions (já têm status code apropriado)
+    except HTTPException as e:
+        # Registrar métrica de erro de login
+        DatabaseMetrics.record_login_error("http_exception", e.status_code)
         raise
     except Exception as e:
-        # Captura qualquer outra exceção não tratada e retorna erro 500 com detalhes
+        # Captura qualquer outra exceção não tratada
+        # Log detalhado internamente, mas não expor detalhes ao cliente
         import traceback
-        error_details = str(e)
+        error_type = type(e).__name__
         traceback_str = traceback.format_exc()
-        print(f"❌ Erro inesperado no login: {error_details}")
-        print(f"📋 Traceback: {traceback_str}")
+        # Log completo para debugging interno
+        print(f"❌ Erro inesperado no login: {error_type}")
+        # Em produção, não logar traceback completo para evitar vazamento de informações
+        if os.getenv("ENVIRONMENT", "development") == "development":
+            print(f"📋 Traceback: {traceback_str}")
+        DatabaseMetrics.record_login_error(error_type, 500)
+        # Não expor detalhes do erro ao cliente por segurança
         raise HTTPException(
             status_code=500,
-            detail=f"Erro interno ao processar login: {error_details}"
+            detail="Erro interno ao processar login. Tente novamente mais tarde."
         )
 
 
 @app.get("/health")
 def healthcheck():
+    """Health check endpoint que verifica conectividade com Supabase"""
     settings = get_settings()
-    return {"status": "ok", "supabase_url": settings.supabase_url}
+    
+    health_status = {
+        "status": "ok",
+        "supabase_url": settings.supabase_url,
+        "database": {
+            "connected": False,
+            "response_time_ms": None,
+            "error": None
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    
+    # Testar conexão com banco de dados
+    try:
+        supabase = get_supabase_admin_client()
+        db_test = test_supabase_connection(supabase)
+        
+        health_status["database"] = {
+            "connected": db_test["connected"],
+            "response_time_ms": db_test["response_time_ms"],
+            "error": db_test.get("error")
+        }
+        
+        # Se não conseguir conectar, marcar status como degradado
+        if not db_test["connected"]:
+            health_status["status"] = "degraded"
+            health_status["message"] = "API funcionando mas banco de dados inacessível"
+    except Exception as e:
+        health_status["status"] = "degraded"
+        health_status["database"]["error"] = str(e)
+        health_status["message"] = f"Erro ao verificar conexão com banco: {e}"
+    
+    # Retornar código HTTP apropriado
+    status_code = 200 if health_status["status"] == "ok" else 503
+    
+    from fastapi import Response
+    return Response(
+        content=json.dumps(health_status),
+        media_type="application/json",
+        status_code=status_code
+    )
 
 
 @app.post("/slack/interactions")
@@ -890,7 +1087,9 @@ def list_tenant_resource(
 
 
 @app.post("/tenants/{tenant_id}/{resource}")
+@limiter.limit("100/minute")  # Limite de requisições por minuto
 def create_tenant_resource(
+    request: Request,
     tenant_id: str,
     resource: str,
     payload: Dict[str, Any] = Body(...),
@@ -902,6 +1101,20 @@ def create_tenant_resource(
     body = {**payload}
     body.setdefault(column, tenant_id)
     return _insert_row(table, body)
+
+
+@app.put("/tenants/{tenant_id}/{resource}/{record_id}")
+def update_tenant_resource(
+    tenant_id: str,
+    resource: str,
+    record_id: str,
+    payload: Dict[str, Any] = Body(...),
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    table = _validate_tenant_table(resource)
+    column = TENANT_TABLES[table]
+    return _update_row(table, record_id, payload, (column, tenant_id))
 
 
 @app.delete("/tenants/{tenant_id}/{resource}/{record_id}")
@@ -1128,12 +1341,15 @@ def create_tenant_user(
 
 
 @app.post("/auth/login")
-def login(payload: LoginRequest):
+@limiter.limit("5/minute")  # Máximo 5 tentativas de login por minuto por IP
+def login(request: Request, payload: LoginRequest):
+    """Endpoint de login com rate limiting para prevenir brute force attacks"""
     return _authenticate_user(payload)
 
 
 @app.post("/auth/refresh")
-def refresh_token(payload: RefreshTokenRequest):
+@limiter.limit("10/minute")  # Máximo 10 renovações de token por minuto
+def refresh_token(request: Request, payload: RefreshTokenRequest):
     """Renova o access token usando o refresh token."""
     import requests
     
@@ -1383,6 +1599,139 @@ def reset_password(payload: ResetPasswordRequest):
         raise HTTPException(status_code=500, detail=f"Erro ao conectar ao Supabase: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao resetar senha: {str(e)}")
+
+
+@app.get("/tenants/{tenant_id}/clients")
+def list_clients(
+    tenant_id: str,
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    return _apply_filters("clients", [("tenant_id", tenant_id)])
+
+
+@app.post("/tenants/{tenant_id}/clients")
+def create_client(
+    tenant_id: str,
+    payload: Dict[str, Any] = Body(...),
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    body = {**payload}
+    body.setdefault("tenant_id", tenant_id)
+    return _insert_row("clients", body)
+
+
+@app.put("/tenants/{tenant_id}/clients/{client_id}")
+def update_client(
+    tenant_id: str,
+    client_id: str,
+    payload: Dict[str, Any] = Body(...),
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    # Verificar se o cliente pertence ao tenant
+    existing = _get_single_record("clients", [("id", client_id), ("tenant_id", tenant_id)])
+    if not existing:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado.")
+    # Atualizar
+    return _update_row("clients", client_id, payload, ("tenant_id", tenant_id))
+
+
+@app.delete("/tenants/{tenant_id}/clients/{client_id}")
+def delete_client(
+    tenant_id: str,
+    client_id: str,
+    context: AuthContext = Depends(require_auth),
+):
+    _enforce_tenant_access(context, tenant_id)
+    
+    # Implementar exclusão em cascata: deletar empréstimos e parcelas antes de deletar o cliente
+    supabase = get_supabase_admin_client()
+    
+    try:
+        # 1. Buscar todos os empréstimos do cliente
+        loans_response = (
+            supabase.table("loans")
+            .select("id")
+            .eq("client_id", client_id)
+            .eq("tenant_id", tenant_id)
+            .execute()
+        )
+        
+        error = getattr(loans_response, "error", None)
+        if error:
+            raise HTTPException(status_code=500, detail=f"Erro ao buscar empréstimos: {_format_error(error)}")
+        
+        loans = loans_response.data or []
+        loan_ids = [loan.get("id") if isinstance(loan, dict) else loan for loan in loans]
+        
+        print(f"🔍 [delete_client] Cliente {client_id}: encontrados {len(loans)} empréstimo(s)")
+        
+        # 2. Para cada empréstimo, deletar as parcelas primeiro
+        if loan_ids:
+            deleted_loans = 0
+            for loan_id in loan_ids:
+                try:
+                    # Buscar parcelas do empréstimo
+                    installments_response = (
+                        supabase.table("installments")
+                        .select("id")
+                        .eq("loan_id", loan_id)
+                        .eq("tenant_id", tenant_id)
+                        .execute()
+                    )
+                    
+                    installments_error = getattr(installments_response, "error", None)
+                    if installments_error:
+                        print(f"⚠️  [delete_client] Erro ao buscar parcelas do empréstimo {loan_id}: {_format_error(installments_error)}")
+                        # Tenta deletar o empréstimo mesmo assim
+                    else:
+                        installments = installments_response.data or []
+                        installment_ids = [inst.get("id") if isinstance(inst, dict) else inst for inst in installments]
+                        
+                        # Deletar parcelas
+                        if installment_ids:
+                            for installment_id in installment_ids:
+                                try:
+                                    _delete_row("installments", installment_id, ("tenant_id", tenant_id))
+                                except Exception as e:
+                                    print(f"⚠️  [delete_client] Erro ao deletar parcela {installment_id}: {e}")
+                                    raise HTTPException(
+                                        status_code=500,
+                                        detail=f"Erro ao deletar parcelas do empréstimo {loan_id}: {str(e)}"
+                                    )
+                            
+                            print(f"✅ [delete_client] Deletadas {len(installment_ids)} parcela(s) do empréstimo {loan_id}")
+                    
+                    # 3. Deletar o empréstimo
+                    _delete_row("loans", loan_id, ("tenant_id", tenant_id))
+                    deleted_loans += 1
+                    print(f"✅ [delete_client] Deletado empréstimo {loan_id}")
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    print(f"❌ [delete_client] Erro ao deletar empréstimo {loan_id}: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Erro ao deletar empréstimo {loan_id}: {str(e)}"
+                    )
+            
+            print(f"✅ [delete_client] Deletados {deleted_loans} de {len(loan_ids)} empréstimo(s) e suas parcelas")
+        
+        # 4. Deletar o cliente
+        return _delete_row("clients", client_id, ("tenant_id", tenant_id))
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"❌ [delete_client] Erro ao deletar cliente {client_id} em cascata: {e}")
+        print(f"📋 Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao deletar cliente e registros associados: {str(e)}"
+        )
 
 
 @app.get("/tenants/{tenant_id}/loans")

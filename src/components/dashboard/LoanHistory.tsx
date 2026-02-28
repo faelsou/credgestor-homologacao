@@ -1,14 +1,15 @@
 import React, { useContext, useMemo, useState } from 'react';
-import { Search, CalendarRange, Pencil, Clock8 } from 'lucide-react';
+import { Search, CalendarRange, Pencil, Clock8, RotateCcw } from 'lucide-react';
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, getTodayDateString } from '@/utils';
 import { Installment, InstallmentStatus, LoanStatus, LoanModel } from '@/types';
 
 export const LoanHistoryView: React.FC = () => {
-  const { loans, clients, installments, scheduleFuturePayment, startEditingLoan } = useContext(AppContext);
+  const { loans, clients, installments, scheduleFuturePayment, startEditingLoan, reopenLoan } = useContext(AppContext);
   const [nameFilter, setNameFilter] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [statusFilter, setStatusFilter] = useState<LoanStatus | 'ALL'>('ALL');
   const [promiseModal, setPromiseModal] = useState<{ loanId: string; installment: Installment } | null>(null);
   const [promiseReason, setPromiseReason] = useState('');
   const [promiseAmount, setPromiseAmount] = useState(0);
@@ -46,32 +47,46 @@ export const LoanHistoryView: React.FC = () => {
 
   // Função para calcular o valor em aberto do empréstimo
   const calculateOutstandingAmount = (loan: typeof loans[0]): number => {
+    // Se o empréstimo foi finalizado, valor em aberto deve ser sempre 0
+    if (loan.status === LoanStatus.PAID) {
+      return 0;
+    }
+    
     const related = installments.filter(inst => inst.loanId === loan.id);
     
     if (related.length === 0) {
       return loan.totalAmount;
     }
     
-    // Para empréstimos "somente juros", calcular capital + juros pendentes
+    // Para empréstimos "somente juros", calcular capital + juros totais
     if (loan.model === LoanModel.INTEREST_ONLY) {
-      let totalOutstanding = 0;
-      
-      // Soma todo o capital pendente
-      for (const inst of related) {
-        const principal = inst.principalAmount ?? 0;
-        if (principal > 0) {
-          totalOutstanding += principal;
+      // Calcular capital total pago através do histórico de pagamentos
+      const totalCapitalPaid = related.reduce((sum, inst) => {
+        if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+          return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
         }
-      }
+        return sum;
+      }, 0);
       
-      // Soma todos os juros pendentes
-      for (const inst of related) {
-        const interest = inst.interestAmount ?? 0;
-        if (interest > 0) {
-          totalOutstanding += interest;
-        }
-      }
+      // Capital pendente = Capital original - Capital pago
+      const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
       
+      // IMPORTANTE: VALOR EM ABERTO = Capital pendente + Juros sobre capital pendente
+      // Juros são calculados sobre o capital pendente (não sobre o capital original)
+      // Quando cliente paga apenas juros, o capital não muda, então VALOR EM ABERTO permanece igual
+      // Quando cliente paga juros + capital, o capital diminui e os juros são recalculados sobre o novo capital
+      // Exemplo: R$ 1.000 com 10% = R$ 1.100 inicial
+      //          Cliente paga R$ 200 (R$ 100 juros + R$ 100 capital)
+      //          Capital restante: R$ 900, Juros: 10% de R$ 900 = R$ 90
+      //          VALOR EM ABERTO = R$ 900 + R$ 90 = R$ 990
+      // Arredondar juros para cima para garantir que os centavos sejam sempre arredondados para cima
+      const monthlyInterest = Math.ceil(pendingCapital * (loan.interestRate / 100));
+      
+      // Usar o número de parcelas do empréstimo ou o número de parcelas existentes
+      const totalInstallments = loan.installmentsCount || related.length || 1;
+      const totalInterest = monthlyInterest * totalInstallments;
+      
+      const totalOutstanding = pendingCapital + totalInterest;
       return Number(totalOutstanding.toFixed(2));
     }
     
@@ -90,11 +105,15 @@ export const LoanHistoryView: React.FC = () => {
         const loanDate = new Date(loan.startDate);
         const afterStart = startDate ? loanDate >= new Date(startDate) : true;
         const beforeEnd = endDate ? loanDate <= new Date(endDate) : true;
+        
+        // Calcular status correto para filtrar
+        const correctStatus = calculateLoanStatus(loan);
+        const matchesStatus = statusFilter === 'ALL' || correctStatus === statusFilter;
 
-        return matchesName && afterStart && beforeEnd;
+        return matchesName && afterStart && beforeEnd && matchesStatus;
       })
       .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
-  }, [clients, endDate, loans, nameFilter, startDate]);
+  }, [clients, endDate, loans, nameFilter, startDate, statusFilter]);
 
   const statusBadge = (status: LoanStatus) => {
     switch (status) {
@@ -205,50 +224,72 @@ export const LoanHistoryView: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input
-              type="text"
-              placeholder="Filtrar por nome do cliente"
-              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:bg-white"
-              value={nameFilter}
-              onChange={e => setNameFilter(e.target.value)}
-            />
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div className="space-y-4">
+          {/* Primeira linha: Busca e Status */}
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+            <div className="relative min-w-0">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input
+                type="text"
+                placeholder="Filtrar por nome do cliente"
+                className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:border-emerald-500 transition-colors text-sm sm:text-base"
+                value={nameFilter}
+                onChange={e => setNameFilter(e.target.value)}
+              />
+            </div>
+            <div className="min-w-0">
+              <select
+                className="w-full px-4 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:border-emerald-500 transition-colors text-slate-700 text-sm sm:text-base"
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value as LoanStatus | 'ALL')}
+              >
+                <option value="ALL">Todos os status</option>
+                <option value={LoanStatus.ACTIVE}>Em Aberto</option>
+                <option value={LoanStatus.PAID}>Finalizado</option>
+                <option value={LoanStatus.DEFAULTED}>Em Atraso</option>
+              </select>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <CalendarRange size={18} className="text-slate-500" />
-            <input
-              type="date"
-              className="flex-1 px-3 py-2 border border-slate-200 rounded-lg"
-              value={startDate}
-              onChange={e => setStartDate(e.target.value)}
-            />
-            <span className="text-slate-500 text-sm">até</span>
-            <input
-              type="date"
-              className="flex-1 px-3 py-2 border border-slate-200 rounded-lg"
-              value={endDate}
-              onChange={e => setEndDate(e.target.value)}
-            />
-          </div>
-          <div className="flex items-center justify-end text-sm text-slate-500">
-            {filteredLoans.length} empréstimo(s) encontrado(s)
+          
+          {/* Segunda linha: Filtro de Data e Contador */}
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+            <div className="flex items-center gap-2 sm:gap-3 bg-slate-50 border border-slate-200 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 min-w-0">
+              <CalendarRange size={18} className="text-slate-500 flex-shrink-0 hidden sm:block" />
+              <input
+                type="date"
+                className="flex-1 min-w-0 px-2 sm:px-3 py-2 border border-slate-200 rounded-lg bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors text-xs sm:text-sm"
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+                placeholder="Data inicial"
+              />
+              <span className="text-slate-500 text-xs sm:text-sm flex-shrink-0 font-medium whitespace-nowrap">até</span>
+              <input
+                type="date"
+                className="flex-1 min-w-0 px-2 sm:px-3 py-2 border border-slate-200 rounded-lg bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors text-xs sm:text-sm"
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+                placeholder="Data final"
+              />
+            </div>
+            <div className="flex items-center justify-center sm:justify-start text-xs sm:text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 sm:py-3">
+              <span className="font-semibold text-emerald-600">{filteredLoans.length}</span>
+              <span className="ml-1 whitespace-nowrap">empréstimo(s) encontrado(s)</span>
+            </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto -mx-4 sm:mx-0">
+          <table className="w-full text-left text-xs sm:text-sm min-w-[800px]">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-semibold">
               <tr>
-                <th className="p-3">Cliente</th>
-                <th className="p-3">Data</th>
-                <th className="p-3">Principal</th>
-                <th className="p-3">Total</th>
-                <th className="p-3">Valor em Aberto</th>
-                <th className="p-3">Status</th>
-                <th className="p-3 text-right">Ações</th>
+                <th className="p-2 sm:p-3">Cliente</th>
+                <th className="p-2 sm:p-3">Data</th>
+                <th className="p-2 sm:p-3">Principal</th>
+                <th className="p-2 sm:p-3">Total</th>
+                <th className="p-2 sm:p-3">Valor em Aberto</th>
+                <th className="p-2 sm:p-3">Status</th>
+                <th className="p-2 sm:p-3 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -262,38 +303,51 @@ export const LoanHistoryView: React.FC = () => {
                 const outstandingAmount = calculateOutstandingAmount(loan);
                 return (
                   <tr key={loan.id} className="hover:bg-slate-50 transition">
-                    <td className="p-3">
-                      <p className="font-semibold text-slate-800">{client?.name || 'Cliente removido'}</p>
-                      <p className="text-xs text-slate-500">CPF: {client?.cpf || '---'}</p>
+                    <td className="p-2 sm:p-3">
+                      <p className="font-semibold text-slate-800 text-xs sm:text-sm">{client?.name || 'Cliente removido'}</p>
+                      <p className="text-[10px] sm:text-xs text-slate-500">CPF: {client?.cpf || '---'}</p>
                     </td>
-                    <td className="p-3 text-slate-600">
+                    <td className="p-2 sm:p-3 text-slate-600 text-xs sm:text-sm">
                       {formatDate(loan.startDate)}
                       {latestPromise?.date && (
-                        <p className="text-xs text-purple-700 font-semibold mt-1">
+                        <p className="text-[10px] sm:text-xs text-purple-700 font-semibold mt-1">
                           Próximo agendamento: {formatDate(latestPromise.date)}
-                          <span className="block text-[11px] text-slate-500 font-normal">{latestPromise.reason}</span>
+                          <span className="block text-[9px] sm:text-[11px] text-slate-500 font-normal">{latestPromise.reason}</span>
                         </p>
                       )}
                     </td>
-                    <td className="p-3 font-medium">{formatCurrency(loan.amount)}</td>
-                    <td className="p-3 font-semibold text-emerald-600">{formatCurrency(loan.totalAmount)}</td>
-                    <td className="p-3 font-bold text-amber-600">{formatCurrency(outstandingAmount)}</td>
-                    <td className="p-3">{statusBadge(correctStatus)}</td>
-                    <td className="p-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                    <td className="p-2 sm:p-3 font-medium text-xs sm:text-sm">{formatCurrency(loan.amount)}</td>
+                    <td className="p-2 sm:p-3 font-semibold text-emerald-600 text-xs sm:text-sm">{formatCurrency(loan.totalAmount)}</td>
+                    <td className="p-2 sm:p-3 font-bold text-amber-600 text-xs sm:text-sm">{formatCurrency(outstandingAmount)}</td>
+                    <td className="p-2 sm:p-3">{statusBadge(correctStatus)}</td>
+                    <td className="p-2 sm:p-3 text-right">
+                      <div className="flex items-center justify-end gap-1 sm:gap-2 flex-wrap">
                         {correctStatus !== LoanStatus.PAID && (
                           <button
                             onClick={() => openPromiseModal(loan.id)}
-                            className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-100 rounded-lg hover:bg-purple-100"
+                            className="inline-flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-100 rounded-lg hover:bg-purple-100 whitespace-nowrap"
                           >
-                            <Clock8 size={14} /> Agendar recebimento
+                            <Clock8 size={12} className="sm:w-[14px] sm:h-[14px]" />
+                            <span className="hidden sm:inline">Agendar recebimento</span>
+                            <span className="sm:hidden">Agendar</span>
+                          </button>
+                        )}
+                        {correctStatus === LoanStatus.PAID && (
+                          <button
+                            onClick={() => reopenLoan(loan.id)}
+                            className="inline-flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100 whitespace-nowrap"
+                            title="Reabrir empréstimo finalizado"
+                          >
+                            <RotateCcw size={12} className="sm:w-[14px] sm:h-[14px]" />
+                            <span>Reabrir</span>
                           </button>
                         )}
                         <button
                           onClick={() => startEditingLoan(loan.id)}
-                          className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-100"
+                          className="inline-flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 whitespace-nowrap"
                         >
-                          <Pencil size={14} /> Editar
+                          <Pencil size={12} className="sm:w-[14px] sm:h-[14px]" />
+                          <span>Editar</span>
                         </button>
                       </div>
                     </td>
@@ -302,7 +356,7 @@ export const LoanHistoryView: React.FC = () => {
               })}
               {filteredLoans.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="p-6 text-center text-slate-500">Nenhum empréstimo encontrado para os filtros informados.</td>
+                  <td colSpan={7} className="p-4 sm:p-6 text-center text-slate-500 text-xs sm:text-sm">Nenhum empréstimo encontrado para os filtros informados.</td>
                 </tr>
               )}
             </tbody>

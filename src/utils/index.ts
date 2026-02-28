@@ -194,6 +194,10 @@ export const formatCep = (value: string) => {
   return digits.replace(/(\d{5})(\d)/, '$1-$2');
 };
 
+export const formatInterestRate = (value: number): string => {
+  return `${Number(value.toFixed(1))}%`;
+};
+
 export const generateNoteHash = () => {
   if (typeof crypto !== 'undefined' && 'getRandomValues' in crypto) {
     const randomBytes = crypto.getRandomValues(new Uint8Array(8));
@@ -203,4 +207,190 @@ export const generateNoteHash = () => {
   }
 
   return `${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 6)}`;
+};
+
+/**
+ * Gera o número da nota promissória no formato #X/YYY#
+ * onde X é o número do cliente e YYY é o sequencial da nota para aquele cliente
+ */
+export const generatePromissoryNoteNumber = (
+  clientId: string,
+  clientIndex: number,
+  existingLoans: Array<{ clientId: string; promissoryNote?: { numberHash?: string } }>
+): string => {
+  // Número do cliente (usando índice + 1 para começar em 1)
+  const clientNumber = clientIndex + 1;
+  
+  // Contar quantas notas promissórias já existem para este cliente
+  const clientNotesCount = existingLoans.filter(
+    loan => loan.clientId === clientId && loan.promissoryNote?.numberHash
+  ).length;
+  
+  // Sequencial da nota (incrementa 1 para a nova nota)
+  const noteSequence = clientNotesCount + 1;
+  
+  // Formatar no padrão #X/YYY#
+  return `#${clientNumber}/${noteSequence.toString().padStart(3, '0')}#`;
+};
+
+/**
+ * Converte um número para extenso em português brasileiro
+ * Usado para notas promissórias e documentos oficiais
+ */
+/**
+ * Sanitiza strings para prevenir XSS e injeção de código
+ * Remove caracteres perigosos e limita o tamanho
+ */
+export const sanitizeString = (input: string | null | undefined, maxLength: number = 1000): string => {
+  if (!input) return '';
+  
+  // Limitar tamanho primeiro
+  let sanitized = input.substring(0, maxLength);
+  
+  // Remover caracteres de controle e tags HTML
+  sanitized = sanitized
+    .replace(/[<>]/g, '') // Remove < e >
+    .replace(/[\x00-\x1F\x7F]/g, '') // Remove caracteres de controle
+    .trim();
+  
+  return sanitized;
+};
+
+/**
+ * Sanitiza email removendo caracteres perigosos
+ */
+export const sanitizeEmail = (email: string | null | undefined): string => {
+  if (!email) return '';
+  
+  // Remover espaços e caracteres perigosos, manter apenas caracteres válidos para email
+  return email
+    .trim()
+    .toLowerCase()
+    .replace(/[<>\"'`]/g, '') // Remove caracteres perigosos
+    .substring(0, 254); // Limite máximo de email
+};
+
+/**
+ * Sanitiza texto de observações/notas removendo HTML e limitando tamanho
+ */
+export const sanitizeText = (text: string | null | undefined, maxLength: number = 5000): string => {
+  if (!text) return '';
+  
+  let sanitized = text.substring(0, maxLength);
+  
+  // Remover tags HTML básicas
+  sanitized = sanitized
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/javascript:/gi, '')
+    .replace(/on\w+\s*=/gi, '')
+    .trim();
+  
+  return sanitized;
+};
+
+/**
+ * Valida e sanitiza CPF/CNPJ
+ */
+export const sanitizeCpfCnpj = (value: string | null | undefined): string => {
+  if (!value) return '';
+  
+  // Remove tudo exceto dígitos
+  const digits = stripNonDigits(value);
+  
+  // Limita a 14 dígitos (tamanho máximo de CNPJ)
+  return digits.substring(0, 14);
+};
+
+export const numberToWords = (value: number): string => {
+  const unidades = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove'];
+  const dezAteDezenove = ['dez', 'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
+  const dezenas = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
+  const centenas = ['', 'cento', 'duzentos', 'trezentos', 'quatrocentos', 'quinhentos', 'seiscentos', 'setecentos', 'oitocentos', 'novecentos'];
+
+  const converterGrupo = (num: number): string => {
+    if (num === 0) return '';
+    if (num === 100) return 'cem';
+    
+    const c = Math.floor(num / 100);
+    const resto = num % 100;
+    const d = Math.floor(resto / 10);
+    const u = resto % 10;
+    
+    let resultado = '';
+    
+    if (c > 0) {
+      resultado += centenas[c];
+      if (resto > 0) resultado += ' e ';
+    }
+    
+    if (resto > 0) {
+      if (resto < 10) {
+        resultado += unidades[resto];
+      } else if (resto < 20) {
+        resultado += dezAteDezenove[resto - 10];
+      } else {
+        resultado += dezenas[d];
+        if (u > 0) resultado += ' e ' + unidades[u];
+      }
+    }
+    
+    return resultado;
+  };
+
+  // Separar parte inteira e decimal
+  const partes = value.toFixed(2).split('.');
+  const inteiro = parseInt(partes[0]);
+  const centavos = parseInt(partes[1]);
+
+  if (inteiro === 0 && centavos === 0) return 'zero reais';
+
+  let resultado = '';
+
+  // Milhões
+  const milhoes = Math.floor(inteiro / 1000000);
+  if (milhoes > 0) {
+    resultado += converterGrupo(milhoes);
+    resultado += milhoes === 1 ? ' milhão' : ' milhões';
+    const resto = inteiro % 1000000;
+    if (resto > 0) resultado += ' ';
+  }
+
+  // Milhares
+  const milhares = Math.floor((inteiro % 1000000) / 1000);
+  if (milhares > 0) {
+    if (milhares === 1) {
+      resultado += 'mil';
+    } else {
+      resultado += converterGrupo(milhares) + ' mil';
+    }
+    const resto = inteiro % 1000;
+    if (resto > 0) resultado += ' ';
+  }
+
+  // Centenas, dezenas e unidades
+  const resto = inteiro % 1000;
+  if (resto > 0 || inteiro === 0) {
+    resultado += converterGrupo(resto);
+  }
+
+  // Reais
+  if (inteiro === 1) {
+    resultado += ' real';
+  } else if (inteiro > 1) {
+    resultado += ' reais';
+  }
+
+  // Centavos
+  if (centavos > 0) {
+    if (inteiro > 0) resultado += ' e ';
+    resultado += converterGrupo(centavos);
+    if (centavos === 1) {
+      resultado += ' centavo';
+    } else {
+      resultado += ' centavos';
+    }
+  }
+
+  return resultado.trim();
 };

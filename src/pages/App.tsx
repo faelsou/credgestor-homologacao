@@ -1479,7 +1479,7 @@ const MOCK_LOANS: Loan[] = [
     totalAmount: 1100,
     startDate: '2023-10-01',
     installmentsCount: 2,
-    model: LoanModel.SIMPLE_INTEREST,
+    model: LoanModel.PRICE,
     status: LoanStatus.ACTIVE,
     promissoryNote: {
       capital: 1000,
@@ -1558,6 +1558,7 @@ export const AppContext = React.createContext<{
   updateInstallment: (id: string, installment: Installment) => Promise<void>;
   scheduleFuturePayment: (id: string, reason: string, amount: number, date?: string) => Promise<void>;
   startEditingLoan: (loanId: string) => void;
+  reopenLoan: (loanId: string) => Promise<void>;
   addUser: (newUser: User) => Promise<User | null>;
   removeUser: (id: string) => Promise<void>;
   view: string;
@@ -1903,8 +1904,22 @@ const App: React.FC = () => {
 
   useEffect(() => {
     setInstallments(prev => prev.map(inst => {
+      // Não marcar como LATE se a parcela já está paga
+      if (inst.status === InstallmentStatus.PAID) {
+        return inst;
+      }
+      // Marcar como LATE apenas se está PENDING e a data passou
       if (inst.status === InstallmentStatus.PENDING && isLate(inst.dueDate)) {
         return { ...inst, status: InstallmentStatus.LATE };
+      }
+      // Se está LATE mas foi paga (verificar pelo paymentHistory), atualizar para PAID
+      if (inst.status === InstallmentStatus.LATE && inst.paymentHistory && inst.paymentHistory.length > 0) {
+        // Verificar se há pagamento suficiente para quitar a parcela
+        const totalPaid = inst.paymentHistory.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const totalDue = (inst.interestAmount || 0) + (inst.principalAmount || 0);
+        if (totalPaid >= totalDue && totalDue > 0) {
+          return { ...inst, status: InstallmentStatus.PAID };
+        }
       }
       return inst;
     }));
@@ -2011,8 +2026,10 @@ const App: React.FC = () => {
         console.error('❌ Falha ao autenticar via backend:', error);
         if (error instanceof Error) {
           console.error('📝 Mensagem de erro:', error.message);
+          // Propagar o erro para que o componente possa exibir a mensagem específica
+          throw error;
         }
-        return false;
+        throw new Error('Erro desconhecido ao fazer login');
       }
     }
 
@@ -2166,15 +2183,18 @@ const App: React.FC = () => {
     setClients(prev => prev.map(item => item.id === client.id ? client : item));
   };
 
-  const deleteClient = useCallback(async (id: string) => {
+  const deleteClient = useCallback(async (id: string): Promise<void> => {
     if (isBackendConfiguredValue && session?.accessToken) {
       try {
         await deleteClientApi(session.accessToken, session.tenantId, id);
       } catch (error) {
         console.error('Erro ao excluir cliente no backend', error);
+        // Propagar o erro para que o componente possa tratá-lo
+        throw error;
       }
     }
 
+    // Só remove do estado local se a exclusão foi bem-sucedida
     setClients(prev => prev.filter(client => client.id !== id));
     setLoans(prev => prev.filter(loan => loan.clientId !== id));
     setInstallments(prev => prev.filter(inst => inst.clientId !== id));
@@ -2227,12 +2247,49 @@ const App: React.FC = () => {
   }, [session, isBackendConfiguredValue]);
 
   const updateLoan = useCallback(async (loan: Loan, generatedInstallments: Installment[]) => {
+    // IMPORTANTE: Preservar parcelas que já foram pagas (status PAID) para manter o histórico
+    // Apenas atualizar parcelas pendentes (status PENDING) com as novas datas
+    const existingInstallments = installments.filter(inst => inst.loanId === loan.id);
+    const paidInstallments = existingInstallments.filter(inst => inst.status === InstallmentStatus.PAID);
+    
     if (isBackendConfiguredValue && session?.accessToken) {
       try {
-        const { updateBackendLoan } = await import('@/services/backendApi');
+        const { updateBackendLoan, createBackendInstallment, deleteBackendInstallment } = await import('@/services/backendApi');
         await updateBackendLoan(session.accessToken, requireTenantId(session.tenantId, 'atualizar empréstimo'), loan.id, loan);
+        
+        // Identificar parcelas pendentes antigas que serão substituídas
+        const pendingInstallments = existingInstallments.filter(inst => inst.status !== InstallmentStatus.PAID);
+        
+        // Atualizar parcelas no backend:
+        // 1. Deletar parcelas pendentes antigas que foram substituídas
+        for (const oldInst of pendingInstallments) {
+          try {
+            await deleteBackendInstallment(session.accessToken, requireTenantId(session.tenantId, 'deletar parcelas'), oldInst.id);
+          } catch (error) {
+            console.error(`Erro ao deletar parcela antiga ${oldInst.id} no backend`, error);
+          }
+        }
+        
+        // 2. Criar novas parcelas geradas (substituem as pendentes antigas)
+        for (const newInst of generatedInstallments) {
+          try {
+            await createBackendInstallment(session.accessToken, requireTenantId(session.tenantId, 'criar parcelas'), newInst);
+          } catch (error) {
+            console.error(`Erro ao criar parcela ${newInst.id} no backend`, error);
+          }
+        }
+        
+        // 3. Parcelas pagas são preservadas automaticamente (não são deletadas nem atualizadas)
+        
         setLoans(prev => prev.map(item => item.id === loan.id ? loan : item));
-        setInstallments(prev => prev.filter(inst => inst.loanId !== loan.id).concat(generatedInstallments));
+        setInstallments(prev => {
+          // Remover parcelas pendentes antigas e adicionar as novas
+          // Preservar parcelas pagas (status PAID)
+          const withoutOldPending = prev.filter(inst => 
+            inst.loanId !== loan.id || inst.status === InstallmentStatus.PAID
+          );
+          return [...withoutOldPending, ...generatedInstallments];
+        });
         return;
       } catch (error) {
         console.error('Erro ao atualizar empréstimo via backend API', error);
@@ -2240,8 +2297,15 @@ const App: React.FC = () => {
       }
     }
     setLoans(prev => prev.map(item => item.id === loan.id ? loan : item));
-    setInstallments(prev => prev.filter(inst => inst.loanId !== loan.id).concat(generatedInstallments));
-  }, [session, isBackendConfiguredValue]);
+    setInstallments(prev => {
+      // Remover parcelas pendentes antigas e adicionar as novas
+      // Preservar parcelas pagas (status PAID) para manter histórico
+      const withoutOldPending = prev.filter(inst => 
+        inst.loanId !== loan.id || inst.status === InstallmentStatus.PAID
+      );
+      return [...withoutOldPending, ...generatedInstallments];
+    });
+  }, [session, isBackendConfiguredValue, installments]);
 
   const deleteLoan = useCallback(async (id: string) => {
     if (isBackendConfiguredValue && session?.accessToken) {
@@ -2345,6 +2409,91 @@ const App: React.FC = () => {
     setView('loans');
   };
 
+  const reopenLoan = useCallback(async (loanId: string) => {
+    if (user?.role !== UserRole.ADMIN) {
+      alert("Acesso restrito: apenas administradores podem reabrir empréstimos.");
+      return;
+    }
+
+    const loan = loans.find(l => l.id === loanId);
+    if (!loan) return;
+
+    if (loan.status !== LoanStatus.PAID) {
+      alert("Apenas empréstimos finalizados podem ser reabertos.");
+      return;
+    }
+
+    if (!confirm('Deseja reabrir este empréstimo? O status será alterado de "Finalizado" para "Em Aberto".')) {
+      return;
+    }
+
+    // Reabrir empréstimo: mudar status de PAID para ACTIVE
+    const updatedLoan = {
+      ...loan,
+      status: LoanStatus.ACTIVE
+    };
+
+    // Atualizar no backend se configurado
+    if (isBackendConfiguredValue && session?.accessToken) {
+      try {
+        const { updateBackendLoan } = await import('@/services/backendApi');
+        await updateBackendLoan(
+          session.accessToken,
+          requireTenantId(session.tenantId, 'reabrir empréstimo'),
+          loanId,
+          updatedLoan
+        );
+      } catch (error) {
+        console.error('Erro ao reabrir empréstimo no backend', error);
+        alert('Erro ao reabrir empréstimo. Tente novamente.');
+        return;
+      }
+    }
+
+    // Atualizar estado local
+    setLoans(prev => prev.map(l => l.id === loanId ? updatedLoan : l));
+    
+    alert('Empréstimo reaberto com sucesso!');
+  }, [loans, user?.role, isBackendConfiguredValue, session]);
+
+  // Função auxiliar para obter o UUID correto da parcela no backend
+  const getInstallmentBackendId = useCallback(async (
+    installment: Installment,
+    backendInstallments?: any[]
+  ): Promise<string | null> => {
+    if (!isBackendConfiguredValue || !session?.accessToken) {
+      return installment.id;
+    }
+
+    // Verificar se o ID é um UUID válido
+    const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(installment.id);
+    
+    if (isValidUUID) {
+      return installment.id;
+    }
+
+    // Se não for UUID válido, buscar no backend
+    try {
+      let installments = backendInstallments;
+      if (!installments) {
+        const { fetchBackendInstallments } = await import('@/services/backendApi');
+        installments = await fetchBackendInstallments(
+          session.accessToken,
+          requireTenantId(session.tenantId, 'buscar parcelas')
+        );
+      }
+      
+      const backendInst = installments.find(
+        (bi: any) => bi.loanId === installment.loanId && bi.number === installment.number
+      );
+      
+      return backendInst?.id || null;
+    } catch (error) {
+      console.error('Erro ao buscar parcela no backend', error);
+      return null;
+    }
+  }, [isBackendConfiguredValue, session]);
+
   const payInstallment = useCallback(async (id: string, amount?: number, paymentDate?: string) => {
     if (user?.role === UserRole.COLLECTION) {
       alert("Acesso restrito: Cobradores não podem baixar pagamentos, apenas visualizar.");
@@ -2363,30 +2512,45 @@ const App: React.FC = () => {
 
     // Função auxiliar para calcular valor em aberto do empréstimo
     const calculateOutstandingAmount = (loan: Loan, relatedInstallments: Installment[]): number => {
+      // Se o empréstimo foi finalizado, valor em aberto deve ser sempre 0
+      if (loan.status === LoanStatus.PAID) {
+        return 0;
+      }
+      
       if (relatedInstallments.length === 0) {
         return loan.totalAmount;
       }
       
-      // Para empréstimos "somente juros", calcular capital + juros pendentes
+      // Para empréstimos "somente juros", calcular capital + juros totais
       if (loan.model === LoanModel.INTEREST_ONLY) {
-        let totalOutstanding = 0;
-        
-        // Soma todo o capital pendente
-        for (const inst of relatedInstallments) {
-          const principal = inst.principalAmount ?? 0;
-          if (principal > 0 && inst.status !== InstallmentStatus.PAID) {
-            totalOutstanding += principal;
+        // IMPORTANTE: O capital SEMPRE é o valor original do empréstimo (loan.amount)
+        // Verificar se o capital já foi totalmente pago através do histórico de pagamentos
+        const totalCapitalPaid = relatedInstallments.reduce((sum, inst) => {
+          if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+            return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
           }
-        }
+          return sum;
+        }, 0);
         
-        // Soma todos os juros pendentes
-        for (const inst of relatedInstallments) {
-          const interest = inst.interestAmount ?? 0;
-          if (interest > 0 && inst.status !== InstallmentStatus.PAID) {
-            totalOutstanding += interest;
-          }
-        }
+        // Capital pendente = Capital original - Capital pago
+        const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
         
+        // IMPORTANTE: VALOR EM ABERTO = Capital pendente + Juros sobre capital pendente
+        // Juros são calculados sobre o capital pendente (não sobre o capital original)
+        // Quando cliente paga apenas juros, o capital não muda, então VALOR EM ABERTO permanece igual
+        // Quando cliente paga juros + capital, o capital diminui e os juros são recalculados sobre o novo capital
+        // Exemplo: R$ 1.000 com 10% = R$ 1.100 inicial
+        //          Cliente paga R$ 200 (R$ 100 juros + R$ 100 capital)
+        //          Capital restante: R$ 900, Juros: 10% de R$ 900 = R$ 90
+        //          VALOR EM ABERTO = R$ 900 + R$ 90 = R$ 990
+        // Arredondar juros para cima para garantir que os centavos sejam sempre arredondados para cima
+        const monthlyInterest = Math.ceil(pendingCapital * (loan.interestRate / 100));
+        
+        // Usar o número de parcelas do empréstimo ou o número de parcelas existentes
+        const totalInstallments = loan.installmentsCount || relatedInstallments.length || 1;
+        const totalInterest = monthlyInterest * totalInstallments;
+        
+        const totalOutstanding = pendingCapital + totalInterest;
         return Number(totalOutstanding.toFixed(2));
       }
       
@@ -2426,15 +2590,22 @@ const App: React.FC = () => {
         
         // Se não houver valores definidos, calcular baseado no modelo
         if (loan.model === LoanModel.INTEREST_ONLY) {
-          // Para somente juros, calcular juros baseado no capital se não estiver definido
-          if (pendingInterest === 0 && pendingPrincipal > 0) {
-            pendingInterest = Number((pendingPrincipal * (loan.interestRate / 100)).toFixed(2));
-          }
-          // Se ainda não tiver principal, usar o amount como base
-          if (pendingPrincipal === 0 && pendingInterest === 0) {
-            pendingPrincipal = inst.amount;
-            pendingInterest = Number((pendingPrincipal * (loan.interestRate / 100)).toFixed(2));
-          }
+          // IMPORTANTE: Calcular capital pendente primeiro
+          // O capital é compartilhado entre todas as parcelas no modelo INTEREST_ONLY
+          const totalCapitalPaid = allLoanInstallments.reduce((sum, allInst) => {
+            if (allInst.paymentHistory && allInst.paymentHistory.length > 0) {
+              return sum + allInst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+            }
+            return sum;
+          }, 0);
+          const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
+          
+          // IMPORTANTE: Juros devem ser calculados sobre o capital pendente (não sobre o capital original)
+          // Quando o capital é pago, os juros diminuem proporcionalmente
+          // Exemplo: R$ 1.000 com 10% = R$ 100 inicial
+          //          Após pagar R$ 100 de capital: Capital restante R$ 900, Juros = 10% de R$ 900 = R$ 90
+          pendingInterest = Number((pendingCapital * (loan.interestRate / 100)).toFixed(2));
+          pendingPrincipal = pendingCapital;
         } else {
           // Para outros modelos, se não tiver valores separados, usar o amount pendente
           if (pendingInterest === 0 && pendingPrincipal === 0) {
@@ -2464,15 +2635,39 @@ const App: React.FC = () => {
           const existingHistory = inst.paymentHistory || [];
           const updatedPaymentHistory = [...existingHistory, paymentHistoryEntry];
 
+          // Calcular amountPaid: soma do que já foi pago + o que está sendo pago agora
+          const previousAmountPaid = inst.amountPaid || 0;
+          const newAmountPaid = previousAmountPaid + totalPaidForThis;
+          
+          // IMPORTANTE: Para empréstimos INTEREST_ONLY:
+          // Uma parcela está PAID se: juros foram pagos E capital foi totalmente pago (em qualquer parcela)
+          // Calcular capital total pago até agora (incluindo este pagamento)
+          const currentCapitalPaid = updatedInstallments.reduce((sum, updatedInst) => {
+            if (updatedInst.paymentHistory && updatedInst.paymentHistory.length > 0) {
+              return sum + updatedInst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+            }
+            return sum;
+          }, 0);
+          const totalCapitalPaidAfterThis = currentCapitalPaid + principalPaid;
+          
+          // Verificar se juros foram pagos nesta parcela
+          const isInterestPaid = interestPaid >= pendingInterest;
+          
+          // Verificar se capital foi totalmente pago (em qualquer parcela)
+          const isCapitalFullyPaid = totalCapitalPaidAfterThis >= loan.amount;
+          
+          // Parcela está PAID se: juros foram pagos E capital foi totalmente pago
+          const isPaid = isInterestPaid && isCapitalFullyPaid;
+
           const updatedInst: Installment = {
             ...inst,
             amount: inst.amount, // Preservar valor original
-            interestAmount: 0,
-            principalAmount: 0,
-            amountPaid: inst.amount, // Marcar como totalmente pago
+            interestAmount: isPaid ? 0 : (pendingInterest - interestPaid), // Se não pago, manter juros pendentes
+            principalAmount: loan.amount, // SEMPRE manter capital original (não muda)
+            amountPaid: newAmountPaid,
             paymentHistory: updatedPaymentHistory,
-            status: InstallmentStatus.PAID,
-            paidDate: actualPaymentDate
+            status: isPaid ? InstallmentStatus.PAID : InstallmentStatus.PARTIAL,
+            paidDate: isPaid ? actualPaymentDate : inst.paidDate
           };
           
           updatedInstallments.push(updatedInst);
@@ -2481,11 +2676,56 @@ const App: React.FC = () => {
         }
       }
 
+      // IMPORTANTE: Para empréstimos INTEREST_ONLY, após processar todas as parcelas,
+      // verificar se o capital foi totalmente pago e marcar TODAS as parcelas como PAID
+      let finalInstallments = updatedInstallments;
+      if (loan.model === LoanModel.INTEREST_ONLY) {
+        // Calcular capital total pago através do histórico de pagamentos de todas as parcelas
+        const totalCapitalPaid = updatedInstallments.reduce((sum, inst) => {
+          if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+            return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+          }
+          return sum;
+        }, 0);
+        
+        // IMPORTANTE: Após processar todas as parcelas, verificar se capital foi totalmente pago
+        // Se sim, marcar todas as parcelas com juros pagos como PAID
+        if (totalCapitalPaid >= loan.amount) {
+          // Quando o capital está totalmente pago, não há mais juros a calcular
+          const monthlyInterest = 0;
+          
+          // Marcar todas as parcelas (atualizadas e não atualizadas) que têm juros pagos como PAID
+          finalInstallments = allLoanInstallments.map(inst => {
+            // Verificar se esta parcela foi atualizada
+            const updated = updatedInstallments.find(u => u.id === inst.id);
+            const instToCheck = updated || inst;
+            
+            // Verificar se os juros desta parcela foram pagos
+            const interestPaid = instToCheck.paymentHistory?.reduce((sum, p) => sum + (p.interestPaid || 0), 0) || 0;
+            const isInterestPaid = interestPaid >= monthlyInterest;
+            
+            // Se juros foram pagos E capital foi totalmente pago, parcela está PAID
+            if (isInterestPaid) {
+              return {
+                ...instToCheck,
+                status: InstallmentStatus.PAID,
+                interestAmount: 0,
+                principalAmount: loan.amount, // Manter capital original
+                paidDate: instToCheck.paidDate || actualPaymentDate
+              };
+            }
+            
+            // Retornar a versão atualizada se existir, senão retornar a original
+            return updated || inst;
+          });
+        }
+      }
+
       // Atualizar parcelas no backend se configurado
       if (isBackendConfiguredValue && session?.accessToken) {
         try {
           const { updateBackendInstallment } = await import('@/services/backendApi');
-          for (const inst of updatedInstallments) {
+          for (const inst of finalInstallments) {
             if (inst.status === InstallmentStatus.PAID) {
               await updateBackendInstallment(
                 session.accessToken,
@@ -2502,14 +2742,72 @@ const App: React.FC = () => {
 
       // Atualizar todas as parcelas
       setInstallments(prev => {
-        const updatedMap = new Map(updatedInstallments.map(inst => [inst.id, inst]));
+        const updatedMap = new Map(finalInstallments.map(inst => [inst.id, inst]));
         return prev.map(inst => updatedMap.get(inst.id) || inst);
       });
 
-      // Atualizar status do empréstimo
+      // IMPORTANTE: Atualizar status do empréstimo após pagamento total
+      // Para empréstimos INTEREST_ONLY, verificar se capital + todos os juros foram pagos
+      // Usar todas as parcelas do empréstimo (atualizadas e não atualizadas) para verificação correta
       setLoans(prevLoans => prevLoans.map(l => {
         if (l.id === loan.id) {
-          const updatedLoan = { ...l, status: LoanStatus.PAID, outstandingAmount: 0 };
+          // IMPORTANTE: Combinar parcelas atualizadas (finalInstallments) com parcelas não atualizadas
+          // Isso garante que verificamos o estado real de todas as parcelas após a atualização
+          const allLoanInstallmentsAfterUpdate = allLoanInstallments.map(inst => {
+            const updated = finalInstallments.find(f => f.id === inst.id);
+            return updated || inst;
+          });
+          
+          // Verificar se todas as parcelas estão pagas
+          const allPaid = allLoanInstallmentsAfterUpdate.every(inst => inst.status === InstallmentStatus.PAID);
+          
+          // Para empréstimos INTEREST_ONLY, verificar se capital foi totalmente pago
+          if (loan.model === LoanModel.INTEREST_ONLY) {
+            // Calcular capital total pago através do histórico de pagamentos de TODAS as parcelas
+            const totalCapitalPaid = allLoanInstallmentsAfterUpdate.reduce((sum, inst) => {
+              if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+                return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+              }
+              return sum;
+            }, 0);
+            
+            // Empréstimo está pago se: todas as parcelas estão PAID E capital foi totalmente pago
+            const isCapitalPaid = totalCapitalPaid >= loan.amount;
+            const isLoanPaid = allPaid && isCapitalPaid;
+            
+            // Calcular valor em aberto usando a função auxiliar
+            const outstandingAmount = isLoanPaid ? 0 : calculateOutstandingAmount(loan, allLoanInstallmentsAfterUpdate);
+            
+            const updatedLoan = { 
+              ...l, 
+              status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE, 
+              outstandingAmount 
+            };
+            
+            // Atualizar no backend se configurado
+            if (isBackendConfiguredValue && session?.accessToken) {
+              (async () => {
+                try {
+                  const { updateBackendLoan } = await import('@/services/backendApi');
+                  await updateBackendLoan(session.accessToken, session.tenantId || '', l.id, updatedLoan);
+                } catch (error) {
+                  console.error('Erro ao atualizar empréstimo no backend', error);
+                }
+              })();
+            }
+            
+            return updatedLoan;
+          }
+          
+          // Para outros modelos, se todas as parcelas estão pagas, empréstimo está pago
+          // Calcular valor em aberto usando a função auxiliar
+          const outstandingAmount = allPaid ? 0 : calculateOutstandingAmount(loan, allLoanInstallmentsAfterUpdate);
+          
+          const updatedLoan = { 
+            ...l, 
+            status: allPaid ? LoanStatus.PAID : LoanStatus.ACTIVE, 
+            outstandingAmount 
+          };
           
           // Atualizar no backend se configurado
           if (isBackendConfiguredValue && session?.accessToken) {
@@ -2545,40 +2843,75 @@ const App: React.FC = () => {
     };
 
     if (loan.model === LoanModel.INTEREST_ONLY) {
-      // Calcular juros baseado na taxa do empréstimo se não estiver definido
+      // IMPORTANTE: Calcular capital pendente para determinar os juros da parcela
+      // Os juros devem ser calculados sobre o capital pendente atual (não sobre o capital original)
+      const allLoanInstallmentsForInterest = installments.filter(inst => inst.loanId === loan.id);
+      const totalCapitalPaid = allLoanInstallmentsForInterest.reduce((sum, inst) => {
+        if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+          return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+        }
+        return sum;
+      }, 0);
+      const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
+      
+      // IMPORTANTE: Juros devem ser calculados sobre o capital pendente atual
+      // Quando o capital é pago, os juros diminuem proporcionalmente
+      // Exemplo: R$ 1.000 com 10% = R$ 100 inicial
+      //          Após pagar R$ 100 de capital: Capital restante R$ 900, Juros = 10% de R$ 900 = R$ 90
+      // Arredondar juros para cima para garantir que os centavos sejam sempre arredondados para cima
+      const correctInterestAmount = Math.ceil(pendingCapital * (loan.interestRate / 100));
+      
+      // IMPORTANTE: Usar o valor correto dos juros baseado no capital pendente
+      // Se o interestAmount da parcela estiver incorreto, usar o valor calculado
       let interestDue = installment.interestAmount ?? 0;
-      if (interestDue === 0) {
-        const principal = installment.principalAmount ?? installment.amount;
-        interestDue = Number((principal * (loan.interestRate / 100)).toFixed(2));
+      const tolerance = 0.01; // Tolerância de 1 centavo para comparação
+      if (interestDue === 0 || Math.abs(interestDue - correctInterestAmount) > tolerance) {
+        // Usar o valor correto dos juros baseado no capital pendente
+        interestDue = correctInterestAmount;
       }
       
-      const principalDue = Math.max(0, installment.principalAmount ?? Math.max(0, installment.amount - interestDue));
+      // IMPORTANTE: Para empréstimos INTEREST_ONLY, o capital SEMPRE deve ser o valor original do empréstimo
+      // O capital do empréstimo (loan.amount) NUNCA deve ser alterado, mesmo com amortização
+      // Exemplo: Empréstimo de R$ 1.000 com 10% = Capital sempre R$ 1.000, Juros sempre R$ 100
+      // A amortização é registrada no histórico, mas o capital da parcela permanece como o original
+      const originalPrincipal = loan.amount; // SEMPRE usar o capital original do empréstimo
+      const principalDue = originalPrincipal; // Capital disponível para amortização
       const totalDue = Math.max(0, interestDue + principalDue);
 
-      // IMPORTANTE: Para empréstimos INTEREST_ONLY, o capital NÃO deve ser abatido da parcela atual
-      // O capital deve permanecer intacto até que seja totalmente pago em uma ação separada
-      // Apenas os juros são abatidos da parcela atual
+      // IMPORTANTE: Para empréstimos INTEREST_ONLY:
+      // 1. O mínimo a receber é sempre o valor dos juros (baseado no valor original do empréstimo)
+      // 2. Se o pagamento for maior que o mínimo, o excedente pode amortizar o capital
+      // 3. A taxa de juros permanece constante (sempre baseada no valor original)
+      // 4. O capital do empréstimo SEMPRE permanece como o valor original (não é alterado)
       let remainingPayment = paymentValue;
 
-      // 1. Abater APENAS os juros da parcela atual
+      // 1. Abater PRIMEIRO os juros da parcela atual (valor mínimo)
       const interestPayment = Math.min(remainingPayment, interestDue);
       remainingPayment -= interestPayment;
       const updatedInterest = Number((interestDue - interestPayment).toFixed(2));
 
-      // 2. NÃO abater o capital da parcela atual - o capital permanece intacto
-      // O capital só será abatido quando o pagamento total for recebido
-      const principalPayment = 0; // Não abater capital da parcela atual
-      const updatedPrincipal = principalDue; // Manter o capital original intacto
+      // 2. Se sobrar pagamento após abater os juros, aplicar ao capital (amortização)
+      // IMPORTANTE: A amortização é registrada no histórico, mas o capital da parcela permanece como o original
+      const principalPayment = Math.min(remainingPayment, principalDue);
+      remainingPayment -= principalPayment;
+      
+      // IMPORTANTE: O capital do empréstimo SEMPRE permanece como o valor original
+      // Não alterar o principalAmount da parcela, ele sempre deve ser o capital original do empréstimo
+      // A amortização é registrada apenas no histórico de pagamentos
+      const updatedPrincipal = originalPrincipal; // SEMPRE manter o capital original do empréstimo
+
+      // Valor total aplicado nesta parcela (juros + principal)
+      const appliedToThisInstallment = interestPayment + principalPayment;
 
       // Para empréstimos "somente juros", o amount é apenas os juros, não juros + principal
       // O status é PAID quando não há mais juros nem principal pendentes
       // IMPORTANTE: Para pagamentos retroativos, o amount original deve ser preservado
       // Não recalcular o amount baseado no capital restante para manter o valor inicial
-      const newStatus = (updatedInterest <= 0 && updatedPrincipal <= 0) ? InstallmentStatus.PAID : 
-                       (updatedInterest <= 0 && updatedPrincipal <= 0) ? InstallmentStatus.PARTIAL : InstallmentStatus.PARTIAL;
-      
-      // Valor total aplicado nesta parcela (juros + principal)
-      const appliedToThisInstallment = interestPayment + principalPayment;
+      const newStatus = (updatedInterest <= 0 && updatedPrincipal <= 0) 
+        ? InstallmentStatus.PAID 
+        : (appliedToThisInstallment > 0) 
+          ? InstallmentStatus.PARTIAL 
+          : installment.status;
 
       // Registrar pagamento no histórico
       const paymentHistoryEntry = {
@@ -2594,15 +2927,36 @@ const App: React.FC = () => {
       // IMPORTANTE: Preservar o amount original da parcela para não alterar o valor inicial
       // Isso é especialmente importante para pagamentos retroativos
       // Apenas atualizar interestAmount e principalAmount, mantendo o amount original
+      // IMPORTANTE: Se a parcela foi paga (PAID), ela não deve mais estar como LATE
+      const finalStatus = newStatus === InstallmentStatus.PAID 
+        ? InstallmentStatus.PAID 
+        : (newStatus === InstallmentStatus.PARTIAL && installment.status === InstallmentStatus.LATE)
+          ? InstallmentStatus.PARTIAL // Se estava LATE e agora está parcialmente paga, remover status LATE
+          : newStatus;
+      
+      // IMPORTANTE: Para empréstimos "somente juros", preservar o valor ORIGINAL dos juros
+      // O interestAmount deve sempre representar o valor ORIGINAL dos juros (não o pendente)
+      // Isso garante que o contrato permaneça o mesmo do início ao fim
+      // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100 de juros sempre
+      // Reutilizar originalInterestAmount já calculado acima
+      
+      // IMPORTANTE: Usar o valor correto dos juros baseado no capital pendente
+      // O updatedInterest representa o valor pendente após o pagamento atual
+      // Reutilizar tolerance já declarado acima
+      const currentInterestAmount = installment.interestAmount ?? 0;
+      const finalInterestAmount = (currentInterestAmount === 0 || Math.abs(currentInterestAmount - correctInterestAmount) > tolerance)
+        ? correctInterestAmount // Usar valor correto se estiver incorreto
+        : correctInterestAmount; // SEMPRE usar o valor correto baseado no capital pendente
+      
       const updatedInstallment = {
         ...installment,
         amount: installment.amount, // Preservar o valor original da parcela
-        interestAmount: updatedInterest,
-        principalAmount: updatedPrincipal,
+        interestAmount: finalInterestAmount, // Valor ORIGINAL dos juros (sempre constante)
+        principalAmount: updatedPrincipal, // Capital restante após amortização
         amountPaid: Number(((installment.amountPaid || 0) + appliedToThisInstallment).toFixed(2)),
         paymentHistory: updatedPaymentHistory,
-        status: newStatus,
-        paidDate: newStatus === InstallmentStatus.PAID ? new Date().toISOString() : installment.paidDate
+        status: finalStatus,
+        paidDate: finalStatus === InstallmentStatus.PAID ? new Date().toISOString() : installment.paidDate
       };
 
       // 3. IMPORTANTE: O capital NÃO deve ser abatido automaticamente das próximas parcelas
@@ -2616,69 +2970,109 @@ const App: React.FC = () => {
       // Atualizar parcelas no backend se configurado
       if (isBackendConfiguredValue && session?.accessToken) {
         try {
-          const { updateBackendInstallment } = await import('@/services/backendApi');
+          const { updateBackendInstallment, fetchBackendInstallments } = await import('@/services/backendApi');
+          // Buscar parcelas do backend para obter os UUIDs corretos
+          const backendInstallments = await fetchBackendInstallments(
+            session.accessToken,
+            requireTenantId(session.tenantId, 'operar com parcelas')
+          );
+          
           for (const inst of updatedInstallments) {
-            await updateBackendInstallment(
-              session.accessToken,
-              requireTenantId(session.tenantId, 'operar com parcelas'),
-              inst.id,
-              inst
-            );
+            // Verificar se o ID é um UUID válido (formato: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+            const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(inst.id);
+            
+            if (!isValidUUID) {
+              // Se não for UUID válido, buscar a parcela no backend pelo loanId e number
+              const backendInst = backendInstallments.find(
+                (bi: any) => bi.loanId === inst.loanId && bi.number === inst.number
+              );
+              
+              if (backendInst) {
+                // Usar o UUID do backend
+                await updateBackendInstallment(
+                  session.accessToken,
+                  requireTenantId(session.tenantId, 'operar com parcelas'),
+                  backendInst.id,
+                  inst
+                );
+              } else {
+                console.warn(`Parcela não encontrada no backend para atualização: loanId=${inst.loanId}, number=${inst.number}`);
+              }
+            } else {
+              // ID é UUID válido, atualizar diretamente
+              await updateBackendInstallment(
+                session.accessToken,
+                requireTenantId(session.tenantId, 'operar com parcelas'),
+                inst.id,
+                inst
+              );
+            }
           }
         } catch (error) {
           console.error('Erro ao atualizar parcelas no backend', error);
         }
       }
 
-      // Calcular capital total restante do empréstimo após o pagamento
+      // IMPORTANTE: Para empréstimos INTEREST_ONLY, o capital sempre permanece como o valor original
+      // Não precisamos calcular "capital restante" porque o capital nunca muda
+      // As novas parcelas são criadas apenas quando necessário para cobrar os juros mensais
       // Primeiro, atualizar a lista de parcelas com as modificadas
       const allUpdatedInstallments = [...updatedInstallments];
       
-      // Calcular capital total restante: soma de todos os principalAmount das parcelas pendentes
-      let totalRemainingCapital = 0;
-      
-      // Capital da parcela atual atualizada
-      totalRemainingCapital += updatedPrincipal;
-      
-      // Capital das outras parcelas atualizadas
-      for (const inst of updatedInstallments) {
-        if (inst.id !== id && inst.principalAmount && inst.status !== InstallmentStatus.PAID) {
-          totalRemainingCapital += inst.principalAmount;
-        }
-      }
-      
-      // Capital das parcelas que não foram atualizadas (ainda pendentes)
-      const loanInstallments = installments.filter(inst => inst.loanId === loan.id && inst.id !== id);
-      const otherPendingInstallments = loanInstallments.filter(
-        inst => inst.status !== InstallmentStatus.PAID && 
-                !updatedInstallments.some(updated => updated.id === inst.id)
-      );
-      for (const inst of otherPendingInstallments) {
-        if (inst.principalAmount) {
-          totalRemainingCapital += inst.principalAmount;
-        }
-      }
-      
-      totalRemainingCapital = Number(totalRemainingCapital.toFixed(2));
-      
       // Encontrar o próximo número de parcela
-      const allLoanInstallments = installments.filter(inst => inst.loanId === loan.id);
-      const maxNumber = Math.max(...allLoanInstallments.map(inst => inst.number), 0);
+      const allLoanInstallmentsForNew = installments.filter(inst => inst.loanId === loan.id);
+      const maxNumber = Math.max(...allLoanInstallmentsForNew.map(inst => inst.number), 0);
       const nextNumber = maxNumber + 1;
 
-      // Se ainda há capital total em aberto, criar nova parcela com juros recalculados
-      // A nova parcela representa o capital restante total do empréstimo
-      if (totalRemainingCapital > 0) {
+      // IMPORTANTE: Para empréstimos INTEREST_ONLY:
+      // 1. Sempre criar nova parcela quando uma parcela é paga parcialmente (apenas juros)
+      // 2. O empréstimo só é finalizado quando capital + todos os juros forem pagos completamente
+      // 3. Verificar se já existe uma próxima parcela antes de criar uma nova
+      
+      // Verificar se ainda há capital ou juros pendentes
+      // O capital sempre permanece como o valor original até ser totalmente pago
+      const hasOutstandingCapital = updatedPrincipal > 0;
+      const hasOutstandingInterest = updatedInterest > 0;
+      const hasOtherPendingInstallments = allLoanInstallmentsForNew.some(
+        inst => inst.status !== InstallmentStatus.PAID && inst.id !== id
+      );
+      
+      // Verificar se já existe uma próxima parcela com o número calculado
+      const nextInstallmentExists = allLoanInstallmentsForNew.some(
+        inst => inst.number === nextNumber
+      );
+      
+      // Criar nova parcela se:
+      // 1. Ainda há capital ou juros pendentes na parcela atual OU há outras parcelas pendentes
+      // 2. E não existe ainda uma próxima parcela
+      // 3. E a parcela atual foi paga parcialmente (apenas juros) ou há outras pendentes
+      const shouldCreateNewInstallment = 
+        (hasOutstandingCapital || hasOutstandingInterest || hasOtherPendingInstallments) &&
+        !nextInstallmentExists &&
+        (updatedInstallment.status === InstallmentStatus.PARTIAL || hasOtherPendingInstallments);
+      
+      if (shouldCreateNewInstallment) {
         const rateDecimal = loan.interestRate / 100;
-        // Calcular juros sobre o capital total restante (ex: R$ 900 * 20% = R$ 180)
-        // O amount deve sempre ser pelo menos o valor mínimo dos juros baseado no capital restante
-        const nextInterestAmount = totalRemainingCapital > 0 ? Number((totalRemainingCapital * rateDecimal).toFixed(2)) : 0;
-        const nextAmount = nextInterestAmount; // Já é o valor mínimo dos juros
+        // IMPORTANTE: Calcular capital pendente para determinar os juros da nova parcela
+        // Os juros devem ser calculados sobre o capital pendente atual (não sobre o capital original)
+        const totalCapitalPaidForNewInstallment = allLoanInstallments.reduce((sum, allInst) => {
+          if (allInst.paymentHistory && allInst.paymentHistory.length > 0) {
+            return sum + allInst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+          }
+          return sum;
+        }, 0);
+        const pendingCapitalForNewInstallment = Math.max(0, loan.amount - totalCapitalPaidForNewInstallment);
+        
+        // IMPORTANTE: Juros da nova parcela devem ser calculados sobre o capital pendente atual
+        // Quando o capital é pago, os juros das novas parcelas diminuem proporcionalmente
+        // Exemplo: R$ 1.000 com 10% = R$ 100 inicial
+        //          Após pagar R$ 100 de capital: Capital restante R$ 900, Juros = 10% de R$ 900 = R$ 90
+        const nextInterestAmount = Number((pendingCapitalForNewInstallment * rateDecimal).toFixed(2));
         
         // Encontrar a data de vencimento mais recente entre todas as parcelas do empréstimo
         // Isso garante que as parcelas seguem uma sequência lógica mesmo em cadastros retroativos
         const allDates = [
-          ...allLoanInstallments.map(inst => inst.dueDate),
+          ...allLoanInstallmentsForNew.map(inst => inst.dueDate),
           updatedInstallment.dueDate
         ];
         const mostRecentDueDate = allDates.sort((a, b) => 
@@ -2695,9 +3089,9 @@ const App: React.FC = () => {
           clientId: installment.clientId,
           number: nextNumber,
           dueDate: nextDueDate,
-          amount: nextAmount, // Sempre pelo menos o valor mínimo dos juros baseado no capital restante
-          interestAmount: nextInterestAmount, // R$ 180
-          principalAmount: totalRemainingCapital, // Capital total em aberto (R$ 900)
+          amount: nextInterestAmount, // Valor da parcela = juros (sempre)
+          interestAmount: nextInterestAmount, // Juros sempre baseados no capital original
+          principalAmount: loan.amount, // SEMPRE usar o capital original do empréstimo
           amountPaid: 0,
           status: InstallmentStatus.PENDING
         };
@@ -2738,27 +3132,64 @@ const App: React.FC = () => {
         return [...updated, ...newInstallments];
       });
     } else {
-      // Lógica para outros modelos de empréstimo
+      // Lógica para outros modelos de empréstimo (PRICE, etc.)
       const paidAmount = Math.min(installment.amount, (installment.amountPaid || 0) + paymentValue);
       const isPaid = paidAmount >= installment.amount;
+
+      // Calcular valores pendentes de juros e capital
+      const interestAmount = installment.interestAmount ?? 0;
+      const principalAmount = installment.principalAmount ?? (installment.amount - interestAmount);
+      
+      // Calcular quanto já foi pago de juros e capital
+      const interestPaidSoFar = installment.paymentHistory?.reduce((sum, p) => sum + (p.interestPaid || 0), 0) || 0;
+      const principalPaidSoFar = installment.paymentHistory?.reduce((sum, p) => sum + (p.principalPaid || 0), 0) || 0;
+      
+      // Calcular valores pendentes
+      const pendingInterest = Math.max(0, interestAmount - interestPaidSoFar);
+      const pendingPrincipal = Math.max(0, principalAmount - principalPaidSoFar);
+      const totalPending = pendingInterest + pendingPrincipal;
+      
+      // Distribuir o pagamento proporcionalmente entre juros e capital
+      let interestPaid = 0;
+      let principalPaid = 0;
+      
+      if (totalPending > 0) {
+        // Primeiro, abater os juros pendentes
+        interestPaid = Math.min(paymentValue, pendingInterest);
+        const remainingPayment = paymentValue - interestPaid;
+        
+        // Depois, abater o capital pendente
+        principalPaid = Math.min(remainingPayment, pendingPrincipal);
+      } else {
+        // Se não há valores pendentes definidos, tratar como pagamento de capital
+        principalPaid = paymentValue;
+      }
 
       // Registrar pagamento no histórico
       const paymentHistoryEntry = {
         amount: paymentValue,
-        interestPaid: 0,
-        principalPaid: paymentValue,
+        interestPaid: interestPaid,
+        principalPaid: principalPaid,
         paymentDate: actualPaymentDate,
         createdAt: new Date().toISOString()
       };
       const existingHistory = installment.paymentHistory || [];
       const updatedPaymentHistory = [...existingHistory, paymentHistoryEntry];
 
+      // IMPORTANTE: Se a parcela foi paga (PAID), ela não deve mais estar como LATE
+      // Se estava LATE e agora está parcialmente paga, remover status LATE
+      const finalStatus = isPaid 
+        ? InstallmentStatus.PAID 
+        : (installment.status === InstallmentStatus.LATE)
+          ? InstallmentStatus.PARTIAL // Se estava LATE e agora está parcialmente paga, remover status LATE
+          : InstallmentStatus.PARTIAL;
+      
       const updatedInstallment = {
         ...installment,
-        status: isPaid ? InstallmentStatus.PAID : InstallmentStatus.PARTIAL,
+        status: finalStatus,
         amountPaid: Number(paidAmount.toFixed(2)),
         paymentHistory: updatedPaymentHistory,
-        paidDate: new Date().toISOString()
+        paidDate: finalStatus === InstallmentStatus.PAID ? new Date().toISOString() : installment.paidDate
       };
 
       // Atualizar no backend se configurado
@@ -2776,104 +3207,97 @@ const App: React.FC = () => {
         }
       }
 
-      setInstallments(prev => prev.map(inst => inst.id === id ? updatedInstallment : inst));
-    }
-
-    // Função auxiliar para calcular valor em aberto
-    const calculateOutstandingAmount = (loan: Loan, relatedInstallments: Installment[]): number => {
-      if (relatedInstallments.length === 0) {
-        return loan.totalAmount;
-      }
-      
-      // Para empréstimos "somente juros", calcular capital + juros pendentes
-      if (loan.model === LoanModel.INTEREST_ONLY) {
-        let totalOutstanding = 0;
+      setInstallments(prev => {
+        const updated = prev.map(inst => inst.id === id ? updatedInstallment : inst);
         
-        // Soma todo o capital pendente
-        for (const inst of relatedInstallments) {
-          const principal = inst.principalAmount ?? 0;
-          if (principal > 0) {
-            totalOutstanding += principal;
-          }
-        }
+        // Atualizar apenas o empréstimo relacionado à parcela que foi paga
+        // Isso evita atualizar todos os empréstimos e causar muitas requisições simultâneas
+        const loanId = installment.loanId;
+        const related = updated.filter(inst => inst.loanId === loanId);
         
-        // Soma todos os juros pendentes
-        for (const inst of relatedInstallments) {
-          const interest = inst.interestAmount ?? 0;
-          if (interest > 0) {
-            totalOutstanding += interest;
-          }
-        }
-        
-        return Number(totalOutstanding.toFixed(2));
-      }
-      
-      // Para outros modelos, calcular valor total menos o que já foi pago
-      const totalPaid = relatedInstallments.reduce((sum, inst) => sum + (inst.amountPaid || 0), 0);
-      const outstanding = Math.max(0, loan.totalAmount - totalPaid);
-      return Number(outstanding.toFixed(2));
-    };
-
-    // Atualizar status do empréstimo e valor em aberto
-    setLoans(prevLoans => prevLoans.map(l => {
-      const related = installments.filter(inst => inst.loanId === l.id);
-      
-      if (related.length === 0) {
-        return { ...l, status: LoanStatus.ACTIVE, outstandingAmount: l.totalAmount };
-      }
-      
-      // Calcular valor em aberto
-      const outstandingAmount = calculateOutstandingAmount(l, related);
-      
-      // Para empréstimos "somente juros", verificar se não há mais capital nem juros pendentes
-      if (l.model === LoanModel.INTEREST_ONLY) {
-        const hasPendingCapital = related.some(inst => {
-          const principal = inst.principalAmount ?? 0;
-          return principal > 0;
-        });
-        
-        const hasPendingInterest = related.some(inst => {
-          const interest = inst.interestAmount ?? 0;
-          return interest > 0;
-        });
-        
-        // Empréstimo só está finalizado se não há capital nem juros pendentes
-        const isLoanPaid = !hasPendingCapital && !hasPendingInterest;
-        const updatedLoan = { ...l, status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE, outstandingAmount };
-        
-        // Atualizar no backend se configurado
-        if (isBackendConfiguredValue && session?.accessToken) {
-          (async () => {
-            try {
-              const { updateBackendLoan } = await import('@/services/backendApi');
-              await updateBackendLoan(session.accessToken, session.tenantId || '', l.id, updatedLoan);
-            } catch (error) {
-              console.error('Erro ao atualizar valor em aberto no backend', error);
+        if (related.length > 0) {
+          // Usar setLoans com função callback para obter o estado mais recente
+          setLoans(currentLoans => {
+            const loan = currentLoans.find(l => l.id === loanId);
+            if (!loan) return currentLoans;
+            // Calcular valor em aberto
+            const outstandingAmount = calculateOutstandingAmount(loan, related);
+            
+            // Para empréstimos "somente juros", verificar se capital + todos os juros foram pagos
+            if (loan.model === LoanModel.INTEREST_ONLY) {
+              // Calcular capital total pago através do histórico de pagamentos
+              const totalCapitalPaid = related.reduce((sum, inst) => {
+                if (inst.paymentHistory && inst.paymentHistory.length > 0) {
+                  return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+                }
+                return sum;
+              }, 0);
+              
+              // Verificar se há parcelas pendentes (não pagas completamente)
+              const hasPendingInstallments = related.some(inst => inst.status !== InstallmentStatus.PAID);
+              
+              const isCapitalPaid = totalCapitalPaid >= loan.amount;
+              const allInstallmentsPaid = !hasPendingInstallments;
+              
+              const isLoanPaid = isCapitalPaid && allInstallmentsPaid;
+              const newStatus = isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE;
+              
+              // Só atualizar se o valor ou status realmente mudou
+              const hasChanged = loan.status !== newStatus || 
+                                Math.abs((loan.outstandingAmount || 0) - outstandingAmount) > 0.01;
+              
+              if (hasChanged) {
+                const updatedLoan = { ...loan, status: newStatus, outstandingAmount };
+                
+                // Atualizar no backend se configurado (de forma assíncrona e silenciosa)
+                if (isBackendConfiguredValue && session?.accessToken) {
+                  setTimeout(async () => {
+                    try {
+                      const { updateBackendLoan } = await import('@/services/backendApi');
+                      await updateBackendLoan(session.accessToken, session.tenantId || '', loanId, updatedLoan);
+                    } catch (error) {
+                      console.warn('Erro ao atualizar valor em aberto no backend (não crítico):', error);
+                    }
+                  }, 100);
+                }
+                
+                return currentLoans.map(l => l.id === loanId ? updatedLoan : l);
+              }
+            } else {
+              // Para outros modelos, verificar se todas as parcelas estão pagas
+              const isLoanPaid = related.every(inst => inst.status === InstallmentStatus.PAID || inst.amount <= 0);
+              const newStatus = isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE;
+              
+              // Só atualizar se o valor ou status realmente mudou
+              const hasChanged = loan.status !== newStatus || 
+                                Math.abs((loan.outstandingAmount || 0) - outstandingAmount) > 0.01;
+              
+              if (hasChanged) {
+                const updatedLoan = { ...loan, status: newStatus, outstandingAmount };
+                
+                // Atualizar no backend se configurado (de forma assíncrona e silenciosa)
+                if (isBackendConfiguredValue && session?.accessToken) {
+                  setTimeout(async () => {
+                    try {
+                      const { updateBackendLoan } = await import('@/services/backendApi');
+                      await updateBackendLoan(session.accessToken, session.tenantId || '', loanId, updatedLoan);
+                    } catch (error) {
+                      console.warn('Erro ao atualizar valor em aberto no backend (não crítico):', error);
+                    }
+                  }, 100);
+                }
+                
+                return currentLoans.map(l => l.id === loanId ? updatedLoan : l);
+              }
             }
-          })();
+            
+            return currentLoans;
+          });
         }
         
-        return updatedLoan;
-      }
-      
-      // Para outros modelos, verificar se todas as parcelas estão pagas
-      const isLoanPaid = related.every(inst => inst.status === InstallmentStatus.PAID || inst.amount <= 0);
-      const updatedLoan = { ...l, status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE, outstandingAmount };
-      
-      // Atualizar no backend se configurado
-      if (isBackendConfiguredValue && session?.accessToken) {
-        (async () => {
-          try {
-            const { updateBackendLoan } = await import('@/services/backendApi');
-            await updateBackendLoan(session.accessToken, session.tenantId || '', l.id, updatedLoan);
-          } catch (error) {
-            console.error('Erro ao atualizar valor em aberto no backend', error);
-          }
-        })();
-      }
-      
-      return updatedLoan;
-    }));
+        return updated;
+      });
+    }
   }, [installments, loans, user?.role, isBackendConfiguredValue, session]);
 
   const addUser = useCallback(async (newUser: User): Promise<User | null> => {
@@ -3044,6 +3468,7 @@ const App: React.FC = () => {
     updateInstallment,
     scheduleFuturePayment,
     startEditingLoan,
+    reopenLoan,
     addUser,
     removeUser,
     view,
@@ -3054,7 +3479,7 @@ const App: React.FC = () => {
     setInstallmentsInitialFilter,
     installmentsDateRange,
     setInstallmentsDateRange
-  }), [user, usersList, clients, loans, installments, session, setSession, isBackendConfiguredValue, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, updateInstallment, scheduleFuturePayment, startEditingLoan, addLoan, updateLoan, setTheme, setViewWithFilter, installmentsInitialFilter, installmentsDateRange]);
+  }), [user, usersList, clients, loans, installments, session, setSession, isBackendConfiguredValue, view, theme, login, logout, addClient, addUser, removeUser, deleteClient, deleteLoan, payInstallment, updateInstallment, scheduleFuturePayment, startEditingLoan, reopenLoan, addLoan, updateLoan, setTheme, setViewWithFilter, installmentsInitialFilter, installmentsDateRange]);
 
   useEffect(() => {
     const body = document.body;
