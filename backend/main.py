@@ -1,8 +1,12 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Tuple
+import json
+import hmac
+import hashlib
+import time
 
-from fastapi import Body, Depends, FastAPI, HTTPException, status
+from fastapi import Body, Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
@@ -680,6 +684,105 @@ def _authenticate_user(payload: LoginRequest):
 def healthcheck():
     settings = get_settings()
     return {"status": "ok", "supabase_url": settings.supabase_url}
+
+
+@app.post("/slack/interactions")
+async def slack_interactions(request: Request):
+    """
+    Endpoint para receber interações do Slack (botões clicados)
+    
+    URL pública: https://credgestor.app.br/api/slack/interactions
+    """
+    try:
+        # Importar aqui para evitar erro se agent não estiver disponível
+        try:
+            from agent.config import config
+            from agent.slack_interactions import pending_approvals
+        except ImportError:
+            raise HTTPException(
+                status_code=503,
+                detail="Serviço de interações do Slack não disponível"
+            )
+        
+        # Obter headers
+        timestamp = request.headers.get('X-Slack-Request-Timestamp', '')
+        signature = request.headers.get('X-Slack-Signature', '')
+        
+        # Verificar timestamp (evitar replay attacks)
+        if timestamp:
+            try:
+                if abs(time.time() - int(timestamp)) > 60 * 5:
+                    raise HTTPException(status_code=400, detail="Request timestamp too old")
+            except ValueError:
+                pass  # Se timestamp não for válido, continuar
+        
+        # Obter body como texto para verificação de assinatura
+        body_bytes = await request.body()
+        body = body_bytes.decode('utf-8')
+        
+        # Verificar assinatura do Slack
+        if config.SLACK_SIGNING_SECRET:
+            sig_basestring = f"v0:{timestamp}:{body}"
+            my_signature = 'v0=' + hmac.new(
+                config.SLACK_SIGNING_SECRET.encode(),
+                sig_basestring.encode(),
+                hashlib.sha256
+            ).hexdigest()
+            
+            if not hmac.compare_digest(my_signature, signature):
+                raise HTTPException(status_code=403, detail="Invalid signature")
+        
+        # Parse payload (Slack envia como form-data)
+        form_data = await request.form()
+        payload_str = form_data.get('payload', '{}')
+        
+        if not payload_str:
+            return {"ok": True}
+        
+        payload = json.loads(payload_str)
+        
+        # Processar interação
+        if payload.get('type') == 'block_actions':
+            actions = payload.get('actions', [])
+            for action in actions:
+                action_id = action.get('action_id', '')
+                value = action.get('value', '')
+                
+                # Aprovação
+                if action_id.startswith('approve_') or value.startswith('approve_'):
+                    approval_id = action_id.replace('approve_', '') if action_id.startswith('approve_') else value.replace('approve_', '')
+                    pending_approvals[approval_id] = {
+                        'approved': True,
+                        'timestamp': time.time(),
+                        'user': payload.get('user', {}).get('name', 'unknown')
+                    }
+                    print(f"✅ Aprovação registrada para action_id: {approval_id}")
+                    return {
+                        "response_type": "ephemeral",
+                        "text": "✅ Aprovação registrada! O agente será notificado."
+                    }
+                
+                # Rejeição
+                elif action_id.startswith('reject_') or value.startswith('reject_'):
+                    approval_id = action_id.replace('reject_', '') if action_id.startswith('reject_') else value.replace('reject_', '')
+                    pending_approvals[approval_id] = {
+                        'approved': False,
+                        'timestamp': time.time(),
+                        'user': payload.get('user', {}).get('name', 'unknown')
+                    }
+                    print(f"❌ Rejeição registrada para action_id: {approval_id}")
+                    return {
+                        "response_type": "ephemeral",
+                        "text": "❌ Rejeição registrada! A ação será cancelada."
+                    }
+        
+        return {"ok": True}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Erro ao processar interação do Slack: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/tables")
