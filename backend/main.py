@@ -1,5 +1,8 @@
 import json
 import os
+import hmac
+import hashlib
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Tuple
@@ -882,23 +885,29 @@ def healthcheck():
     )
 
 
+# Dicionário compartilhado para armazenar aprovações pendentes
+# Acessível tanto pelo backend quanto pelo agente (se estiverem no mesmo processo)
+# Nota: Em produção, o agente roda em container separado, então este dicionário
+# só funciona se o agente acessar via API ou compartilhar memória de outra forma
+pending_approvals: Dict[str, Dict[str, Any]] = {}
+
+
 @app.post("/slack/interactions")
 async def slack_interactions(request: Request):
     """
     Endpoint para receber interações do Slack (botões clicados)
     
     URL pública: https://credgestor.app.br/api/slack/interactions
+    
+    Este endpoint funciona independentemente do módulo agent, usando
+    variáveis de ambiente do backend para configuração.
     """
+    global pending_approvals
+    
     try:
-        # Importar aqui para evitar erro se agent não estiver disponível
-        try:
-            from agent.config import config
-            from agent.slack_interactions import pending_approvals
-        except ImportError:
-            raise HTTPException(
-                status_code=503,
-                detail="Serviço de interações do Slack não disponível"
-            )
+        # Obter configurações do backend (não depende do agent)
+        settings = get_settings()
+        slack_signing_secret = os.getenv("SLACK_SIGNING_SECRET", "")
         
         # Obter headers
         timestamp = request.headers.get('X-Slack-Request-Timestamp', '')
@@ -917,10 +926,10 @@ async def slack_interactions(request: Request):
         body = body_bytes.decode('utf-8')
         
         # Verificar assinatura do Slack
-        if config.SLACK_SIGNING_SECRET:
+        if slack_signing_secret:
             sig_basestring = f"v0:{timestamp}:{body}"
             my_signature = 'v0=' + hmac.new(
-                config.SLACK_SIGNING_SECRET.encode(),
+                slack_signing_secret.encode(),
                 sig_basestring.encode(),
                 hashlib.sha256
             ).hexdigest()
@@ -936,6 +945,10 @@ async def slack_interactions(request: Request):
             return {"ok": True}
         
         payload = json.loads(payload_str)
+        
+        # Processar URL verification (quando Slack testa o endpoint)
+        if payload.get('type') == 'url_verification':
+            return {"challenge": payload.get('challenge', '')}
         
         # Processar interação
         if payload.get('type') == 'block_actions':

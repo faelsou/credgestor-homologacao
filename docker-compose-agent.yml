@@ -1,0 +1,55 @@
+version: '3.9'
+
+services:
+  agent:
+    # Usar imagem do backend como base, mas instalar dependências do agente
+    image: faelsouz/credgestor-homologacao-backend:${DOCKER_VERSION:-latest}
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET:-}
+      - SLACK_CHANNEL=${SLACK_CHANNEL:-#credgestor-agent}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-anthropic}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Modelo LLM - usar claude-3-5-sonnet (sem data) que é mais estável
+      - LLM_MODEL=${LLM_MODEL:-claude-3-5-sonnet}
+      - DOCKER_STACK=${DOCKER_STACK:-credgestor}
+      - API_URL=${API_URL:-http://api:8000}
+      - API_HEALTH_ENDPOINT=${API_HEALTH_ENDPOINT:-/health}
+      - MONITOR_INTERVAL=${MONITOR_INTERVAL:-3600}
+      - SEND_HEALTHY_STATUS=${SEND_HEALTHY_STATUS:-true}
+      - HEALTHY_STATUS_INTERVAL=${HEALTHY_STATUS_INTERVAL:-3600}
+      - REQUIRE_APPROVAL=${REQUIRE_APPROVAL:-true}
+      - APPROVAL_TIMEOUT=${APPROVAL_TIMEOUT:-3600}
+      - FRONTEND_URL=${FRONTEND_URL:-http://site:80}
+      - DOCS_DIR=/app/docs/troubleshooting
+    # Executar como root para evitar problemas de permissão ao instalar pacotes
+    user: root
+    volumes:
+      - ./agent:/app/agent:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./docs/troubleshooting:/app/docs/troubleshooting
+    # Instalar dependências do agente antes de executar
+    command: sh -c "pip install --no-cache-dir -q pydantic-settings>=2.0.0 anthropic>=0.18.0 openai>=1.0.0 requests>=2.31.0 docker>=6.1.0 psycopg2-binary>=2.9.0 && python3 -m agent.main"
+    # Conectar à rede do Swarm para acessar outros serviços
+    networks:
+      - network_public
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+      labels:
+        - "traefik.enable=false"
+
+networks:
+  network_public:
+    external: true
