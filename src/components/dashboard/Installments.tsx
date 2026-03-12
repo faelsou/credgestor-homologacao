@@ -60,6 +60,14 @@ export const InstallmentsView: React.FC = () => {
       return false;
     }
 
+    // IMPORTANTE: Verificar se a parcela foi totalmente paga mesmo que tenha status LATE ou PARTIAL
+    // Se foi totalmente paga, não está mais atrasada
+    const totalPaid = inst.amountPaid || 0;
+    const totalDue = inst.amount || 0;
+    if (totalPaid >= totalDue && totalDue > 0) {
+      return false;
+    }
+
     // PRIMEIRO: Se a data de vencimento não passou, não está atrasada (independente de pagamentos)
     // Isso garante que parcelas com vencimento futuro nunca sejam consideradas atrasadas
     if (!isLate(inst.dueDate)) {
@@ -98,6 +106,7 @@ export const InstallmentsView: React.FC = () => {
     // Se chegou aqui, está atrasada:
     // - A data de vencimento passou
     // - E (não há pagamentos OU todos os pagamentos foram feitos depois do vencimento)
+    // - E a parcela não foi totalmente paga
     return true;
   }, []);
 
@@ -111,10 +120,24 @@ export const InstallmentsView: React.FC = () => {
 
   const filtered = useMemo(() => {
     let result = installments.filter(inst => {
+      // IMPORTANTE: Parcelas totalmente pagas não devem aparecer nos filtros LATE ou PARTIAL
+      // Verificar se a parcela foi totalmente paga
+      const totalPaid = inst.amountPaid || 0;
+      const totalDue = inst.amount || 0;
+      const isFullyPaid = totalPaid >= totalDue && totalDue > 0;
+
       if (filter === 'ALL') return true;
-      if (filter === 'LATE') return isActuallyLate(inst);
+      if (filter === 'LATE') {
+        // Parcelas pagas não devem aparecer no filtro LATE
+        if (isFullyPaid || inst.status === InstallmentStatus.PAID) return false;
+        return isActuallyLate(inst);
+      }
       if (filter === 'PENDING') return inst.status === InstallmentStatus.PENDING && !isActuallyLate(inst);
-      if (filter === 'PARTIAL') return inst.status === InstallmentStatus.PARTIAL;
+      if (filter === 'PARTIAL') {
+        // Parcelas pagas não devem aparecer no filtro PARTIAL
+        if (isFullyPaid || inst.status === InstallmentStatus.PAID) return false;
+        return inst.status === InstallmentStatus.PARTIAL;
+      }
       return inst.status === filter;
     });
 
