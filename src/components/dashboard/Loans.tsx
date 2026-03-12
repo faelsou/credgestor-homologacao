@@ -709,8 +709,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
           const installmentDueDateWords = formatDateToWords(installmentDueDate);
           // Usar o valor da parcela do empréstimo para exibição em R$
           const installmentValue = installment.amount;
-          // Usar o valor total do empréstimo (capital) na descrição por extenso
-          const installmentValueWords = numberToWords(promissoryNote.capital);
+          // Usar o valor da parcela na descrição por extenso
+          const installmentValueWords = numberToWords(installment.amount);
           const installmentIssueDate = formatDate(promissoryNote.issueDate);
           const installmentDueDateFormatted = formatDate(installmentDueDate);
           
