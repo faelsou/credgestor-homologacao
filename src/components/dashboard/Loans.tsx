@@ -707,10 +707,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
           const installmentHash = hashes[index] || hashes[0];
           const installmentDueDate = installment.dueDate;
           const installmentDueDateWords = formatDateToWords(installmentDueDate);
-          // Usar o valor total do empréstimo (capital) ao invés do valor da parcela
-          const installmentValue = promissoryNote.capital;
-          // Usar o valor do empréstimo (capital) ao invés do valor da parcela na descrição
-          const installmentValueWords = numberToWords(promissoryNote.capital);
+          // Usar o valor da parcela do empréstimo
+          const installmentValue = installment.amount;
+          // Usar o valor da parcela na descrição
+          const installmentValueWords = numberToWords(installment.amount);
           const installmentIssueDate = formatDate(promissoryNote.issueDate);
           const installmentDueDateFormatted = formatDate(installmentDueDate);
           
