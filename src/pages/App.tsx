@@ -1904,23 +1904,41 @@ const App: React.FC = () => {
 
   useEffect(() => {
     setInstallments(prev => prev.map(inst => {
+      // Verificar se a parcela foi totalmente paga
+      const totalPaid = inst.amountPaid || 0;
+      const totalDue = inst.amount || 0;
+      const isFullyPaid = totalPaid >= totalDue && totalDue > 0;
+
+      // Se foi totalmente paga, atualizar status para PAID (mesmo que tenha status LATE ou PARTIAL)
+      if (isFullyPaid && inst.status !== InstallmentStatus.PAID) {
+        return { ...inst, status: InstallmentStatus.PAID };
+      }
+
       // Não marcar como LATE se a parcela já está paga
       if (inst.status === InstallmentStatus.PAID) {
         return inst;
       }
+
       // Marcar como LATE apenas se está PENDING e a data passou
       if (inst.status === InstallmentStatus.PENDING && isLate(inst.dueDate)) {
         return { ...inst, status: InstallmentStatus.LATE };
       }
+
       // Se está LATE mas foi paga (verificar pelo paymentHistory), atualizar para PAID
       if (inst.status === InstallmentStatus.LATE && inst.paymentHistory && inst.paymentHistory.length > 0) {
         // Verificar se há pagamento suficiente para quitar a parcela
-        const totalPaid = inst.paymentHistory.reduce((sum, p) => sum + (p.amount || 0), 0);
-        const totalDue = (inst.interestAmount || 0) + (inst.principalAmount || 0);
-        if (totalPaid >= totalDue && totalDue > 0) {
+        const totalPaidFromHistory = inst.paymentHistory.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const totalDueFromHistory = (inst.interestAmount || 0) + (inst.principalAmount || 0);
+        if (totalPaidFromHistory >= totalDueFromHistory && totalDueFromHistory > 0) {
           return { ...inst, status: InstallmentStatus.PAID };
         }
       }
+
+      // Se está PARTIAL mas foi totalmente paga, atualizar para PAID
+      if (inst.status === InstallmentStatus.PARTIAL && isFullyPaid) {
+        return { ...inst, status: InstallmentStatus.PAID };
+      }
+
       return inst;
     }));
   }, []);
