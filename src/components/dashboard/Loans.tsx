@@ -29,14 +29,6 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const [installmentsCount, setInstallmentsCount] = useState(1);
   const [startDate, setStartDate] = useState(getTodayDateString());
   const [loanModel, setLoanModel] = useState<LoanModel>(LoanModel.PRICE);
-  const getDueDateFromStartDate = useCallback(
-    (s: string, count: number) => addMonths(s, Math.max(0, count - 1)),
-    []
-  );
-  const getStartDateFromDueDate = useCallback(
-    (d: string, count: number) => addMonths(d, -Math.max(0, count - 1)),
-    []
-  );
   const createDefaultPromissoryNote = (baseDate: string, defaultInterestRate: number = 0.0): PromissoryNote => ({
     capital: amount,
     interestRate: defaultInterestRate,
@@ -380,13 +372,13 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
 
   // Atualizar data de vencimento com a última parcela da simulação
   useEffect(() => {
-    if (schedulePreview.length > 0 && !editingLoan) {
+    if (schedulePreview.length > 0) {
       const lastInstallment = schedulePreview[schedulePreview.length - 1];
       if (lastInstallment && lastInstallment.dueDate) {
         setPromissoryNote(prev => ({ ...prev, dueDate: lastInstallment.dueDate }));
       }
     }
-  }, [schedulePreview, editingLoan]);
+  }, [schedulePreview]);
 
   useEffect(() => {
     if (!editingLoanId) return;
@@ -1355,7 +1347,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       onChange={e => {
                         const value = e.target.value;
                         setStartDate(value);
-                        setPromissoryNote(prev => ({ ...prev, issueDate: value, dueDate: prev.dueDate || value }));
+                        const nextDueDate = addMonths(value, Math.max(0, installmentsCount - 1));
+                        setPromissoryNote(prev => ({ ...prev, issueDate: value, dueDate: nextDueDate }));
                       }}
                     />
                 </div>
