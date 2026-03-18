@@ -129,6 +129,22 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   };
 
   const handlePromissoryChange = (field: keyof PromissoryNote, value: string | number | IndicationType) => {
+    // Campos de data devem recalcular a agenda (via `startDate`) para não ficarem "chumbados".
+    if (field === 'issueDate' && typeof value === 'string') {
+      const nextStart = value;
+      const nextDue = addMonths(nextStart, Math.max(0, installmentsCount - 1));
+      setStartDate(nextStart);
+      setPromissoryNote(prev => ({ ...prev, issueDate: nextStart, dueDate: nextDue }));
+      return;
+    }
+
+    if (field === 'dueDate' && typeof value === 'string') {
+      const nextStart = addMonths(value, -Math.max(0, installmentsCount - 1));
+      setStartDate(nextStart);
+      setPromissoryNote(prev => ({ ...prev, dueDate: value, issueDate: nextStart }));
+      return;
+    }
+
     setPromissoryNote(prev => ({ ...prev, [field]: value }));
   };
 
@@ -356,13 +372,13 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
 
   // Atualizar data de vencimento com a última parcela da simulação
   useEffect(() => {
-    if (schedulePreview.length > 0 && !editingLoan) {
+    if (schedulePreview.length > 0) {
       const lastInstallment = schedulePreview[schedulePreview.length - 1];
       if (lastInstallment && lastInstallment.dueDate) {
         setPromissoryNote(prev => ({ ...prev, dueDate: lastInstallment.dueDate }));
       }
     }
-  }, [schedulePreview, editingLoan]);
+  }, [schedulePreview]);
 
   useEffect(() => {
     if (!editingLoanId) return;
@@ -1331,7 +1347,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       onChange={e => {
                         const value = e.target.value;
                         setStartDate(value);
-                        setPromissoryNote(prev => ({ ...prev, issueDate: value, dueDate: prev.dueDate || value }));
+                        const nextDueDate = addMonths(value, Math.max(0, installmentsCount - 1));
+                        setPromissoryNote(prev => ({ ...prev, issueDate: value, dueDate: nextDueDate }));
                       }}
                     />
                 </div>
