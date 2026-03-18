@@ -367,17 +367,22 @@ export const InstallmentsView: React.FC = () => {
 
     const outstandingAmount = calculateOutstandingAmount();
 
+    // Arredondar valores para evitar problemas de precisão de ponto flutuante
+    const roundedPaymentAmount = Math.round(paymentAmount * 100) / 100;
+    const roundedOutstandingAmount = Math.round(outstandingAmount * 100) / 100;
+    const roundedPendingAmount = Math.round(pendingAmount * 100) / 100;
+
     // Para empréstimos "somente juros", permitir pagamento até o valor total em aberto (capital + juros)
     // Para outros modelos, validar que não exceda o valor pendente da parcela
     if (loan.model === LoanModel.INTEREST_ONLY) {
       // Permitir pagamento até o valor total em aberto do empréstimo
-      if (paymentAmount > outstandingAmount) {
+      if (roundedPaymentAmount > roundedOutstandingAmount) {
         alert(`O valor a receber não pode ser maior que o valor total em aberto do empréstimo (${formatCurrency(outstandingAmount)}).`);
         return;
       }
     } else {
       // Para outros modelos, validar que não exceda o valor pendente da parcela
-      if (paymentAmount > pendingAmount) {
+      if (roundedPaymentAmount > roundedPendingAmount) {
         alert(`O valor a receber não pode ser maior que o valor pendente da parcela (${formatCurrency(pendingAmount)}).`);
         return;
       }
@@ -385,9 +390,9 @@ export const InstallmentsView: React.FC = () => {
 
     // Se o pagamento for igual ou maior que o valor total em aberto, é um pagamento total
     // Nesse caso, não validar valor mínimo de juros
-    if (paymentAmount >= outstandingAmount && outstandingAmount > 0) {
+    if (roundedPaymentAmount >= roundedOutstandingAmount && roundedOutstandingAmount > 0) {
       // Pagamento total - permitir sem validação de mínimo
-      payInstallment(selectedInstallment.id, paymentAmount, paymentDate);
+      payInstallment(selectedInstallment.id, roundedPaymentAmount, paymentDate);
       setSelectedInstallment(null);
       setPaymentAmount(0);
       setPaymentDate(getTodayDateString());
@@ -1124,25 +1129,59 @@ export const InstallmentsView: React.FC = () => {
                   return (
                     <>
                       <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={paymentAmount > 0 ? paymentAmount.toFixed(2) : ''}
+                        type="text"
+                        inputMode="decimal"
+                        value={paymentAmount > 0 ? paymentAmount.toFixed(2).replace('.', ',') : ''}
                         onChange={e => {
                           const value = e.target.value;
                           if (value === '') {
                             setPaymentAmount(0);
-                          } else {
-                            const numValue = parseFloat(value);
-                            if (!isNaN(numValue)) {
-                              setPaymentAmount(numValue);
+                            return;
+                          }
+                          
+                          // Remover caracteres inválidos, mantendo apenas números, vírgula e ponto
+                          let cleaned = value.replace(/[^\d,.]/g, '');
+                          
+                          // Normalizar: aceitar vírgula ou ponto como separador decimal
+                          // Se houver múltiplos separadores, manter apenas o primeiro
+                          let hasDecimal = false;
+                          let normalized = '';
+                          for (let i = 0; i < cleaned.length; i++) {
+                            const char = cleaned[i];
+                            if (char === ',' || char === '.') {
+                              if (!hasDecimal) {
+                                normalized += ',';
+                                hasDecimal = true;
+                              }
+                            } else {
+                              normalized += char;
                             }
+                          }
+                          
+                          // Converter para número (substituir vírgula por ponto para parseFloat)
+                          const numValue = parseFloat(normalized.replace(',', '.'));
+                          if (!isNaN(numValue) && numValue >= 0 && isFinite(numValue)) {
+                            // Limitar a 2 casas decimais
+                            const roundedValue = Math.round(numValue * 100) / 100;
+                            setPaymentAmount(roundedValue);
                           }
                         }}
                         onBlur={e => {
-                          const value = parseFloat(e.target.value);
-                          if (!isNaN(value) && value > 0) {
-                            setPaymentAmount(Number(value.toFixed(2)));
+                          const value = e.target.value.trim();
+                          if (value === '' || value === ',' || value === '.') {
+                            setPaymentAmount(0);
+                          } else {
+                            // Normalizar e formatar corretamente
+                            const normalizedValue = value.replace(',', '.');
+                            const numValue = parseFloat(normalizedValue);
+                            
+                            if (!isNaN(numValue) && numValue >= 0) {
+                              const roundedValue = Math.round(numValue * 100) / 100;
+                              setPaymentAmount(roundedValue);
+                            } else {
+                              // Se inválido, resetar para 0
+                              setPaymentAmount(0);
+                            }
                           }
                         }}
                         className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
