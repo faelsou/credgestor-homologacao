@@ -29,6 +29,14 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const [installmentsCount, setInstallmentsCount] = useState(1);
   const [startDate, setStartDate] = useState(getTodayDateString());
   const [loanModel, setLoanModel] = useState<LoanModel>(LoanModel.PRICE);
+  const getDueDateFromStartDate = useCallback(
+    (s: string, count: number) => addMonths(s, Math.max(0, count - 1)),
+    []
+  );
+  const getStartDateFromDueDate = useCallback(
+    (d: string, count: number) => addMonths(d, -Math.max(0, count - 1)),
+    []
+  );
   const createDefaultPromissoryNote = (baseDate: string, defaultInterestRate: number = 0.0): PromissoryNote => ({
     capital: amount,
     interestRate: defaultInterestRate,
@@ -129,6 +137,22 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   };
 
   const handlePromissoryChange = (field: keyof PromissoryNote, value: string | number | IndicationType) => {
+    // Campos de data devem recalcular a agenda (via `startDate`) para não ficarem "chumbados".
+    if (field === 'issueDate' && typeof value === 'string') {
+      const nextStart = value;
+      const nextDue = addMonths(nextStart, Math.max(0, installmentsCount - 1));
+      setStartDate(nextStart);
+      setPromissoryNote(prev => ({ ...prev, issueDate: nextStart, dueDate: nextDue }));
+      return;
+    }
+
+    if (field === 'dueDate' && typeof value === 'string') {
+      const nextStart = addMonths(value, -Math.max(0, installmentsCount - 1));
+      setStartDate(nextStart);
+      setPromissoryNote(prev => ({ ...prev, dueDate: value, issueDate: nextStart }));
+      return;
+    }
+
     setPromissoryNote(prev => ({ ...prev, [field]: value }));
   };
 
