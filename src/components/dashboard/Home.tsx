@@ -90,9 +90,10 @@ export const DashboardHome: React.FC = () => {
     const receivable = parceladosFilteredData
       .filter(i => i.status !== InstallmentStatus.PAID)
       .reduce((acc, curr) => acc + (curr.amount - (curr.amountPaid || 0)), 0);
+    // Valor em atraso = soma do valor PENDENTE (não recebido) das parcelas em atraso
     const late = parceladosFilteredData
       .filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate))
-      .reduce((acc, curr) => acc + curr.amount, 0);
+      .reduce((acc, curr) => acc + (curr.amount - (curr.amountPaid || 0)), 0);
     const lateCount = parceladosFilteredData.filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate)).length;
     const activeCount = parceladosLoans.filter(l => l.status === LoanStatus.ACTIVE).length;
     
@@ -110,8 +111,8 @@ export const DashboardHome: React.FC = () => {
       .filter(l => l.status === LoanStatus.ACTIVE)
       .reduce((acc, curr) => acc + curr.amount, 0);
     
-    // Valor total: Lucro + Parcelas + Capital
-    const valorTotal = interest + total + capitalEmprestado;
+    // Total do período = valor das parcelas no período (evita dupla contagem: em PRICE as parcelas já incluem capital + juros)
+    const valorTotal = total;
 
     return { total, received, receivable, late, lateCount, activeCount, capital, interest, capitalEmprestado, valorTotal };
   }, [parceladosFilteredData, parceladosLoans]);
@@ -125,9 +126,10 @@ export const DashboardHome: React.FC = () => {
     const receivable = jurosFilteredData
       .filter(i => i.status !== InstallmentStatus.PAID)
       .reduce((acc, curr) => acc + (curr.amount - (curr.amountPaid || 0)), 0);
+    // Valor em atraso = soma do valor PENDENTE (não recebido) das parcelas em atraso
     const late = jurosFilteredData
       .filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate))
-      .reduce((acc, curr) => acc + curr.amount, 0);
+      .reduce((acc, curr) => acc + (curr.amount - (curr.amountPaid || 0)), 0);
     const lateCount = jurosFilteredData.filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate)).length;
     const activeCount = jurosLoans.filter(l => l.status === LoanStatus.ACTIVE).length;
     
@@ -445,7 +447,7 @@ export const DashboardHome: React.FC = () => {
                 bg="bg-emerald-50"
               />
               <StatCard
-                title="Valor lucro + Parcelas + Capital"
+                title="Total do período (valor das parcelas)"
                 value={formatCurrency(parceladosStats.valorTotal)}
                 icon={<DollarSign className="text-emerald-600" size={20} />}
                 bg="bg-emerald-100"
