@@ -1563,7 +1563,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Vencimento</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Vencimento | Data da ultima parcela</label>
                     <input
                       required
                       type="date"

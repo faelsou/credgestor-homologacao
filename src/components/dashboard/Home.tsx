@@ -16,25 +16,11 @@ export const DashboardHome: React.FC = () => {
   const [jurosStartDate, setJurosStartDate] = useState<string>('');
   const [jurosEndDate, setJurosEndDate] = useState<string>('');
 
-  // Período padrão aplicado nos cards (inputs permanecem vazios no login)
-  const getDefaultAppliedDates = (): { start: string; end: string } => {
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
-
-    const start = new Date();
-    start.setDate(start.getDate() - 7);
-    start.setHours(0, 0, 0, 0);
-
-    return { start: start.toISOString().split('T')[0], end: end.toISOString().split('T')[0] };
-  };
-
-  const defaultAppliedDates = getDefaultAppliedDates();
-
-  // Datas aplicadas no filtro (atualiza quando o usuário informa as duas datas)
-  const [parceladosAppliedStartDate, setParceladosAppliedStartDate] = useState<string>(defaultAppliedDates.start);
-  const [parceladosAppliedEndDate, setParceladosAppliedEndDate] = useState<string>(defaultAppliedDates.end);
-  const [jurosAppliedStartDate, setJurosAppliedStartDate] = useState<string>(defaultAppliedDates.start);
-  const [jurosAppliedEndDate, setJurosAppliedEndDate] = useState<string>(defaultAppliedDates.end);
+  // Datas aplicadas no filtro. Vazias = exibe todos os dados desde o primeiro empréstimo; preenchidas = filtra pelo período.
+  const [parceladosAppliedStartDate, setParceladosAppliedStartDate] = useState<string>('');
+  const [parceladosAppliedEndDate, setParceladosAppliedEndDate] = useState<string>('');
+  const [jurosAppliedStartDate, setJurosAppliedStartDate] = useState<string>('');
+  const [jurosAppliedEndDate, setJurosAppliedEndDate] = useState<string>('');
 
   // Separar empréstimos parcelados e somente juros
   const parceladosLoans = useMemo(() => 
@@ -329,15 +315,15 @@ export const DashboardHome: React.FC = () => {
   const handleClearParcelados = () => {
     setParceladosStartDate('');
     setParceladosEndDate('');
-    setParceladosAppliedStartDate(defaultAppliedDates.start);
-    setParceladosAppliedEndDate(defaultAppliedDates.end);
+    setParceladosAppliedStartDate('');
+    setParceladosAppliedEndDate('');
   };
 
   const handleClearJuros = () => {
     setJurosStartDate('');
     setJurosEndDate('');
-    setJurosAppliedStartDate(defaultAppliedDates.start);
-    setJurosAppliedEndDate(defaultAppliedDates.end);
+    setJurosAppliedStartDate('');
+    setJurosAppliedEndDate('');
   };
 
   const parceladosClearDisabled = !parceladosStartDate && !parceladosEndDate;
@@ -403,10 +389,10 @@ export const DashboardHome: React.FC = () => {
             </div>
           </div>
 
-          {/* Valor Principal */}
+          {/* Valor Principal: Lucro + Parcelas + Capital */}
           <div>
             <p className="text-xs uppercase font-semibold text-slate-500 mb-1">Total do Período</p>
-            <p className="text-3xl font-bold text-slate-800">{formatCurrency(parceladosStats.total)}</p>
+            <p className="text-3xl font-bold text-slate-800">{formatCurrency(parceladosStats.valorTotal)}</p>
             <p className="text-sm text-slate-500 mt-1">
               {parceladosStats.received > 0 && (
                 <span className="text-emerald-600">+{formatCurrency(parceladosStats.received)} recebido</span>
@@ -581,10 +567,10 @@ export const DashboardHome: React.FC = () => {
             </div>
           </div>
 
-          {/* Valor Principal */}
+          {/* Valor Principal: Juros + Capital */}
           <div>
             <p className="text-xs uppercase font-semibold text-slate-500 mb-1">Total do Período</p>
-            <p className="text-3xl font-bold text-slate-800">{formatCurrency(jurosStats.total)}</p>
+            <p className="text-3xl font-bold text-slate-800">{formatCurrency(jurosStats.jurosMaisCapital)}</p>
             <p className="text-sm text-slate-500 mt-1">
               {jurosStats.received > 0 && (
                 <span className="text-emerald-600">+{formatCurrency(jurosStats.received)} recebido</span>
