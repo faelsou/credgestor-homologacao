@@ -20,6 +20,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const [promiseLateFee, setPromiseLateFee] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<LoanStatus | 'ALL'>('ALL');
+  const [modelFilter, setModelFilter] = useState<LoanModel | 'ALL'>('ALL');
   
   // Form State
   const [selectedClientId, setSelectedClientId] = useState('');
@@ -331,9 +332,14 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     if (statusFilter !== 'ALL') {
       filtered = filtered.filter(loan => loan.status === statusFilter);
     }
+
+    // Filtro por modelo
+    if (modelFilter !== 'ALL') {
+      filtered = filtered.filter(loan => loan.model === modelFilter);
+    }
     
     return filtered;
-  }, [loans, clients, searchTerm, statusFilter]);
+  }, [loans, clients, searchTerm, statusFilter, modelFilter]);
 
   const canAdd = user?.role === UserRole.ADMIN;
 
@@ -1039,7 +1045,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
 
       {/* Filtros: Busca e Status */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input
@@ -1060,6 +1066,17 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
               <option value={LoanStatus.ACTIVE}>Em Aberto</option>
               <option value={LoanStatus.PAID}>Finalizado</option>
               <option value={LoanStatus.DEFAULTED}>Em Atraso</option>
+            </select>
+          </div>
+          <div>
+            <select
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:border-emerald-500 transition-colors text-slate-700"
+              value={modelFilter}
+              onChange={e => setModelFilter(e.target.value as LoanModel | 'ALL')}
+            >
+              <option value="ALL">Todos os modelos</option>
+              <option value={LoanModel.PRICE}>Price</option>
+              <option value={LoanModel.INTEREST_ONLY}>Somente Juros</option>
             </select>
           </div>
         </div>
@@ -1199,8 +1216,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
             })}
             {filteredLoans.length === 0 && (
                 <tr>
-                    <td colSpan={canAdd ? 8 : 7} className="p-8 text-center text-slate-400">
-                      {searchTerm ? 'Nenhum empréstimo encontrado com esse termo.' : 'Nenhum empréstimo cadastrado.'}
+                    <td colSpan={canAdd ? 9 : 8} className="p-8 text-center text-slate-400">
+                      {searchTerm || statusFilter !== 'ALL' || modelFilter !== 'ALL'
+                        ? 'Nenhum empréstimo encontrado com os filtros informados.'
+                        : 'Nenhum empréstimo cadastrado.'}
                     </td>
                 </tr>
             )}
@@ -1565,7 +1584,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Vencimento | Data da ultima parcela</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Data última parcela</label>
                     <input
                       required
                       type="date"
