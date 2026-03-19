@@ -90,11 +90,13 @@ export const DashboardHome: React.FC = () => {
     const receivable = parceladosFilteredData
       .filter(i => i.status !== InstallmentStatus.PAID)
       .reduce((acc, curr) => acc + (curr.amount - (curr.amountPaid || 0)), 0);
-    // Valor em atraso = soma do valor PENDENTE (não recebido) das parcelas em atraso
-    const late = parceladosFilteredData
-      .filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate))
-      .reduce((acc, curr) => acc + (curr.amount - (curr.amountPaid || 0)), 0);
-    const lateCount = parceladosFilteredData.filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate)).length;
+    // Valor em atraso = soma do valor PENDENTE (não recebido) das parcelas em atraso (mín. 0 para evitar valor negativo)
+    const lateInstallments = parceladosFilteredData.filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate));
+    const late = lateInstallments.reduce(
+      (acc, curr) => acc + Math.max(0, curr.amount - (curr.amountPaid || 0)),
+      0
+    );
+    const lateCount = lateInstallments.length;
     const activeCount = parceladosLoans.filter(l => l.status === LoanStatus.ACTIVE).length;
     
     // Capital das parcelas (amortização)
@@ -126,11 +128,13 @@ export const DashboardHome: React.FC = () => {
     const receivable = jurosFilteredData
       .filter(i => i.status !== InstallmentStatus.PAID)
       .reduce((acc, curr) => acc + (curr.amount - (curr.amountPaid || 0)), 0);
-    // Valor em atraso = soma do valor PENDENTE (não recebido) das parcelas em atraso
-    const late = jurosFilteredData
-      .filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate))
-      .reduce((acc, curr) => acc + (curr.amount - (curr.amountPaid || 0)), 0);
-    const lateCount = jurosFilteredData.filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate)).length;
+    // Valor em atraso = soma do valor PENDENTE (não recebido) das parcelas em atraso (mín. 0 para evitar valor negativo)
+    const lateInstallments = jurosFilteredData.filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate));
+    const late = lateInstallments.reduce(
+      (acc, curr) => acc + Math.max(0, curr.amount - (curr.amountPaid || 0)),
+      0
+    );
+    const lateCount = lateInstallments.length;
     const activeCount = jurosLoans.filter(l => l.status === LoanStatus.ACTIVE).length;
     
     // Valor dos juros
@@ -486,7 +490,7 @@ export const DashboardHome: React.FC = () => {
             <StatCard
               title="Em Atraso"
               value={formatCurrency(parceladosStats.late)}
-              subtext={`${parceladosStats.lateCount} parcelas`}
+              subtext={`${parceladosStats.lateCount} ${parceladosStats.lateCount === 1 ? 'parcela' : 'parcelas'}`}
               icon={<AlertTriangle className="text-red-600" size={20} />}
               bg="bg-red-50"
               onClick={() => {
@@ -659,7 +663,7 @@ export const DashboardHome: React.FC = () => {
             <StatCard
               title="Em Atraso"
               value={formatCurrency(jurosStats.late)}
-              subtext={`${jurosStats.lateCount} parcelas`}
+              subtext={`${jurosStats.lateCount} ${jurosStats.lateCount === 1 ? 'parcela' : 'parcelas'}`}
               icon={<AlertTriangle className="text-red-600" size={20} />}
               bg="bg-red-50"
               onClick={() => {
