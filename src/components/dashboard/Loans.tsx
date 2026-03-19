@@ -28,11 +28,12 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const [interestRateDisplay, setInterestRateDisplay] = useState('0,0'); // Valor exibido no campo
   const [installmentsCount, setInstallmentsCount] = useState(1);
   // Emissão = hoje; 1ª parcela e vencimento = 30 dias após a emissão (ajustável manualmente)
+  const DATE_OFFSET_DAYS = 30;
   const emissionDefault = getTodayDateString();
   const firstInstallmentDefault = (() => {
     const [y, m, d] = emissionDefault.split('-').map(Number);
     const d0 = new Date(y, m - 1, d);
-    d0.setDate(d0.getDate() + 30);
+    d0.setDate(d0.getDate() + DATE_OFFSET_DAYS);
     return `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
   })();
   const [startDate, setStartDate] = useState(firstInstallmentDefault);
@@ -151,10 +152,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const handlePromissoryChange = (field: keyof PromissoryNote, value: string | number | IndicationType) => {
     // Campos de data devem recalcular a agenda (via `startDate`) para não ficarem "chumbados".
     if (field === 'issueDate' && typeof value === 'string') {
-      const nextStart = value;
+      const nextStart = addDays(value, DATE_OFFSET_DAYS);
       const nextDue = addMonths(nextStart, Math.max(0, installmentsCount - 1));
       setStartDate(nextStart);
-      setPromissoryNote(prev => ({ ...prev, issueDate: nextStart, dueDate: nextDue }));
+      setPromissoryNote(prev => ({ ...prev, issueDate: value, dueDate: nextDue }));
       return;
     }
 
@@ -191,7 +192,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setInstallmentsCount(1);
     setLoanModel(LoanModel.PRICE);
     const today = getTodayDateString();
-    const firstInstallment = addDays(today, 30);
+    const firstInstallment = addDays(today, DATE_OFFSET_DAYS);
     setStartDate(firstInstallment);
     setPromissoryNote(createDefaultPromissoryNote(today, firstInstallment, 0.0));
     setEditingLoan(null);
@@ -1368,8 +1369,9 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       onChange={e => {
                         const value = e.target.value;
                         setStartDate(value);
+                        const nextIssueDate = addDays(value, -DATE_OFFSET_DAYS);
                         const nextDueDate = addMonths(value, Math.max(0, installmentsCount - 1));
-                        setPromissoryNote(prev => ({ ...prev, issueDate: value, dueDate: nextDueDate }));
+                        setPromissoryNote(prev => ({ ...prev, issueDate: nextIssueDate, dueDate: nextDueDate }));
                       }}
                     />
                 </div>
