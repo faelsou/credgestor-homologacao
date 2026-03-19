@@ -90,12 +90,12 @@ export const DashboardHome: React.FC = () => {
     const receivable = parceladosFilteredData
       .filter(i => i.status !== InstallmentStatus.PAID)
       .reduce((acc, curr) => acc + (curr.amount - (curr.amountPaid || 0)), 0);
-    // Valor em atraso = soma do valor PENDENTE (não recebido) das parcelas em atraso (mín. 0 para evitar valor negativo)
-    const lateInstallments = parceladosFilteredData.filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate));
-    const late = lateInstallments.reduce(
-      (acc, curr) => acc + Math.max(0, curr.amount - (curr.amountPaid || 0)),
-      0
+    // Em atraso: apenas parcelas vencidas com valor pendente > 0 (do modelo parcelado)
+    const pending = (i: typeof parceladosFilteredData[0]) => i.amount - (i.amountPaid || 0);
+    const lateInstallments = parceladosFilteredData.filter(
+      i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate) && pending(i) > 0
     );
+    const late = lateInstallments.reduce((acc, curr) => acc + pending(curr), 0);
     const lateCount = lateInstallments.length;
     const activeCount = parceladosLoans.filter(l => l.status === LoanStatus.ACTIVE).length;
     
@@ -128,12 +128,12 @@ export const DashboardHome: React.FC = () => {
     const receivable = jurosFilteredData
       .filter(i => i.status !== InstallmentStatus.PAID)
       .reduce((acc, curr) => acc + (curr.amount - (curr.amountPaid || 0)), 0);
-    // Valor em atraso = soma do valor PENDENTE (não recebido) das parcelas em atraso (mín. 0 para evitar valor negativo)
-    const lateInstallments = jurosFilteredData.filter(i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate));
-    const late = lateInstallments.reduce(
-      (acc, curr) => acc + Math.max(0, curr.amount - (curr.amountPaid || 0)),
-      0
+    // Em atraso: apenas parcelas vencidas com valor pendente > 0 (do modelo somente juros)
+    const pending = (i: typeof jurosFilteredData[0]) => i.amount - (i.amountPaid || 0);
+    const lateInstallments = jurosFilteredData.filter(
+      i => i.status !== InstallmentStatus.PAID && isLate(i.dueDate) && pending(i) > 0
     );
+    const late = lateInstallments.reduce((acc, curr) => acc + pending(curr), 0);
     const lateCount = lateInstallments.length;
     const activeCount = jurosLoans.filter(l => l.status === LoanStatus.ACTIVE).length;
     
