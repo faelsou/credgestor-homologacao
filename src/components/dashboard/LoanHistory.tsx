@@ -127,6 +127,11 @@ export const LoanHistoryView: React.FC = () => {
     }
   };
 
+  const loanModelLabel = (model?: LoanModel) => {
+    if (model === LoanModel.INTEREST_ONLY) return 'Somente Juros';
+    return 'Price';
+  };
+
   const getInterestAmount = (inst: Installment) => {
     const interest = inst.interestAmount ?? Math.max(0, inst.amount - (inst.principalAmount ?? inst.amount));
     return interest > 0 ? interest : inst.amount;
@@ -288,6 +293,7 @@ export const LoanHistoryView: React.FC = () => {
                 <th className="p-2 sm:p-3">Principal</th>
                 <th className="p-2 sm:p-3">Total</th>
                 <th className="p-2 sm:p-3">Valor em Aberto</th>
+                <th className="p-2 sm:p-3">Modelo</th>
                 <th className="p-2 sm:p-3">Status</th>
                 <th className="p-2 sm:p-3 text-right">Ações</th>
               </tr>
@@ -319,6 +325,7 @@ export const LoanHistoryView: React.FC = () => {
                     <td className="p-2 sm:p-3 font-medium text-xs sm:text-sm">{formatCurrency(loan.amount)}</td>
                     <td className="p-2 sm:p-3 font-semibold text-emerald-600 text-xs sm:text-sm">{formatCurrency(loan.totalAmount)}</td>
                     <td className="p-2 sm:p-3 font-bold text-amber-600 text-xs sm:text-sm">{formatCurrency(outstandingAmount)}</td>
+                    <td className="p-2 sm:p-3 text-xs sm:text-sm text-slate-700">{loanModelLabel(loan.model)}</td>
                     <td className="p-2 sm:p-3">{statusBadge(correctStatus)}</td>
                     <td className="p-2 sm:p-3 text-right">
                       <div className="flex items-center justify-end gap-1 sm:gap-2 flex-wrap">
@@ -356,7 +363,7 @@ export const LoanHistoryView: React.FC = () => {
               })}
               {filteredLoans.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="p-4 sm:p-6 text-center text-slate-500 text-xs sm:text-sm">Nenhum empréstimo encontrado para os filtros informados.</td>
+                  <td colSpan={8} className="p-4 sm:p-6 text-center text-slate-500 text-xs sm:text-sm">Nenhum empréstimo encontrado para os filtros informados.</td>
                 </tr>
               )}
             </tbody>
