@@ -1,4 +1,4 @@
-import React, { useContext, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { TrendingUp, TrendingDown, Users, AlertTriangle, Calendar, DownloadCloud, FileSpreadsheet, DollarSign, Percent } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
 import { AppContext } from '@/pages/App';
@@ -8,29 +8,33 @@ import { DateInput } from '@/components/DateInput';
 
 export const DashboardHome: React.FC = () => {
   const { clients, installments, loans, setView } = useContext(AppContext);
-  
-  // Inicializar datas para últimos 7 dias
-  const getInitialDates = (): { start: string; end: string } => {
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
-    const end = today.toISOString().split('T')[0];
-    
+
+  // Inputs do filtro de data (não ficam pré-preenchidos no login)
+  const [parceladosStartDate, setParceladosStartDate] = useState<string>('');
+  const [parceladosEndDate, setParceladosEndDate] = useState<string>('');
+
+  const [jurosStartDate, setJurosStartDate] = useState<string>('');
+  const [jurosEndDate, setJurosEndDate] = useState<string>('');
+
+  // Período padrão aplicado nos cards (inputs permanecem vazios no login)
+  const getDefaultAppliedDates = (): { start: string; end: string } => {
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+
     const start = new Date();
     start.setDate(start.getDate() - 7);
     start.setHours(0, 0, 0, 0);
-    
-    return { start: start.toISOString().split('T')[0], end };
+
+    return { start: start.toISOString().split('T')[0], end: end.toISOString().split('T')[0] };
   };
 
-  const initialDates = getInitialDates();
-  
-  // Estados para filtros de data - Dashboard Parcelados (apenas datas manuais)
-  const [parceladosStartDate, setParceladosStartDate] = useState<string>(initialDates.start);
-  const [parceladosEndDate, setParceladosEndDate] = useState<string>(initialDates.end);
-  
-  // Estados para filtros de data - Dashboard Somente Juros (apenas datas manuais)
-  const [jurosStartDate, setJurosStartDate] = useState<string>(initialDates.start);
-  const [jurosEndDate, setJurosEndDate] = useState<string>(initialDates.end);
+  const defaultAppliedDates = getDefaultAppliedDates();
+
+  // Datas aplicadas no filtro (atualiza quando o usuário informa as duas datas)
+  const [parceladosAppliedStartDate, setParceladosAppliedStartDate] = useState<string>(defaultAppliedDates.start);
+  const [parceladosAppliedEndDate, setParceladosAppliedEndDate] = useState<string>(defaultAppliedDates.end);
+  const [jurosAppliedStartDate, setJurosAppliedStartDate] = useState<string>(defaultAppliedDates.start);
+  const [jurosAppliedEndDate, setJurosAppliedEndDate] = useState<string>(defaultAppliedDates.end);
 
   // Separar empréstimos parcelados e somente juros
   const parceladosLoans = useMemo(() => 
@@ -55,39 +59,41 @@ export const DashboardHome: React.FC = () => {
 
   // Aplicar filtros de data para parcelados (apenas datas manuais)
   const parceladosFilteredData = useMemo(() => {
-    // Usar apenas datas manuais
-    if (!parceladosStartDate || !parceladosEndDate) {
-      return [];
-    }
-    
-    // Normalizar datas de início e fim para comparação
-    const startNormalized = normalizeDateString(parceladosStartDate);
-    const endNormalized = normalizeDateString(parceladosEndDate);
-
     const parceladosLoanIds = new Set(parceladosLoans.map(l => l.id));
+
+    // Sem datas aplicadas: não filtra por período.
+    if (!parceladosAppliedStartDate || !parceladosAppliedEndDate) {
+      return installments.filter(inst => parceladosLoanIds.has(inst.loanId));
+    }
+
+    // Normalizar datas de início e fim para comparação
+    const startNormalized = normalizeDateString(parceladosAppliedStartDate);
+    const endNormalized = normalizeDateString(parceladosAppliedEndDate);
+
     return installments.filter(inst => {
       const dueNormalized = normalizeDateString(inst.dueDate);
       return parceladosLoanIds.has(inst.loanId) && dueNormalized >= startNormalized && dueNormalized <= endNormalized;
     });
-  }, [installments, parceladosLoans, parceladosStartDate, parceladosEndDate]);
+  }, [installments, parceladosLoans, parceladosAppliedStartDate, parceladosAppliedEndDate]);
 
   // Aplicar filtros de data para somente juros (apenas datas manuais)
   const jurosFilteredData = useMemo(() => {
-    // Usar apenas datas manuais
-    if (!jurosStartDate || !jurosEndDate) {
-      return [];
-    }
-    
-    // Normalizar datas de início e fim para comparação
-    const startNormalized = normalizeDateString(jurosStartDate);
-    const endNormalized = normalizeDateString(jurosEndDate);
-
     const jurosLoanIds = new Set(jurosLoans.map(l => l.id));
+
+    // Sem datas aplicadas: não filtra por período.
+    if (!jurosAppliedStartDate || !jurosAppliedEndDate) {
+      return installments.filter(inst => jurosLoanIds.has(inst.loanId));
+    }
+
+    // Normalizar datas de início e fim para comparação
+    const startNormalized = normalizeDateString(jurosAppliedStartDate);
+    const endNormalized = normalizeDateString(jurosAppliedEndDate);
+
     return installments.filter(inst => {
       const dueNormalized = normalizeDateString(inst.dueDate);
       return jurosLoanIds.has(inst.loanId) && dueNormalized >= startNormalized && dueNormalized <= endNormalized;
     });
-  }, [installments, jurosLoans, jurosStartDate, jurosEndDate]);
+  }, [installments, jurosLoans, jurosAppliedStartDate, jurosAppliedEndDate]);
 
   // Estatísticas para empréstimos parcelados
   const parceladosStats = useMemo(() => {
@@ -255,7 +261,9 @@ export const DashboardHome: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `emprestimos_parcelados_${parceladosStartDate}_${parceladosEndDate}_${new Date().toISOString().split('T')[0]}.csv`;
+    const startSlug = parceladosAppliedStartDate || 'all';
+    const endSlug = parceladosAppliedEndDate || 'all';
+    link.download = `emprestimos_parcelados_${startSlug}_${endSlug}_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -295,10 +303,45 @@ export const DashboardHome: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `emprestimos_somente_juros_${jurosStartDate}_${jurosEndDate}_${new Date().toISOString().split('T')[0]}.csv`;
+    const startSlug = jurosAppliedStartDate || 'all';
+    const endSlug = jurosAppliedEndDate || 'all';
+    link.download = `emprestimos_somente_juros_${startSlug}_${endSlug}_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
+
+  // Quando as duas datas forem informadas, aplica automaticamente no dashboard.
+  // Se o usuário preencher só uma data, mantém o período aplicado anterior.
+  useEffect(() => {
+    if (parceladosStartDate && parceladosEndDate) {
+      setParceladosAppliedStartDate(parceladosStartDate);
+      setParceladosAppliedEndDate(parceladosEndDate);
+    }
+  }, [parceladosStartDate, parceladosEndDate]);
+
+  useEffect(() => {
+    if (jurosStartDate && jurosEndDate) {
+      setJurosAppliedStartDate(jurosStartDate);
+      setJurosAppliedEndDate(jurosEndDate);
+    }
+  }, [jurosStartDate, jurosEndDate]);
+
+  const handleClearParcelados = () => {
+    setParceladosStartDate('');
+    setParceladosEndDate('');
+    setParceladosAppliedStartDate(defaultAppliedDates.start);
+    setParceladosAppliedEndDate(defaultAppliedDates.end);
+  };
+
+  const handleClearJuros = () => {
+    setJurosStartDate('');
+    setJurosEndDate('');
+    setJurosAppliedStartDate(defaultAppliedDates.start);
+    setJurosAppliedEndDate(defaultAppliedDates.end);
+  };
+
+  const parceladosClearDisabled = !parceladosStartDate && !parceladosEndDate;
+  const jurosClearDisabled = !jurosStartDate && !jurosEndDate;
 
   // Componente de filtro de data (apenas inserção manual)
   const DateFilter = ({ 
@@ -380,6 +423,17 @@ export const DashboardHome: React.FC = () => {
               endDate={parceladosEndDate}
               setEndDate={setParceladosEndDate}
             />
+            <button
+              onClick={handleClearParcelados}
+              disabled={parceladosClearDisabled}
+              className={`w-full px-4 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition shadow-sm ${
+                parceladosClearDisabled
+                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              Limpar filtro
+            </button>
           </div>
 
           {/* Informações do Empréstimo Price */}
@@ -421,8 +475,10 @@ export const DashboardHome: React.FC = () => {
               icon={<TrendingUp className="text-emerald-600" size={20} />}
               bg="bg-emerald-50"
               onClick={() => {
-                if (parceladosStartDate && parceladosEndDate) {
-                  setView('installments', 'PAID', { start: parceladosStartDate, end: parceladosEndDate });
+                if (parceladosAppliedStartDate && parceladosAppliedEndDate) {
+                  setView('installments', 'PAID', { start: parceladosAppliedStartDate, end: parceladosAppliedEndDate });
+                } else {
+                  setView('installments', 'PAID');
                 }
               }}
             />
@@ -432,8 +488,10 @@ export const DashboardHome: React.FC = () => {
               icon={<TrendingDown className="text-blue-600" size={20} />}
               bg="bg-blue-50"
               onClick={() => {
-                if (parceladosStartDate && parceladosEndDate) {
-                  setView('installments', 'PENDING', { start: parceladosStartDate, end: parceladosEndDate });
+                if (parceladosAppliedStartDate && parceladosAppliedEndDate) {
+                  setView('installments', 'PENDING', { start: parceladosAppliedStartDate, end: parceladosAppliedEndDate });
+                } else {
+                  setView('installments', 'PENDING');
                 }
               }}
             />
@@ -444,8 +502,10 @@ export const DashboardHome: React.FC = () => {
               icon={<AlertTriangle className="text-red-600" size={20} />}
               bg="bg-red-50"
               onClick={() => {
-                if (parceladosStartDate && parceladosEndDate) {
-                  setView('installments', 'LATE', { start: parceladosStartDate, end: parceladosEndDate });
+                if (parceladosAppliedStartDate && parceladosAppliedEndDate) {
+                  setView('installments', 'LATE', { start: parceladosAppliedStartDate, end: parceladosAppliedEndDate });
+                } else {
+                  setView('installments', 'LATE');
                 }
               }}
             />
@@ -541,6 +601,17 @@ export const DashboardHome: React.FC = () => {
               endDate={jurosEndDate}
               setEndDate={setJurosEndDate}
             />
+            <button
+              onClick={handleClearJuros}
+              disabled={jurosClearDisabled}
+              className={`w-full px-4 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition shadow-sm ${
+                jurosClearDisabled
+                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              Limpar filtro
+            </button>
           </div>
 
           {/* Informações do Empréstimo Somente Juros */}
@@ -577,8 +648,10 @@ export const DashboardHome: React.FC = () => {
               icon={<TrendingUp className="text-emerald-600" size={20} />}
               bg="bg-emerald-50"
               onClick={() => {
-                if (jurosStartDate && jurosEndDate) {
-                  setView('installments', 'PAID', { start: jurosStartDate, end: jurosEndDate });
+                if (jurosAppliedStartDate && jurosAppliedEndDate) {
+                  setView('installments', 'PAID', { start: jurosAppliedStartDate, end: jurosAppliedEndDate });
+                } else {
+                  setView('installments', 'PAID');
                 }
               }}
             />
@@ -588,8 +661,10 @@ export const DashboardHome: React.FC = () => {
               icon={<TrendingDown className="text-blue-600" size={20} />}
               bg="bg-blue-50"
               onClick={() => {
-                if (jurosStartDate && jurosEndDate) {
-                  setView('installments', 'PENDING', { start: jurosStartDate, end: jurosEndDate });
+                if (jurosAppliedStartDate && jurosAppliedEndDate) {
+                  setView('installments', 'PENDING', { start: jurosAppliedStartDate, end: jurosAppliedEndDate });
+                } else {
+                  setView('installments', 'PENDING');
                 }
               }}
             />
@@ -600,8 +675,10 @@ export const DashboardHome: React.FC = () => {
               icon={<AlertTriangle className="text-red-600" size={20} />}
               bg="bg-red-50"
               onClick={() => {
-                if (jurosStartDate && jurosEndDate) {
-                  setView('installments', 'LATE', { start: jurosStartDate, end: jurosEndDate });
+                if (jurosAppliedStartDate && jurosAppliedEndDate) {
+                  setView('installments', 'LATE', { start: jurosAppliedStartDate, end: jurosAppliedEndDate });
+                } else {
+                  setView('installments', 'LATE');
                 }
               }}
             />
