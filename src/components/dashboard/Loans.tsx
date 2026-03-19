@@ -27,18 +27,28 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const [interestRate, setInterestRate] = useState(0.0); // 0.0% - deve ser preenchido manualmente
   const [interestRateDisplay, setInterestRateDisplay] = useState('0,0'); // Valor exibido no campo
   const [installmentsCount, setInstallmentsCount] = useState(1);
-  const [startDate, setStartDate] = useState(getTodayDateString());
+  // Emissão = hoje; 1ª parcela e vencimento = 30 dias após a emissão (ajustável manualmente)
+  const emissionDefault = getTodayDateString();
+  const firstInstallmentDefault = (() => {
+    const [y, m, d] = emissionDefault.split('-').map(Number);
+    const d0 = new Date(y, m - 1, d);
+    d0.setDate(d0.getDate() + 30);
+    return `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
+  })();
+  const [startDate, setStartDate] = useState(firstInstallmentDefault);
   const [loanModel, setLoanModel] = useState<LoanModel>(LoanModel.PRICE);
-  const createDefaultPromissoryNote = (baseDate: string, defaultInterestRate: number = 0.0): PromissoryNote => ({
+  const createDefaultPromissoryNote = (issueDate: string, dueDate: string, defaultInterestRate: number = 0.0): PromissoryNote => ({
     capital: amount,
     interestRate: defaultInterestRate,
-    issueDate: baseDate,
-    dueDate: baseDate,
+    issueDate,
+    dueDate,
     indication: 'Sem Garantia',
     numberHash: '', // Será gerado automaticamente quando o cliente for selecionado
     observation: ''
   });
-  const [promissoryNote, setPromissoryNote] = useState<PromissoryNote>(createDefaultPromissoryNote(startDate, 0.0));
+  const [promissoryNote, setPromissoryNote] = useState<PromissoryNote>(() =>
+    createDefaultPromissoryNote(emissionDefault, firstInstallmentDefault, 0.0)
+  );
 
   const addMonths = (dateString: string, months: number) => {
     // Parse a data no formato YYYY-MM-DD evitando problemas de fuso horário
@@ -50,6 +60,16 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     const monthStr = String(newDate.getMonth() + 1).padStart(2, '0');
     const dayStr = String(newDate.getDate()).padStart(2, '0');
     return `${yearStr}-${monthStr}-${dayStr}`;
+  };
+
+  const addDays = (dateString: string, days: number) => {
+    const [year, month, day] = dateString.split('-').map(Number);
+    const baseDate = new Date(year, month - 1, day);
+    baseDate.setDate(baseDate.getDate() + days);
+    const y = baseDate.getFullYear();
+    const m = String(baseDate.getMonth() + 1).padStart(2, '0');
+    const d = String(baseDate.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   };
 
   const calculatePriceInstallment = (principal: number, rateDecimal: number, periods: number) => {
@@ -171,8 +191,9 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setInstallmentsCount(1);
     setLoanModel(LoanModel.PRICE);
     const today = getTodayDateString();
-    setStartDate(today);
-    setPromissoryNote(createDefaultPromissoryNote(today, 0.0));
+    const firstInstallment = addDays(today, 30);
+    setStartDate(firstInstallment);
+    setPromissoryNote(createDefaultPromissoryNote(today, firstInstallment, 0.0));
     setEditingLoan(null);
   };
 
@@ -325,7 +346,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setInterestRateDisplay(validInterestRate.toString().replace('.', ','));
     setInstallmentsCount(loan.installmentsCount);
     setStartDate(loan.startDate);
-    const promissory = loan.promissoryNote || createDefaultPromissoryNote(loan.startDate);
+    const promissory = loan.promissoryNote || createDefaultPromissoryNote(loan.startDate, loan.startDate, 0.0);
     // Garantir que o interestRate da nota promissória também seja válido
     if (promissory.interestRate === null || promissory.interestRate === undefined) {
       promissory.interestRate = validInterestRate;
