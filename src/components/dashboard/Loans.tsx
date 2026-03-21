@@ -28,13 +28,16 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const [interestRate, setInterestRate] = useState(0.0); // 0.0% - deve ser preenchido manualmente
   const [interestRateDisplay, setInterestRateDisplay] = useState('0,0'); // Valor exibido no campo
   const [installmentsCount, setInstallmentsCount] = useState(1);
-  // Emissão = hoje; 1ª parcela e vencimento = 30 dias após a emissão (ajustável manualmente)
-  const DATE_OFFSET_DAYS = 30;
+  // Emissão e 1ª parcela devem manter o mesmo dia base, mudando apenas o mês.
+  const DATE_OFFSET_MONTHS = 1;
   const emissionDefault = getTodayDateString();
   const firstInstallmentDefault = (() => {
     const [y, m, d] = emissionDefault.split('-').map(Number);
-    const d0 = new Date(y, m - 1, d);
-    d0.setDate(d0.getDate() + DATE_OFFSET_DAYS);
+    const targetYear = m === 12 ? y + 1 : y;
+    const targetMonthIndex = m === 12 ? 0 : m;
+    const lastDayOfTargetMonth = new Date(targetYear, targetMonthIndex + 1, 0).getDate();
+    const targetDay = Math.min(d, lastDayOfTargetMonth);
+    const d0 = new Date(targetYear, targetMonthIndex, targetDay);
     return `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
   })();
   const [startDate, setStartDate] = useState(firstInstallmentDefault);
@@ -53,25 +56,21 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   );
 
   const addMonths = (dateString: string, months: number) => {
-    // Parse a data no formato YYYY-MM-DD evitando problemas de fuso horário
+    // Soma meses preservando o dia-base quando possível.
+    // Ex.: 20/01 + 1 mês = 20/02; 31/01 + 1 mês = 28/02 (ou 29/02 em ano bissexto).
     const [year, month, day] = dateString.split('-').map(Number);
-    const baseDate = new Date(year, month - 1, day);
-    const newDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + months, baseDate.getDate());
+    const baseMonthIndex = month - 1;
+    const targetMonthIndexTotal = baseMonthIndex + months;
+    const targetYear = year + Math.floor(targetMonthIndexTotal / 12);
+    const normalizedTargetMonthIndex = ((targetMonthIndexTotal % 12) + 12) % 12;
+    const lastDayOfTargetMonth = new Date(targetYear, normalizedTargetMonthIndex + 1, 0).getDate();
+    const targetDay = Math.min(day, lastDayOfTargetMonth);
+    const newDate = new Date(targetYear, normalizedTargetMonthIndex, targetDay);
     // Formatar de volta para YYYY-MM-DD
     const yearStr = newDate.getFullYear();
     const monthStr = String(newDate.getMonth() + 1).padStart(2, '0');
     const dayStr = String(newDate.getDate()).padStart(2, '0');
     return `${yearStr}-${monthStr}-${dayStr}`;
-  };
-
-  const addDays = (dateString: string, days: number) => {
-    const [year, month, day] = dateString.split('-').map(Number);
-    const baseDate = new Date(year, month - 1, day);
-    baseDate.setDate(baseDate.getDate() + days);
-    const y = baseDate.getFullYear();
-    const m = String(baseDate.getMonth() + 1).padStart(2, '0');
-    const d = String(baseDate.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
   };
 
   const calculatePriceInstallment = (principal: number, rateDecimal: number, periods: number) => {
@@ -153,7 +152,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const handlePromissoryChange = (field: keyof PromissoryNote, value: string | number | IndicationType) => {
     // Campos de data devem recalcular a agenda (via `startDate`) para não ficarem "chumbados".
     if (field === 'issueDate' && typeof value === 'string') {
-      const nextStart = addDays(value, DATE_OFFSET_DAYS);
+      const nextStart = addMonths(value, DATE_OFFSET_MONTHS);
       const nextDue = addMonths(nextStart, Math.max(0, installmentsCount - 1));
       setStartDate(nextStart);
       setPromissoryNote(prev => ({ ...prev, issueDate: value, dueDate: nextDue }));
@@ -193,7 +192,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setInstallmentsCount(1);
     setLoanModel(LoanModel.PRICE);
     const today = getTodayDateString();
-    const firstInstallment = addDays(today, DATE_OFFSET_DAYS);
+    const firstInstallment = addMonths(today, DATE_OFFSET_MONTHS);
     setStartDate(firstInstallment);
     setPromissoryNote(createDefaultPromissoryNote(today, firstInstallment, 0.0));
     setEditingLoan(null);
@@ -1388,7 +1387,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       onChange={e => {
                         const value = e.target.value;
                         setStartDate(value);
-                        const nextIssueDate = addDays(value, -DATE_OFFSET_DAYS);
+                        const nextIssueDate = addMonths(value, -DATE_OFFSET_MONTHS);
                         const nextDueDate = addMonths(value, Math.max(0, installmentsCount - 1));
                         setPromissoryNote(prev => ({ ...prev, issueDate: nextIssueDate, dueDate: nextDueDate }));
                       }}
