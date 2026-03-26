@@ -1,0 +1,189 @@
+name: ↩️ Rollback CredGestor
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Modo de rollback"
+        required: true
+        default: "release"
+        type: choice
+        options:
+          - release
+          - custom
+      release_timestamp:
+        description: "Timestamp da release (YYYYMMDD-HHMMSS). Ex: 20260326-153000"
+        required: false
+        type: string
+      release_sha7:
+        description: "SHA curto opcional (7 chars). Ex: abc1234"
+        required: false
+        type: string
+      backend_tag:
+        description: "Tag backend custom (usado em mode=custom)"
+        required: false
+        type: string
+      frontend_tag:
+        description: "Tag frontend custom (usado em mode=custom)"
+        required: false
+        type: string
+      force:
+        description: "Ignorar janela de 48h"
+        required: true
+        default: false
+        type: boolean
+      skip_healthcheck:
+        description: "Ignorar healthcheck HTTP pós-rollback"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  DOCKERHUB_REPOSITORY: credgestor-homologacao
+  DOCKERHUB_USERNAME: faelsouz
+  STACK_NAME: credgestor
+  VPS_PATH: /var/www/credgestor-homologacao
+
+jobs:
+  rollback-production:
+    name: ↩️ Rollback Production
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://credgestor.app.br
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🧮 Resolver tags de rollback
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mode="${{ github.event.inputs.mode }}"
+          release_timestamp="${{ github.event.inputs.release_timestamp }}"
+          release_sha7="${{ github.event.inputs.release_sha7 }}"
+          backend_tag="${{ github.event.inputs.backend_tag }}"
+          frontend_tag="${{ github.event.inputs.frontend_tag }}"
+
+          if [[ "$mode" == "release" ]]; then
+            if [[ -z "$release_timestamp" ]]; then
+              echo "❌ release_timestamp é obrigatório quando mode=release"
+              exit 1
+            fi
+
+            if [[ -n "$release_sha7" ]]; then
+              backend_tag="backend-${release_timestamp}-${release_sha7}"
+              frontend_tag="frontend-${release_timestamp}-${release_sha7}"
+            else
+              backend_tag="backend-${release_timestamp}"
+              frontend_tag="frontend-${release_timestamp}"
+            fi
+          else
+            if [[ -z "$backend_tag" || -z "$frontend_tag" ]]; then
+              echo "❌ backend_tag e frontend_tag são obrigatórios quando mode=custom"
+              exit 1
+            fi
+          fi
+
+          echo "backend_tag=$backend_tag" >> "$GITHUB_OUTPUT"
+          echo "frontend_tag=$frontend_tag" >> "$GITHUB_OUTPUT"
+          echo "release_timestamp=$release_timestamp" >> "$GITHUB_OUTPUT"
+
+          echo "✅ Tags resolvidas:"
+          echo "   backend: $backend_tag"
+          echo "   frontend: $frontend_tag"
+
+      - name: ⏱️ Validar janela de 48h (modo release)
+        if: ${{ github.event.inputs.mode == 'release' && github.event.inputs.force != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ts="${{ steps.resolve.outputs.release_timestamp }}"
+
+          if [[ ! "$ts" =~ ^[0-9]{8}-[0-9]{6}$ ]]; then
+            echo "❌ release_timestamp inválido: $ts"
+            echo "   Formato esperado: YYYYMMDD-HHMMSS"
+            exit 1
+          fi
+
+          release_epoch="$(date -u -d "${ts:0:8} ${ts:9:2}:${ts:11:2}:${ts:13:2}" +%s)"
+          now_epoch="$(date -u +%s)"
+          diff_sec="$((now_epoch - release_epoch))"
+          limit_sec="$((48 * 3600))"
+
+          if [[ "$diff_sec" -lt 0 ]]; then
+            echo "❌ release_timestamp está no futuro: $ts"
+            exit 1
+          fi
+
+          if [[ "$diff_sec" -gt "$limit_sec" ]]; then
+            echo "❌ Rollback bloqueado: versão fora da janela de 48h."
+            echo "   Use force=true para exceção controlada."
+            exit 1
+          fi
+
+          echo "✅ Janela de 48h validada."
+
+      - name: 🔐 Validar secrets de acesso
+        run: |
+          if [ -z "${{ secrets.VPS_USER }}" ]; then
+            echo "❌ VPS_USER não configurado"
+            exit 1
+          fi
+          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "❌ VPS_SSH_KEY não configurado"
+            exit 1
+          fi
+          echo "✅ Secrets validados"
+
+      - name: 📤 Copiar script de rollback para VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST || '167.235.76.26' }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          source: "scripts/rollback.sh"
+          target: "${{ env.VPS_PATH }}/"
+          strip_components: 0
+          timeout: 120s
+          command_timeout: 120s
+
+      - name: ↩️ Executar rollback na VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST || '167.235.76.26' }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -e
+            cd "${{ env.VPS_PATH }}"
+            chmod +x scripts/rollback.sh
+            REPO_PREFIX="${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY }}"
+            EXTRA_ARGS=""
+            if [ "${{ github.event.inputs.skip_healthcheck }}" = "true" ]; then
+              EXTRA_ARGS="--skip-healthcheck"
+            fi
+            ./scripts/rollback.sh \
+              --backend-tag "${{ steps.resolve.outputs.backend_tag }}" \
+              --frontend-tag "${{ steps.resolve.outputs.frontend_tag }}" \
+              --stack "${{ env.STACK_NAME }}" \
+              --repo-prefix "$REPO_PREFIX" \
+              $EXTRA_ARGS
+
+      - name: 📢 Resumo do rollback
+        if: always()
+        run: |
+          echo "### Rollback executado" >> $GITHUB_STEP_SUMMARY
+          echo "- Modo: \`${{ github.event.inputs.mode }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend tag: \`${{ steps.resolve.outputs.backend_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend tag: \`${{ steps.resolve.outputs.frontend_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Force: \`${{ github.event.inputs.force }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Skip healthcheck: \`${{ github.event.inputs.skip_healthcheck }}\`" >> $GITHUB_STEP_SUMMARY
