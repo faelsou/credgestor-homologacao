@@ -2356,7 +2356,11 @@ const App: React.FC = () => {
     // Encontrar a data mais recente do histórico (incluindo o novo agendamento)
     // A data de vencimento deve ser sempre a data mais recente do histórico de agendamentos
     const allDates = [...promisedPaymentHistory.map(e => e.date), scheduledDate];
-    const mostRecentDate = allDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
+          const mostRecentDate = allDates.sort((a, b) => {
+            const [yA, mA, dA] = String(a).split('T')[0].split('-').map(Number);
+            const [yB, mB, dB] = String(b).split('T')[0].split('-').map(Number);
+            return new Date(yB, mB - 1, dB).getTime() - new Date(yA, mA - 1, dA).getTime();
+          })[0];
 
     // Atualizar a data de vencimento (dueDate) para a data mais recente do agendamento
     // IMPORTANTE: Os juros (interestAmount) e capital (principalAmount) NÃO devem ser alterados
@@ -2847,13 +2851,16 @@ const App: React.FC = () => {
       return; // Sair da função após processar pagamento total
     }
 
-    // Função auxiliar para adicionar meses a uma data
+    // Função auxiliar para adicionar meses a uma data (YYYY-MM-DD)
     const addMonths = (dateString: string, months: number) => {
-      // Parse a data no formato YYYY-MM-DD evitando problemas de fuso horário
-      const [year, month, day] = dateString.split('-').map(Number);
-      const baseDate = new Date(year, month - 1, day);
-      const newDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + months, baseDate.getDate());
-      // Formatar de volta para YYYY-MM-DD
+      const [year, month, day] = String(dateString).split('T')[0].split('-').map(Number);
+      const baseMonthIndex = month - 1;
+      const targetMonthIndexTotal = baseMonthIndex + months;
+      const targetYear = year + Math.floor(targetMonthIndexTotal / 12);
+      const normalizedTargetMonthIndex = ((targetMonthIndexTotal % 12) + 12) % 12;
+      const lastDayOfTargetMonth = new Date(targetYear, normalizedTargetMonthIndex + 1, 0).getDate();
+      const targetDay = Math.min(day, lastDayOfTargetMonth);
+      const newDate = new Date(targetYear, normalizedTargetMonthIndex, targetDay);
       const yearStr = newDate.getFullYear();
       const monthStr = String(newDate.getMonth() + 1).padStart(2, '0');
       const dayStr = String(newDate.getDate()).padStart(2, '0');
@@ -3094,7 +3101,12 @@ const App: React.FC = () => {
           updatedInstallment.dueDate
         ];
         const mostRecentDueDate = allDates.sort((a, b) => 
-          new Date(b).getTime() - new Date(a).getTime()
+          // Ordenação determinística de YYYY-MM-DD
+          (() => {
+            const [yA, mA, dA] = String(a).split('T')[0].split('-').map(Number);
+            const [yB, mB, dB] = String(b).split('T')[0].split('-').map(Number);
+            return new Date(yB, mB - 1, dB).getTime() - new Date(yA, mA - 1, dA).getTime();
+          })()
         )[0];
         
         // Criar a próxima parcela 1 mês após a data de vencimento mais recente

@@ -102,9 +102,14 @@ export const LoanHistoryView: React.FC = () => {
         const client = clients.find(c => c.id === loan.clientId);
         const matchesName = !nameFilter || (client?.name.toLowerCase().includes(nameFilter.toLowerCase()) ?? false);
 
-        const loanDate = new Date(loan.startDate);
-        const afterStart = startDate ? loanDate >= new Date(startDate) : true;
-        const beforeEnd = endDate ? loanDate <= new Date(endDate) : true;
+        const [yl, ml, dl] = String(loan.startDate).split('T')[0].split('-').map(Number);
+        const loanDate = new Date(yl, ml - 1, dl).getTime();
+        const afterStart = startDate
+          ? loanDate >= (() => { const [ys, ms, ds] = startDate.split('-').map(Number); return new Date(ys, ms - 1, ds).getTime(); })()
+          : true;
+        const beforeEnd = endDate
+          ? loanDate <= (() => { const [ye, me, de] = endDate.split('-').map(Number); return new Date(ye, me - 1, de).getTime(); })()
+          : true;
         
         // Calcular status correto para filtrar
         const correctStatus = calculateLoanStatus(loan);
@@ -112,7 +117,11 @@ export const LoanHistoryView: React.FC = () => {
 
         return matchesName && afterStart && beforeEnd && matchesStatus;
       })
-      .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+      .sort((a, b) => {
+        const [ya, ma, da] = String(a.startDate).split('T')[0].split('-').map(Number);
+        const [yb, mb, db] = String(b.startDate).split('T')[0].split('-').map(Number);
+        return new Date(yb, mb - 1, db).getTime() - new Date(ya, ma - 1, da).getTime();
+      });
   }, [clients, endDate, loans, nameFilter, startDate, statusFilter]);
 
   const statusBadge = (status: LoanStatus) => {
@@ -175,7 +184,11 @@ export const LoanHistoryView: React.FC = () => {
   const findNextInstallment = (loanId: string) => {
     return installments
       .filter(inst => inst.loanId === loanId && inst.status !== InstallmentStatus.PAID)
-      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
+      .sort((a, b) => {
+        const [ya, ma, da] = String(a.dueDate).split('T')[0].split('-').map(Number);
+        const [yb, mb, db] = String(b.dueDate).split('T')[0].split('-').map(Number);
+        return new Date(ya, ma - 1, da).getTime() - new Date(yb, mb - 1, db).getTime();
+      })[0];
   };
 
   const openPromiseModal = (loanId: string) => {

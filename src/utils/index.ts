@@ -172,6 +172,48 @@ export const getTodayDateString = () => {
   return new Date(now.getTime() - timezoneOffset).toISOString().split('T')[0];
 };
 
+/**
+ * Normaliza uma string de data para YYYY-MM-DD.
+ * Aceita inputs ISO (YYYY-MM-DDTHH:mm:ss) e com espaço.
+ */
+export const normalizeYmd = (value: string): string => {
+  if (!value) return '';
+  if (value.includes('T')) return value.split('T')[0];
+  if (value.includes(' ')) return value.split(' ')[0];
+  return value;
+};
+
+/**
+ * Compara duas strings YYYY-MM-DD de forma determinística (sem fuso).
+ * Retorna negativo se a < b, zero se igual, positivo se a > b.
+ */
+export const compareYmd = (a: string, b: string): number => {
+  const [ya, ma, da] = normalizeYmd(a).split('-').map(Number);
+  const [yb, mb, db] = normalizeYmd(b).split('-').map(Number);
+  const ta = new Date(ya, ma - 1, da).getTime();
+  const tb = new Date(yb, mb - 1, db).getTime();
+  return ta - tb;
+};
+
+/**
+ * Soma meses a uma string YYYY-MM-DD, preservando o dia quando possível.
+ * Trata corretamente fins de mês (ex.: 31/01 + 1 mês => 29/02 ou 28/02).
+ */
+export const addMonthsYmd = (dateYmd: string, months: number): string => {
+  const [year, month, day] = normalizeYmd(dateYmd).split('-').map(Number);
+  const baseMonthIndex = month - 1;
+  const targetMonthIndexTotal = baseMonthIndex + months;
+  const targetYear = year + Math.floor(targetMonthIndexTotal / 12);
+  const normalizedTargetMonthIndex = ((targetMonthIndexTotal % 12) + 12) % 12;
+  const lastDayOfTargetMonth = new Date(targetYear, normalizedTargetMonthIndex + 1, 0).getDate();
+  const targetDay = Math.min(day, lastDayOfTargetMonth);
+  const newDate = new Date(targetYear, normalizedTargetMonthIndex, targetDay);
+  const yearStr = newDate.getFullYear();
+  const monthStr = String(newDate.getMonth() + 1).padStart(2, '0');
+  const dayStr = String(newDate.getDate()).padStart(2, '0');
+  return `${yearStr}-${monthStr}-${dayStr}`;
+};
+
 export const stripNonDigits = (value?: string | null) => (value || '').replace(/\D/g, '');
 
 export const formatCpf = (value: string) => {

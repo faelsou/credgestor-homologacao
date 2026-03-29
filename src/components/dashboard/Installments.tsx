@@ -162,7 +162,11 @@ export const InstallmentsView: React.FC = () => {
       });
     }
 
-    return result.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+    return result.sort((a, b) => {
+      const [ya, ma, da] = String(a.dueDate).split('T')[0].split('-').map(Number);
+      const [yb, mb, db] = String(b.dueDate).split('T')[0].split('-').map(Number);
+      return new Date(ya, ma - 1, da).getTime() - new Date(yb, mb - 1, db).getTime();
+    });
   }, [installments, filter, searchTerm, clients, dateFilterStart, dateFilterEnd, isActuallyLate]);
 
   const handleWhatsapp = (inst: Installment) => {
