@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Tuple
 import hmac
 import hashlib
 import time
+import logging
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -63,6 +64,14 @@ from .db_metrics import (
 
 app = FastAPI(title="CredGestor Supabase backend", version="0.1.0")
 
+# Logger estruturado básico
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("credgestor.backend")
+
 # Configurar Rate Limiting
 # Nota: slowapi requer que o limiter seja inicializado antes de usar nos decoradores
 limiter = None
@@ -71,9 +80,9 @@ if SLOWAPI_AVAILABLE:
         limiter = Limiter(key_func=get_remote_address)
         app.state.limiter = limiter
         app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-        print("✅ Rate limiting habilitado com slowapi")
+        logger.info("Rate limiting habilitado com slowapi")
     except Exception as e:
-        print(f"⚠️  Aviso: Erro ao inicializar rate limiting: {e}")
+        logger.warning("Erro ao inicializar rate limiting: %s", e)
         limiter = None
 
 # Criar um objeto dummy que aceita o decorador mas não faz nada se slowapi não estiver disponível
@@ -84,20 +93,31 @@ if limiter is None:
                 return func
             return decorator
     limiter = DummyLimiter()
-    print("⚠️  Rate limiting desabilitado (slowapi não disponível)")
+    logger.warning("Rate limiting desabilitado (slowapi não disponível)")
 
-# Configurar CORS de forma mais segura
-# Permitir apenas origens específicas em produção
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
-if allowed_origins == ["*"]:
-    # Em desenvolvimento, permitir todas as origens
-    # Em produção, configure ALLOWED_ORIGINS com origens específicas
-    pass
+# Configurar CORS de forma segura
+environment = os.getenv("ENVIRONMENT", "development").lower()
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "*")
+allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+allow_credentials = True
+
+if environment in {"production", "staging"}:
+    if allowed_origins == ["*"]:
+        # Em produção/staging, nunca permitir * com credenciais
+        logger.warning("ALLOWED_ORIGINS='*' em %s. Desabilitando credenciais e restringindo métodos.", environment)
+        allow_credentials = False
+        # Como fallback seguro, não permitir nenhuma origem (frontend deve configurar explicitamente)
+        allowed_origins = []
+else:
+    # Em desenvolvimento, permitir * mas sem credenciais para obedecer à especificação
+    if allowed_origins == ["*"]:
+        allow_credentials = False
+        logger.info("CORS em desenvolvimento com origens='*' e allow_credentials=False")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=True,
+    allow_credentials=allow_credentials,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
     expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
@@ -219,20 +239,21 @@ def _apply_filters(table: str, filters: List[Tuple[str, Any]] | None = None):
         with db_operation_metrics(table=table, operation="select"):
             supabase = get_supabase_admin_client()
             query = supabase.table(table).select("*")
-            # DEBUG: Log dos filtros aplicados
+            # Aplicar todos os filtros (AND)
+            applied_filters = []
             if filters:
-                print(f"🔍 [DEBUG] Aplicando filtros na tabela '{table}':")
                 for column, value in filters:
-                    print(f"   - {column} = {value}")
-                query = query.eq(column, value)
+                    query = query.eq(column, value)
+                    applied_filters.append({column: value})
+                logger.debug("Aplicando filtros na tabela %s: %s", table, applied_filters)
             else:
-                print(f"⚠️  [DEBUG] ATENÇÃO: Nenhum filtro aplicado na tabela '{table}'!")
+                logger.warning("Nenhum filtro aplicado na tabela %s", table)
             response = query.execute()
             error = getattr(response, "error", None)
             if error:
                 raise HTTPException(status_code=500, detail=_format_error(error))
             result_count = len(response.data or [])
-            print(f"✅ [DEBUG] Retornando {result_count} registros da tabela '{table}'")
+            logger.debug("Retornando %d registros da tabela %s", result_count, table)
             return response.data or []
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
@@ -526,47 +547,48 @@ def _resolve_tenant_id(user: Any, requested_tenant_id: str | None) -> str | None
     
     email = _get_user_email(user)
     
-    print(f"🔍 [DEBUG] _resolve_tenant_id:")
-    print(f"   email: {email}")
-    print(f"   requested_tenant_id: {requested_tenant_id}")
-    print(f"   metadata tenant_id: {metadata.get('tenant_id')}")
-    print(f"   app_metadata tenant_id: {app_metadata.get('tenant_id')}")
-    print(f"   metadata_tenant_id resolvido: {metadata_tenant_id}")
+    safe_email = (email or "").split("@")[0] + "@***" if email else None
+    logger.debug(
+        "_resolve_tenant_id email=%s requested_tenant_id=%s metadata_tenant_id=%s app_metadata_tenant_id=%s",
+        safe_email,
+        bool(requested_tenant_id),
+        bool(metadata.get('tenant_id')),
+        bool(app_metadata.get('tenant_id')),
+    )
 
     # REGRA CRÍTICA: Se temos email, buscar tenant_id de tenant_users como fonte da verdade
     # Isso resolve o problema de usuários compartilhando o mesmo ID no Auth
     if email:
         tenant_ids_from_db = _tenant_ids_for_email(email)
-        print(f"🔍 [DEBUG] Tenant_ids encontrados em tenant_users para {email}: {tenant_ids_from_db}")
+        logger.debug("Tenant_ids encontrados em tenant_users para email=%s: %s", safe_email, tenant_ids_from_db)
         
         if len(tenant_ids_from_db) == 1:
             tenant_id_from_db = tenant_ids_from_db[0]
             
             # Se o tenant_id dos metadados não corresponde ao do banco, usar o do banco
             if metadata_tenant_id and metadata_tenant_id != tenant_id_from_db:
-                print(f"⚠️  [DEBUG] INCONSISTÊNCIA: Metadados ({metadata_tenant_id}) != tenant_users ({tenant_id_from_db})")
-                print(f"   Usando tenant_id de tenant_users como fonte da verdade: {tenant_id_from_db}")
+                logger.warning("Inconsistência de tenant_id: metadados != tenant_users. Usando tenant_users.")
                 return tenant_id_from_db
             
             # Se não há tenant_id nos metadados, usar o do banco
             if not metadata_tenant_id:
-                print(f"✅ [DEBUG] Usando tenant_id de tenant_users (não encontrado nos metadados): {tenant_id_from_db}")
+                logger.debug("Usando tenant_id de tenant_users (ausente nos metadados).")
                 return tenant_id_from_db
             
             # Se ambos correspondem, usar o dos metadados
             if metadata_tenant_id == tenant_id_from_db:
-                print(f"✅ [DEBUG] Metadados e tenant_users sincronizados: {metadata_tenant_id}")
+                logger.debug("Metadados e tenant_users sincronizados.")
                 return metadata_tenant_id
         
         if len(tenant_ids_from_db) > 1:
-            print(f"⚠️  [DEBUG] Usuário está em múltiplos tenants: {tenant_ids_from_db}")
+            logger.warning("Usuário em múltiplos tenants: %s", tenant_ids_from_db)
             # Se há tenant_id solicitado, verificar se está na lista
             if requested_tenant_id and requested_tenant_id in tenant_ids_from_db:
-                print(f"✅ [DEBUG] Usando tenant_id solicitado: {requested_tenant_id}")
+                logger.debug("Usando tenant_id solicitado e permitido.")
                 return requested_tenant_id
             # Se há tenant_id nos metadados e está na lista, usar ele
             if metadata_tenant_id and metadata_tenant_id in tenant_ids_from_db:
-                print(f"✅ [DEBUG] Usando tenant_id dos metadados (está na lista): {metadata_tenant_id}")
+                logger.debug("Usando tenant_id dos metadados (está na lista).")
                 return metadata_tenant_id
             raise HTTPException(
                 status_code=400,
@@ -578,30 +600,30 @@ def _resolve_tenant_id(user: Any, requested_tenant_id: str | None) -> str | None
         and requested_tenant_id
         and metadata_tenant_id != requested_tenant_id
     ):
-        print(f"❌ [DEBUG] ERRO: Tenant do token ({metadata_tenant_id}) != tenant da requisição ({requested_tenant_id})")
+        logger.error("Tenant do token != tenant da requisição")
         raise HTTPException(
             status_code=403, detail="Tenant do token não corresponde à requisição."
         )
 
     if metadata_tenant_id:
-        print(f"✅ [DEBUG] Usando tenant_id dos metadados: {metadata_tenant_id}")
+        logger.debug("Usando tenant_id dos metadados.")
         return metadata_tenant_id
 
-    print(f"⚠️  [DEBUG] Tenant_id não encontrado nos metadados. Buscando por email: {email}")
+    logger.warning("Tenant_id não encontrado nos metadados. Buscando por email.")
 
     if requested_tenant_id:
-        print(f"🔍 [DEBUG] Verificando se usuário está no tenant solicitado: {requested_tenant_id}")
+        logger.debug("Verificando acesso ao tenant solicitado.")
         _assert_user_in_tenant(email, requested_tenant_id)
         return requested_tenant_id
 
     if email:
         tenant_ids = _tenant_ids_for_email(email)
-        print(f"🔍 [DEBUG] Tenant_ids encontrados para {email}: {tenant_ids}")
+        logger.debug("Tenant_ids encontrados para email: %s", safe_email if email else None)
         if len(tenant_ids) == 1:
-            print(f"✅ [DEBUG] Usando único tenant_id encontrado: {tenant_ids[0]}")
+            logger.debug("Usando único tenant_id encontrado.")
             return tenant_ids[0]
         if len(tenant_ids) > 1:
-            print(f"❌ [DEBUG] ERRO: Usuário está em múltiplos tenants: {tenant_ids}")
+            logger.error("Usuário em múltiplos tenants sem seleção explícita.")
             raise HTTPException(
                 status_code=400,
                 detail="Informe o tenant_id para contas associadas a múltiplos tenants.",
@@ -693,12 +715,17 @@ def require_auth(
     tenant_id = metadata.get("tenant_id") or app_metadata.get("tenant_id")
     role = _get_role_from_user(user)
     
-    # DEBUG: Log do tenant_id resolvido
-    print(f"🔍 [DEBUG] require_auth: user_id={user_id}, email={email}")
-    print(f"   metadata tenant_id: {metadata.get('tenant_id')}")
-    print(f"   app_metadata tenant_id: {app_metadata.get('tenant_id')}")
-    print(f"   tenant_id resolvido: {tenant_id}")
-    print(f"   role: {role}")
+    # Log seguro (sem dados sensíveis)
+    safe_email = (email or "").split("@")[0] + "@***" if email else None
+    logger.debug(
+        "require_auth user_id=%s email=%s has_metadata_tenant=%s has_app_tenant=%s has_tenant=%s role=%s",
+        user_id,
+        safe_email,
+        bool(metadata.get('tenant_id')),
+        bool(app_metadata.get('tenant_id')),
+        bool(tenant_id),
+        role,
+    )
 
     return AuthContext(
         user_id=user_id,
@@ -1134,14 +1161,13 @@ def list_tenant_resource(
     resource: str,
     context: AuthContext = Depends(require_auth),
 ):
-    print(f"🔍 [DEBUG] list_tenant_resource: tenant_id={tenant_id}, resource={resource}")
-    print(f"   Context tenant_id: {context.tenant_id}, email: {context.email}")
+    logger.debug("list_tenant_resource tenant_id=%s resource=%s", tenant_id, resource)
     _enforce_tenant_access(context, tenant_id)
     table = _validate_tenant_table(resource)
     column = TENANT_TABLES[table]
-    print(f"   Tabela: {table}, Coluna: {column}")
+    logger.debug("Tabela=%s Coluna=%s", table, column)
     result = _apply_filters(table, [(column, tenant_id)])
-    print(f"   Retornando {len(result)} registros")
+    logger.debug("Registros retornados=%d", len(result))
     return result
 
 
