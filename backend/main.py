@@ -37,7 +37,9 @@ try:
     SLOWAPI_AVAILABLE = True
 except ImportError:
     SLOWAPI_AVAILABLE = False
-    print("⚠️  Aviso: slowapi não está disponível. Rate limiting desabilitado.")
+    # Evitar prints em produção: usar logger estruturado após inicialização
+    # Temporariamente armazenado e logado após logger estar disponível
+    _SLOWAPI_WARN = True
 
 from .settings import get_settings
 from .supabase_client import (
@@ -71,6 +73,12 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 logger = logging.getLogger("credgestor.backend")
+if ' _SLOWAPI_WARN' in globals() or '_SLOWAPI_WARN' in locals():
+    try:
+        if _SLOWAPI_WARN:
+            logger.warning("slowapi não está disponível. Rate limiting desabilitado.")
+    except NameError:
+        pass
 
 # Configurar Rate Limiting
 # Nota: slowapi requer que o limiter seja inicializado antes de usar nos decoradores
@@ -216,12 +224,8 @@ def ensure_client() -> None:
         
     except Exception as e:
         # Log error but don't crash the server - allows healthcheck to work
-        print(
-            f"⚠️  Aviso: Não foi possível inicializar o cliente Supabase no startup: {e}"
-        )
-        print(
-            "   O servidor continuará rodando, mas operações que requerem Supabase falharão."
-        )
+        logger.error("Não foi possível inicializar o cliente Supabase no startup: %s", e)
+        logger.warning("O servidor continuará rodando, mas operações que requerem Supabase podem falhar.")
 
 
 def _format_error(error: Any) -> str:
@@ -241,10 +245,22 @@ def _apply_filters(table: str, filters: List[Tuple[str, Any]] | None = None):
             query = supabase.table(table).select("*")
             # Aplicar todos os filtros (AND)
             applied_filters = []
-            if filters:
-                for column, value in filters:
-                    query = query.eq(column, value)
-                    applied_filters.append({column: value})
+            filters = filters or []
+            # Garantir filtro por tenant para tabelas com escopo de tenant
+            if table in TENANT_TABLES:
+                tenant_column = TENANT_TABLES[table]
+                has_tenant_filter = any(col == tenant_column for col, _ in filters)
+                if not has_tenant_filter:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Filtro obrigatório ausente: {tenant_column}"
+                    )
+            for column, value in filters:
+                query = query.eq(column, value)
+                # Máscara de valores para logs (evitar dados sensíveis)
+                masked = "***" if column.lower() in {"email", "senha", "password", "token", "authorization"} else value
+                applied_filters.append({column: masked})
+            if applied_filters:
                 logger.debug("Aplicando filtros na tabela %s: %s", table, applied_filters)
             else:
                 logger.warning("Nenhum filtro aplicado na tabela %s", table)
