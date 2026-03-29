@@ -132,18 +132,24 @@ app.add_middleware(
 )
 
 # Configurar OpenTelemetry (deve ser feito antes da instrumentação do Prometheus)
-setup_opentelemetry(app)
+if os.getenv("DISABLE_OTEL", "0") not in {"1", "true", "TRUE"}:
+    setup_opentelemetry(app)
+else:
+    logger.info("OpenTelemetry desabilitado por variável de ambiente")
 
-# Instrumentação Prometheus para métricas da API
-instrumentator = Instrumentator(
-    should_group_status_codes=False,
-    should_ignore_untemplated=True,
-    should_instrument_requests_inprogress=True,
-    excluded_handlers=["/metrics", "/health"],  # Exclui endpoints de métricas e health
-    inprogress_name="http_requests_inprogress",
-    inprogress_labels=True,
-)
-instrumentator.instrument(app).expose(app)
+# Instrumentação Prometheus para métricas da API (permitir desabilitar em testes)
+if os.getenv("DISABLE_PROMETHEUS", "0") in {"1", "true", "TRUE"}:
+    logger.info("Prometheus Instrumentator desabilitado por variável de ambiente")
+else:
+    instrumentator = Instrumentator(
+        should_group_status_codes=False,
+        should_ignore_untemplated=True,
+        should_instrument_requests_inprogress=True,
+        excluded_handlers=["/metrics", "/health"],  # Exclui endpoints de métricas e health
+        inprogress_name="http_requests_inprogress",
+        inprogress_labels=True,
+    )
+    instrumentator.instrument(app).expose(app)
 
 TENANT_TABLES: Dict[str, str] = {
     "clients": "tenant_id",
@@ -273,6 +279,9 @@ def _apply_filters(table: str, filters: List[Tuple[str, Any]] | None = None):
             return response.data or []
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
+    except HTTPException:
+        # Propagar erros HTTP explícitos (como 400 por falta de tenant_id)
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Erro ao consultar banco de dados: {str(e)}"

@@ -49,7 +49,12 @@ class FakeSupabaseClient:
 
 def test_apply_filters_requires_tenant_and_applies_all(monkeypatch):
   # Carregar backend numa configuração neutra
-  backend = reload_backend_with_env({"ENVIRONMENT": "development", "ALLOWED_ORIGINS": "*"})
+  backend = reload_backend_with_env({
+    "ENVIRONMENT": "development",
+    "ALLOWED_ORIGINS": "*",
+    "DISABLE_PROMETHEUS": "1",
+    "DISABLE_OTEL": "1",
+  })
 
   fake_client = FakeSupabaseClient()
   monkeypatch.setattr(backend, "get_supabase_admin_client", lambda: fake_client)
@@ -69,7 +74,12 @@ def test_apply_filters_requires_tenant_and_applies_all(monkeypatch):
 
 
 def test_cors_development_star_without_credentials():
-  backend = reload_backend_with_env({"ENVIRONMENT": "development", "ALLOWED_ORIGINS": "*"})
+  backend = reload_backend_with_env({
+    "ENVIRONMENT": "development",
+    "ALLOWED_ORIGINS": "*",
+    "DISABLE_PROMETHEUS": "1",
+    "DISABLE_OTEL": "1",
+  })
   client = TestClient(backend.app)
   # Preflight OPTIONS
   resp = client.options(
@@ -86,7 +96,12 @@ def test_cors_development_star_without_credentials():
 
 
 def test_cors_production_star_disallowed():
-  backend = reload_backend_with_env({"ENVIRONMENT": "production", "ALLOWED_ORIGINS": "*"})
+  backend = reload_backend_with_env({
+    "ENVIRONMENT": "production",
+    "ALLOWED_ORIGINS": "*",
+    "DISABLE_PROMETHEUS": "1",
+    "DISABLE_OTEL": "1",
+  })
   client = TestClient(backend.app)
   # Preflight OPTIONS
   resp = client.options(
