@@ -6,9 +6,6 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Tuple
-import hmac
-import hashlib
-import time
 import logging
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, status
@@ -521,7 +518,9 @@ def _tenant_ids_for_email(email: str) -> List[str]:
         if error:
             raise HTTPException(status_code=500, detail=_format_error(error))
         tenant_ids = [row.get("tenant_id") for row in response.data or [] if row.get("tenant_id")]
-        print(f"🔍 [DEBUG] _tenant_ids_for_email({email}): {tenant_ids}")
+        # Mascarar email em logs
+        safe_email = (email or "").split("@")[0] + "@***" if email else None
+        logger.debug("_tenant_ids_for_email email=%s tenants=%s", safe_email, tenant_ids)
         return tenant_ids
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
@@ -664,32 +663,34 @@ def _get_role_from_user(user: Any) -> str | None:
 
 
 def _enforce_tenant_access(context: AuthContext, tenant_id: str) -> str:
-    print(f"🔍 [DEBUG] _enforce_tenant_access: tenant_id={tenant_id}")
-    print(f"   Context tenant_id: {context.tenant_id}, email: {context.email}")
+    safe_email = (context.email or "").split("@")[0] + "@***" if context.email else None
+    logger.debug("_enforce_tenant_access tenant_id=%s context_tenant_id=%s email=%s",
+                 tenant_id, context.tenant_id, safe_email)
     
     # REGRA CRÍTICA: Usar email para buscar tenant_id de tenant_users como fonte da verdade
     # Isso resolve o problema de usuários compartilhando o mesmo ID no Auth
     if context.email:
         tenant_ids_from_db = _tenant_ids_for_email(context.email)
-        print(f"🔍 [DEBUG] Tenant_ids encontrados em tenant_users para {context.email}: {tenant_ids_from_db}")
+        logger.debug("Tenant_ids encontrados em tenant_users para email=%s: %s", safe_email, tenant_ids_from_db)
         
         # Verificar se o tenant_id da requisição está na lista de tenants do usuário
         if tenant_id in tenant_ids_from_db:
-            print(f"✅ [DEBUG] Usuário {context.email} tem acesso ao tenant {tenant_id}")
+            logger.debug("Usuário %s tem acesso ao tenant %s", safe_email, tenant_id)
             return tenant_id
         else:
-            print(f"❌ [DEBUG] ERRO: Usuário {context.email} NÃO tem acesso ao tenant {tenant_id}")
-            print(f"   Tenants do usuário: {tenant_ids_from_db}")
+            logger.warning("Usuário %s NÃO tem acesso ao tenant %s. Tenants do usuário: %s",
+                           safe_email, tenant_id, tenant_ids_from_db)
             raise HTTPException(status_code=403, detail="Tenant inválido.")
     
     # Fallback: usar lógica antiga se não houver email
     if context.tenant_id and context.tenant_id != tenant_id:
-        print(f"❌ [DEBUG] ERRO: Tenant do contexto ({context.tenant_id}) != tenant_id da requisição ({tenant_id})")
+        logger.warning("Tenant do contexto (%s) != tenant_id da requisição (%s)",
+                       context.tenant_id, tenant_id)
         raise HTTPException(status_code=403, detail="Tenant inválido.")
     if not context.tenant_id:
-        print(f"⚠️  [DEBUG] Context não tem tenant_id, verificando se usuário está no tenant...")
+        logger.debug("Context não tem tenant_id, verificando se usuário está no tenant...")
         _assert_user_in_tenant(context.email, tenant_id)
-    print(f"✅ [DEBUG] Acesso ao tenant {tenant_id} autorizado")
+    logger.debug("Acesso ao tenant %s autorizado", tenant_id)
     return tenant_id
 
 
@@ -767,8 +768,9 @@ def _authenticate_user(payload: LoginRequest):
         # REGRA CRÍTICA: NÃO usar default_tenant_id como fallback
         # Cada usuário DEVE ter seu próprio tenant_id nos metadados
         tenant_id = payload.tenant_id  # Não usar default_tenant_id
-        # Log seguro: não logar informações sensíveis como senha
-        print(f"🔍 [DEBUG] _authenticate_user: email={payload.email}, tenant_id presente={tenant_id is not None}")
+        # Log seguro: mascarar email, nunca logar senha
+        safe_email = (payload.email or "").split("@")[0] + "@***" if payload.email else None
+        logger.debug("_authenticate_user email=%s has_tenant_in_payload=%s", safe_email, tenant_id is not None)
 
         if not settings.supabase_anon_key or settings.supabase_anon_key.strip() == "":
             raise HTTPException(
@@ -811,7 +813,7 @@ def _authenticate_user(payload: LoginRequest):
             raise HTTPException(status_code=401, detail="Usuário inválido.")
 
         resolved_tenant_id = _resolve_tenant_id(user, tenant_id)
-        print(f"🔍 [DEBUG] _authenticate_user: resolved_tenant_id={resolved_tenant_id}")
+        logger.debug("_authenticate_user resolved_tenant_id=%s", bool(resolved_tenant_id))
         if not resolved_tenant_id:
             DatabaseMetrics.record_login_error("tenant_not_found", 400)
             raise HTTPException(
@@ -877,11 +879,11 @@ def _authenticate_user(payload: LoginRequest):
         import traceback
         error_type = type(e).__name__
         traceback_str = traceback.format_exc()
-        # Log completo para debugging interno
-        print(f"❌ Erro inesperado no login: {error_type}")
-        # Em produção, não logar traceback completo para evitar vazamento de informações
+        # Log detalhado com níveis apropriados; mascarar dados sensíveis
         if os.getenv("ENVIRONMENT", "development") == "development":
-            print(f"📋 Traceback: {traceback_str}")
+            logger.exception("Erro inesperado no login: %s", error_type)
+        else:
+            logger.error("Erro inesperado no login: %s", error_type)
         DatabaseMetrics.record_login_error(error_type, 500)
         # Não expor detalhes do erro ao cliente por segurança
         raise HTTPException(
@@ -1004,15 +1006,14 @@ async def slack_interactions(request: Request):
         
         payload = json.loads(payload_str)
         
-        # Processar URL verification ANTES de validar assinatura
-        # (URL verification do Slack sempre tem assinatura válida quando vem do Slack)
-        # Para testes manuais, permitimos sem assinatura válida
+        # Processar URL verification com política por ambiente
         if payload.get('type') == 'url_verification':
             challenge = payload.get('challenge', '')
-            print(f"✅ URL verification recebida, retornando challenge: {challenge}")
-            # Validar assinatura se configurado, mas NUNCA bloquear URL verification
-            # (permite tanto testes do Slack quanto testes manuais)
-            if slack_signing_secret and signature:
+            # Em produção/staging: assinatura obrigatória e válida
+            if environment in {"production", "staging"}:
+                if not (slack_signing_secret and signature and timestamp):
+                    logger.warning("URL verification sem assinatura em %s: bloqueado", environment)
+                    raise HTTPException(status_code=403, detail="Missing signature")
                 try:
                     sig_basestring = f"v0:{timestamp}:{body}"
                     my_signature = 'v0=' + hmac.new(
@@ -1020,14 +1021,18 @@ async def slack_interactions(request: Request):
                         sig_basestring.encode(),
                         hashlib.sha256
                     ).hexdigest()
-                    if hmac.compare_digest(my_signature, signature):
-                        print(f"✅ Assinatura válida para URL verification")
-                    else:
-                        print(f"⚠️  Assinatura inválida para URL verification, mas permitindo (pode ser teste manual)")
+                    if not hmac.compare_digest(my_signature, signature):
+                        logger.warning("Assinatura inválida em URL verification (produção/staging)")
+                        raise HTTPException(status_code=403, detail="Invalid signature")
+                except HTTPException:
+                    raise
                 except Exception as e:
-                    print(f"⚠️  Erro ao validar assinatura: {e}, mas permitindo URL verification")
-            elif not signature:
-                print(f"⚠️  Sem assinatura na requisição, mas permitindo URL verification (teste manual)")
+                    logger.error("Erro ao validar assinatura em URL verification: %s", e)
+                    raise HTTPException(status_code=500, detail="Signature validation error")
+                logger.info("URL verification validada com assinatura em %s", environment)
+                return {"challenge": challenge}
+            # Em desenvolvimento: permitir sem assinatura (facilita testes locais)
+            logger.info("URL verification em desenvolvimento: permitindo sem assinatura")
             return {"challenge": challenge}
         
         # Para outros tipos de interação, validar assinatura obrigatoriamente
@@ -1046,7 +1051,7 @@ async def slack_interactions(request: Request):
                 print(f"⚠️  Assinatura inválida. Esperado: {my_signature[:20]}..., Recebido: {signature[:20]}...")
                 raise HTTPException(status_code=403, detail="Invalid signature")
         else:
-            print("⚠️  SLACK_SIGNING_SECRET não configurado. Validação de assinatura desabilitada.")
+            logger.warning("SLACK_SIGNING_SECRET não configurado. Validação de assinatura desabilitada.")
         
         # Para outros tipos de interação, validar assinatura se configurado
         # Processar interação
@@ -1064,7 +1069,7 @@ async def slack_interactions(request: Request):
                         'timestamp': time.time(),
                         'user': payload.get('user', {}).get('name', 'unknown')
                     }
-                    print(f"✅ Aprovação registrada para action_id: {approval_id}")
+                    logger.info("Aprovação registrada para action_id=%s", approval_id)
                     return {
                         "response_type": "ephemeral",
                         "text": "✅ Aprovação registrada! O agente será notificado."
@@ -1078,7 +1083,7 @@ async def slack_interactions(request: Request):
                         'timestamp': time.time(),
                         'user': payload.get('user', {}).get('name', 'unknown')
                     }
-                    print(f"❌ Rejeição registrada para action_id: {approval_id}")
+                    logger.info("Rejeição registrada para action_id=%s", approval_id)
                     return {
                         "response_type": "ephemeral",
                         "text": "❌ Rejeição registrada! A ação será cancelada."
@@ -1089,7 +1094,7 @@ async def slack_interactions(request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Erro ao processar interação do Slack: {str(e)}")
+        logger.error("Erro ao processar interação do Slack: %s", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
