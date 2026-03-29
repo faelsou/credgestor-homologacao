@@ -1098,6 +1098,30 @@ async def slack_interactions(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/slack/test")
+def slack_test_send(message: str = Body(default=None, embed=True)):
+    """
+    Envia uma mensagem simples de teste para o Slack via Webhook.
+    - Requer variável de ambiente SLACK_WEBHOOK_URL.
+    - Se 'message' não for informado, usa um texto padrão com timestamp.
+    """
+    import requests
+    try:
+        webhook = os.getenv("SLACK_WEBHOOK_URL", "").strip()
+        if not webhook:
+            raise HTTPException(status_code=500, detail="SLACK_WEBHOOK_URL não configurada.")
+        
+        text = message or f"Teste CredGestor - {datetime.now(timezone.utc).isoformat()}"
+        resp = requests.post(webhook, json={"text": text}, timeout=10)
+        if resp.status_code != 200:
+            detail = resp.text[:200] if isinstance(resp.text, str) else "Falha ao enviar webhook"
+            raise HTTPException(status_code=502, detail=f"Erro do Slack Webhook: {detail}")
+        return {"ok": True, "sent": text}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao enviar mensagem de teste: {str(e)}")
+
 @app.get("/tables")
 def list_tables():
     return {
