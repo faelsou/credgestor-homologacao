@@ -453,7 +453,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const findNextInstallment = (loanId: string) => {
     return installments
       .filter(inst => inst.loanId === loanId && inst.status !== InstallmentStatus.PAID)
-      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
+      .sort((a, b) => {
+        const [ya, ma, da] = String(a.dueDate).split('T')[0].split('-').map(Number);
+        const [yb, mb, db] = String(b.dueDate).split('T')[0].split('-').map(Number);
+        return new Date(ya, ma - 1, da).getTime() - new Date(yb, mb - 1, db).getTime();
+      })[0];
   };
 
   // Função para calcular o valor em aberto do empréstimo
@@ -685,7 +689,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     // Buscar parcelas do empréstimo e ordenar por data de vencimento
     const loanInstallments = installments
       .filter(inst => inst.loanId === loan.id)
-      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+      .sort((a, b) => {
+        const [ya, ma, da] = String(a.dueDate).split('T')[0].split('-').map(Number);
+        const [yb, mb, db] = String(b.dueDate).split('T')[0].split('-').map(Number);
+        return new Date(ya, ma - 1, da).getTime() - new Date(yb, mb - 1, db).getTime();
+      });
     
     // Gerar hashes sequenciais para cada parcela
     // Formato: #1/005#, #2/005#, #3/005#, etc.

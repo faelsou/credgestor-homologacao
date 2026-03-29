@@ -184,3 +184,176 @@ Impacto:
 ## Conclusão executiva
 
 O projeto já possui base sólida e boa direção arquitetural (multi-tenant + observabilidade). O principal risco atual não é falta de funcionalidade, e sim **consistência de segurança/qualidade em pontos críticos**. Corrigindo os itens da Fase 1 e iniciando a modularização do frontend, a plataforma ganha previsibilidade, reduz risco de vazamento entre tenants e acelera evolução do produto.
+
+## Correção aplicada: Datas sem fuso e cronograma determinístico
+
+### Problema
+- Divergência entre “data do empréstimo” e “datas de pagamento/parcelas” causada por:
+  - Interpretação de `YYYY-MM-DD` via `new Date(...)` (aplicando fuso/UTC).
+  - Cálculo da 1ª parcela não ancorado corretamente na `firstDueDate`.
+  - Ordenações e comparações usando `new Date(string)` em vez de comparação determinística.
+
+### Solução implementada
+- Padronização de datas como strings `YYYY-MM-DD` e normalização em utilitários centrais:
+  - `normalizeYmd(value)`: garante `YYYY-MM-DD`.
+  - `compareYmd(a, b)`: comparação determinística sem fuso.
+  - `addMonthsYmd(dateYmd, months)`: soma de meses preservando o dia (com tratamento de fim de mês).
+- Refatorações de ordenação/comparação:
+  - `Loans.tsx`, `LoanHistory.tsx`, `Installments.tsx`, `backendApi.ts`: remoção de `new Date(yyyy-mm-dd)` em sort/filters e uso de parsing manual para `Date(y,m-1,d)` ou utilitários.
+- Garantias de regra de negócio:
+  - 1ª parcela ancorada na `startDate/firstDueDate`.
+  - Próximas parcelas derivadas do último `dueDate` conhecido (+1 mês).
+
+### Arquivos impactados
+- `src/utils/index.ts`: adicionados `normalizeYmd`, `compareYmd`, `addMonthsYmd`; reforços em `formatDate`/`isLate`.
+- `src/pages/App.tsx`: ordenação por data de forma determinística e soma de meses segura.
+- `src/components/dashboard/Loans.tsx`: ordenação de parcelas sem fuso.
+- `src/components/dashboard/LoanHistory.tsx`: filtros/sorts sem `new Date(YYYY-MM-DD)`.
+- `src/components/dashboard/Installments.tsx`: ordenação de parcelas corrigida.
+- `src/services/backendApi.ts`: ordenação de datas retornadas padronizada.
+
+### Resultados esperados
+- Eliminação de “andar” de datas por timezone/UTC no frontend.
+- Cronograma de parcelas previsível e determinístico.
+- Dashboard e relatórios com filtros/ordenações consistentes.
+
+## Passo a passo de implementação dos 10 pontos
+
+### Sprint 1 - Segurança e correção crítica
+
+1. Corrigir `_apply_filters` e criar teste de regressão para múltiplos filtros.
+2. Ajustar CORS por ambiente (`ALLOWED_ORIGINS` explícito em produção).
+3. Endurecer validação de assinatura do Slack em produção.
+4. Remover imports duplicados e rodar lint.
+
+### Sprint 2 - Qualidade operacional
+
+1. Reduzir logs sensíveis (`print` e `console.log`) e adotar logger estruturado.
+2. Padronizar tratamento de erros para reduzir `except Exception` genérico.
+
+### Sprint 3 - Arquitetura frontend
+
+1. Quebrar `App.tsx` em módulos menores (sessão, carregamento de dados, ações de domínio).
+2. Criar `httpClient.ts` para unificar chamadas e remover duplicidade entre `api.ts` e `backendApi.ts`.
+3. Substituir `any` por tipos DTO em endpoints críticos.
+4. Remover fallback/constante obsoleta (`DEFAULT_TENANT_ID`).
+
+### Sprint 4 - Garantia de qualidade
+
+1. Adicionar testes automatizados backend (isolamento tenant, auth, filtros).
+2. Adicionar testes frontend (mapeamento e fluxos de sessão).
+3. Incluir checklist obrigatório de segurança/tenancy em PR.
+
+## Risco de indisponibilidade (e como mitigar)
+
+### Mudanças com maior risco
+
+- CORS incorreto pode bloquear frontend no browser.
+- Hardening do Slack pode interromper interação se segredo estiver inconsistente.
+- Refatoração de `App.tsx` e camada de API pode gerar regressão funcional.
+
+### Mitigações
+
+- Deploy por fases (não fazer big-bang).
+- Homologação obrigatória com smoke tests de login/CRUD.
+- Feature flags para mudanças sensíveis.
+- Janela de deploy fora do horário de pico.
+- Rollback rápido via pipeline.
+
+## Estratégia de rollback recomendada
+
+### Princípios
+
+- Rollback por **tag imutável** (nunca `latest`).
+- Separar rollback de aplicação e de configuração.
+- Banco com estratégia compatível (expand/contract) para evitar rollback destrutivo.
+
+### Procedimento operacional
+
+1. Detectar incidente por healthcheck/erros/monitoramento.
+2. Congelar novos deploys.
+3. Reverter para última versão estável.
+4. Rodar smoke tests (API + frontend + login).
+5. Monitorar 15-30 minutos.
+6. Registrar análise de causa raiz antes de novo deploy.
+
+## Rollback via pipeline GitHub Actions (com botão e janela de 48h)
+
+### Implementação realizada
+
+- Workflow manual criado em `/.github/workflows/rollback.yml`.
+- Script operacional criado em `/scripts/rollback.sh`.
+
+### Como o botão funciona
+
+1. Ir em **Actions**.
+2. Abrir workflow **Rollback CredGestor**.
+3. Clicar em **Run workflow**.
+4. Selecionar modo:
+   - `release`: monta tags via timestamp (`YYYYMMDD-HHMMSS`) e SHA curto opcional.
+   - `custom`: usa tags informadas manualmente.
+
+### Janela de 48h
+
+- Em `mode=release`, o workflow valida automaticamente se a versão está dentro de 48 horas.
+- Se estiver fora da janela, bloqueia rollback (a não ser que `force=true`).
+
+### Fluxo técnico
+
+1. Resolve tags de backend/frontend.
+2. Valida regra de 48h (quando aplicável).
+3. Valida secrets SSH.
+4. Copia `scripts/rollback.sh` para VPS.
+5. Executa rollback remoto em Docker Swarm:
+   - atualiza serviço `${STACK_NAME}_api` para a imagem backend da tag alvo.
+   - atualiza serviço `${STACK_NAME}_site` para a imagem frontend da tag alvo.
+6. Executa healthcheck pós-rollback (opcional desativar com `skip_healthcheck=true`).
+
+## Formatos de versão para rollback
+
+### Modo release
+
+- Timestamp: `20260326-153000`
+- SHA curto opcional: `abc1234`
+- Tags resultantes:
+  - `backend-20260326-153000-abc1234`
+  - `frontend-20260326-153000-abc1234`
+
+### Modo custom
+
+- Backend tag: valor manual (qualquer tag existente no Docker Hub).
+- Frontend tag: valor manual (qualquer tag existente no Docker Hub).
+
+## Segredos e pré-requisitos
+
+- `VPS_USER` (obrigatório)
+- `VPS_SSH_KEY` (obrigatório)
+- `VPS_HOST` (opcional, fallback no workflow)
+- `VPS_PORT` (opcional)
+
+Recomendado:
+
+- Usar `environment: production` com aprovação manual para executar rollback.
+- Alertar time via Slack quando rollback for executado.
+
+## Comandos para branch e PR (execução local)
+
+Devido a restrição do ambiente de automação (filesystem read-only no `.git`), branch/commit/PR devem ser executados localmente:
+
+```bash
+cd /var/www/credgestor-homologacao
+git checkout -b feat/rollback-workflow-48h
+git add .github/workflows/rollback.yml scripts/rollback.sh DOCUMENTACAO_ANALISE_SENIOR.md
+git commit -m "feat(ci): add manual rollback workflow with 48h window"
+git push -u origin feat/rollback-workflow-48h
+```
+
+Opcional com GitHub CLI:
+
+```bash
+gh pr create \
+  --base main \
+  --head feat/rollback-workflow-48h \
+  --title "feat(ci): workflow de rollback manual com janela de 48h" \
+  --body "Adiciona rollback manual via GitHub Actions com validacao de 48h, modo release/custom e execucao remota no Docker Swarm."
+```

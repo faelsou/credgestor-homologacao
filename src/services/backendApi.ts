@@ -424,7 +424,11 @@ const normalizeApiInstallment = (apiInst: any): any => {
     if (allDates.length > 0) {
       // Ordenar datas e pegar a mais recente
       const sortedDates = allDates.sort((a: string, b: string) => 
-        new Date(b).getTime() - new Date(a).getTime()
+        (() => {
+          const [ya, ma, da] = String(a).split('T')[0].split('-').map(Number);
+          const [yb, mb, db] = String(b).split('T')[0].split('-').map(Number);
+          return new Date(yb, mb - 1, db).getTime() - new Date(ya, ma - 1, da).getTime();
+        })()
       );
       dueDate = sortedDates[0];
     }
