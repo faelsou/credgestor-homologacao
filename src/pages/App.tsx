@@ -3430,7 +3430,7 @@ const App: React.FC = () => {
               created_by: user?.email || 'system'
             }
           }, {
-            on_conflict: 'tenant_id,email'
+            onConflict: 'tenant_id,email'
           });
       } catch (tenantError) {
         console.warn('Aviso: Erro ao criar vínculo em tenant_users', tenantError);

@@ -11,7 +11,6 @@ describe('Date utils - YYYY-MM-DD without timezone', () => {
   afterAll(() => {
     vi.useRealTimers();
     // restaurar Date
-    // @ts-expect-error restore
     global.Date = realDate;
   });
 
