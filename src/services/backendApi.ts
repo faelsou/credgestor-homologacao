@@ -36,6 +36,9 @@ const buildUrl = (path: string) => {
   return `${NORMALIZED_BASE_URL}/${path.replace(/^\//, '')}`;
 };
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isUuid = (value: string) => UUID_REGEX.test(value);
+
 const toJson = async (response: Response) => {
   const text = await response.text();
   try {
@@ -597,6 +600,13 @@ export async function updateBackendInstallment(
   installmentId: string,
   installment: any
 ): Promise<any> {
+  if (!isUuid(installmentId)) {
+    throw new Error(
+      `ID de parcela invalido para atualizacao no backend: ${installmentId}. ` +
+      'Recarregue os dados para sincronizar os IDs reais.'
+    );
+  }
+
   const bearerToken = token?.replace(/[\r\n]+/g, '').trim();
   if (!bearerToken) {
     throw new Error('Token de acesso inválido ou ausente para atualizar parcelas.');
@@ -660,6 +670,13 @@ export async function deleteBackendInstallment(
   tenantId: string,
   installmentId: string
 ): Promise<void> {
+  if (!isUuid(installmentId)) {
+    throw new Error(
+      `ID de parcela invalido para exclusao no backend: ${installmentId}. ` +
+      'Recarregue os dados para sincronizar os IDs reais.'
+    );
+  }
+
   const bearerToken = token?.replace(/[\r\n]+/g, '').trim();
   if (!bearerToken) {
     throw new Error('Token de acesso inválido ou ausente para deletar parcelas.');

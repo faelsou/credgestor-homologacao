@@ -2289,9 +2289,16 @@ const App: React.FC = () => {
         }
         
         // 2. Criar novas parcelas geradas (substituem as pendentes antigas)
+        // Guardar os registros retornados para usar os IDs UUID reais do backend.
+        const persistedInstallments: Installment[] = [];
         for (const newInst of generatedInstallments) {
           try {
-            await createBackendInstallment(session.accessToken, requireTenantId(session.tenantId, 'criar parcelas'), newInst);
+            const createdInstallment = await createBackendInstallment(
+              session.accessToken,
+              requireTenantId(session.tenantId, 'criar parcelas'),
+              newInst
+            );
+            persistedInstallments.push(createdInstallment);
           } catch (error) {
             console.error(`Erro ao criar parcela ${newInst.id} no backend`, error);
           }
@@ -2306,7 +2313,9 @@ const App: React.FC = () => {
           const withoutOldPending = prev.filter(inst => 
             inst.loanId !== loan.id || inst.status === InstallmentStatus.PAID
           );
-          return [...withoutOldPending, ...generatedInstallments];
+          // Se houve sucesso na persistencia, usar IDs reais do backend em vez de IDs locais "inst_*".
+          const nextInstallments = persistedInstallments.length > 0 ? persistedInstallments : generatedInstallments;
+          return [...withoutOldPending, ...nextInstallments];
         });
         return;
       } catch (error) {
@@ -2353,21 +2362,13 @@ const App: React.FC = () => {
 
     const promisedPaymentHistory = [...(installment.promisedPaymentHistory ?? []), entry];
 
-    // Encontrar a data mais recente do histórico (incluindo o novo agendamento)
-    // A data de vencimento deve ser sempre a data mais recente do histórico de agendamentos
-    const allDates = [...promisedPaymentHistory.map(e => e.date), scheduledDate];
-          const mostRecentDate = allDates.sort((a, b) => {
-            const [yA, mA, dA] = String(a).split('T')[0].split('-').map(Number);
-            const [yB, mB, dB] = String(b).split('T')[0].split('-').map(Number);
-            return new Date(yB, mB - 1, dB).getTime() - new Date(yA, mA - 1, dA).getTime();
-          })[0];
-
-    // Atualizar a data de vencimento (dueDate) para a data mais recente do agendamento
+    // Atualizar somente a parcela selecionada com a data informada no agendamento atual.
+    // Nao recalcular com base na data mais recente do historico para nao deslocar o emprestimo.
     // IMPORTANTE: Os juros (interestAmount) e capital (principalAmount) NÃO devem ser alterados
     // a menos que haja multa diária configurada. Preservar os valores originais.
     const updatedInstallment = {
       ...installment,
-      dueDate: mostRecentDate, // Atualizar dueDate para a data mais recente do histórico
+      dueDate: scheduledDate,
       promisedPaymentReason: entry.reason,
       promisedPaymentAmount: entry.amount,
       promisedPaymentDate: entry.date,

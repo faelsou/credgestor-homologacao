@@ -1,57 +1,11 @@
-# 🔧 Fix: Correção de Datas de Recebimento no Dashboard e Empréstimos
+# feat: Agent status 1h + Slack test endpoint
 
-## 📋 Descrição
+## Mudanças
+- agent/main.py: agenda envio de status saudável a cada 1h (formato legado)
+- agent/config.py: lê SLACK_* e APPROVAL_TIMEOUT/DOCKER_STACK do ambiente
+- backend/main.py: adiciona POST /slack/test (envio via SLACK_WEBHOOK_URL)
 
-Este PR corrige problemas relacionados ao cálculo e exibição de datas de recebimento no Dashboard e na lista de Empréstimos. As datas não estavam sendo calculadas e exibidas corretamente devido a problemas de fuso horário e lógica incorreta no cálculo das parcelas.
-
-## 🐛 Problemas Corrigidos
-
-1. **Função `addMonths` com problemas de fuso horário**
-   - A função usava `new Date(dateString)` que causava problemas de conversão de fuso horário
-   - Agora faz parse manual da data (ano, mês, dia) e formata de volta para YYYY-MM-DD
-
-2. **Cálculo incorreto da primeira parcela**
-   - A primeira parcela estava sendo calculada como 1 mês após a data de início
-   - Agora a primeira parcela usa a data de início corretamente
-
-3. **Comparações de datas no Dashboard**
-   - Comparações usando `new Date()` causavam inconsistências
-   - Implementada normalização de datas antes de comparar
-
-4. **Formatação de datas inconsistente**
-   - Função `formatDate` melhorada para lidar com diferentes formatos
-   - Função `isLate` corrigida para evitar problemas de fuso horário
-
-## 📁 Arquivos Alterados
-
-- `src/components/dashboard/Home.tsx` - Normalização de datas no Dashboard
-- `src/components/dashboard/Loans.tsx` - Correção do cálculo de datas das parcelas
-- `src/pages/App.tsx` - Correção da função `addMonths`
-- `src/utils/index.ts` - Melhorias em `formatDate` e `isLate`
-
-## ✅ Testes Realizados
-
-- ✅ Verificação de linter (sem erros)
-- ✅ Cálculo correto da primeira parcela
-- ✅ Normalização de datas funcionando
-- ✅ Formatação de datas consistente
-
-## 🎯 Resultado Esperado
-
-- Datas de recebimento calculadas corretamente a partir da data de início
-- Primeira parcela usando a data de início especificada
-- Dashboard exibindo as datas corretas nos filtros e gráficos
-- Sem problemas de fuso horário nas comparações e formatações
-
-## 📝 Notas para Revisão
-
-Por favor, verifique:
-1. Se as datas estão sendo calculadas corretamente ao criar novos empréstimos
-2. Se o Dashboard está filtrando e exibindo as datas corretamente
-3. Se não há regressões em outras funcionalidades relacionadas a datas
-
----
-
-**Tipo de PR:** 🐛 Bug Fix  
-**Prioridade:** Alta (afeta funcionalidade principal)  
-**Breaking Changes:** Não
+## Como testar
+1) Exportar SLACK_WEBHOOK_URL (ou SLACK_BOT_TOKEN + SLACK_CHANNEL)
+2) Enviar teste rápido: curl -X POST http://localhost:8000/slack/test -d '{message:Teste}' -H 'Content-Type: application/json'
+3) Subir agent (compose) e validar envio automático em 1h ou forçar chamada do main
