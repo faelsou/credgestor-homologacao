@@ -25,6 +25,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   packages: write
   security-events: write  # Necessário para CodeQL/SARIF upload
 
@@ -332,8 +333,6 @@ jobs:
           output: 'trivy-image-${{ matrix.component }}.sarif'
           severity: 'CRITICAL,HIGH'
           exit-code: '0'  # Não falha o build, apenas reporta
-          # Scan apenas se a imagem foi criada (push bem-sucedido)
-          only-fixed: false
 
       - name: ✅ Check if SARIF file exists
         id: check-sarif
@@ -350,6 +349,7 @@ jobs:
       - name: 📤 Upload Trivy image scan results
         uses: github/codeql-action/upload-sarif@v4
         if: always() && github.event_name != 'pull_request' && steps.check-sarif.outputs.file_exists == 'true'
+        continue-on-error: true
         with:
           sarif_file: 'trivy-image-${{ matrix.component }}.sarif'
           wait-for-processing: false
@@ -377,6 +377,7 @@ jobs:
       - name: 📤 Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
         if: always() && github.event_name != 'pull_request'
+        continue-on-error: true
         with:
           sarif_file: 'trivy-results.sarif'
           wait-for-processing: false
