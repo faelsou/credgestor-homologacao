@@ -2368,7 +2368,6 @@ const App: React.FC = () => {
     // a menos que haja multa diária configurada. Preservar os valores originais.
     const updatedInstallment = {
       ...installment,
-      dueDate: scheduledDate,
       promisedPaymentReason: entry.reason,
       promisedPaymentAmount: entry.amount,
       promisedPaymentDate: entry.date,

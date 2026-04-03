@@ -416,26 +416,10 @@ const normalizeApiInstallment = (apiInst: any): any => {
   const promisedPaymentHistory = apiInst.promised_payment_history || apiInst.promisedPaymentHistory || [];
   const originalDueDate = apiInst.due_date || apiInst.dueDate || '';
   
-  // Se houver histórico de agendamentos, usar a data mais recente como data de vencimento
-  let dueDate = originalDueDate;
-  if (promisedPaymentHistory && Array.isArray(promisedPaymentHistory) && promisedPaymentHistory.length > 0) {
-    const allDates = [
-      ...promisedPaymentHistory.map((e: any) => e.date),
-      apiInst.promised_payment_date || apiInst.promisedPaymentDate
-    ].filter(Boolean);
-    
-    if (allDates.length > 0) {
-      // Ordenar datas e pegar a mais recente
-      const sortedDates = allDates.sort((a: string, b: string) => 
-        (() => {
-          const [ya, ma, da] = String(a).split('T')[0].split('-').map(Number);
-          const [yb, mb, db] = String(b).split('T')[0].split('-').map(Number);
-          return new Date(yb, mb - 1, db).getTime() - new Date(ya, ma - 1, da).getTime();
-        })()
-      );
-      dueDate = sortedDates[0];
-    }
-  }
+  // Mantemos a dueDate original (vencimento da parcela). O agendamento fica em
+  // `promisedPaymentDate`/`promisedPaymentHistory`, para não deslocar a sequência
+  // de datas futuras do contrato.
+  const dueDate = originalDueDate;
   
   return {
     id: apiInst.id || '',
