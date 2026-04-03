@@ -2894,6 +2894,20 @@ const App: React.FC = () => {
         // Usar o valor correto dos juros baseado no capital pendente
         interestDue = correctInterestAmount;
       }
+
+      // Se existe agendamento com multa para esta parcela, tratar a multa como parte dos juros
+      // até o limite do valor prometido, evitando que a multa amortize o capital indevidamente.
+      const latestPromisedAmount =
+        installment.promisedPaymentHistory?.[installment.promisedPaymentHistory.length - 1]?.amount ??
+        installment.promisedPaymentAmount ??
+        0;
+      if (latestPromisedAmount > 0 && latestPromisedAmount > interestDue) {
+        const cappedPayment = Math.min(paymentValue, latestPromisedAmount);
+        const feePortion = Math.max(0, cappedPayment - interestDue);
+        if (feePortion > 0) {
+          interestDue = Number((interestDue + feePortion).toFixed(2));
+        }
+      }
       
       // IMPORTANTE: Para empréstimos INTEREST_ONLY, o capital SEMPRE deve ser o valor original do empréstimo
       // O capital do empréstimo (loan.amount) NUNCA deve ser alterado, mesmo com amortização
@@ -3175,9 +3189,24 @@ const App: React.FC = () => {
       const principalPaidSoFar = installment.paymentHistory?.reduce((sum, p) => sum + (p.principalPaid || 0), 0) || 0;
       
       // Calcular valores pendentes
-      const pendingInterest = Math.max(0, interestAmount - interestPaidSoFar);
+      let pendingInterest = Math.max(0, interestAmount - interestPaidSoFar);
       const pendingPrincipal = Math.max(0, principalAmount - principalPaidSoFar);
-      const totalPending = pendingInterest + pendingPrincipal;
+      let totalPending = pendingInterest + pendingPrincipal;
+
+      // Se existe agendamento com multa para esta parcela, tratar a multa como parte dos juros
+      // até o limite do valor prometido, evitando que a multa amortize capital indevidamente.
+      const latestPromisedAmount =
+        installment.promisedPaymentHistory?.[installment.promisedPaymentHistory.length - 1]?.amount ??
+        installment.promisedPaymentAmount ??
+        0;
+      if (latestPromisedAmount > 0 && latestPromisedAmount > totalPending) {
+        const cappedPayment = Math.min(paymentValue, latestPromisedAmount);
+        const feePortion = Math.max(0, cappedPayment - totalPending);
+        if (feePortion > 0) {
+          pendingInterest = Number((pendingInterest + feePortion).toFixed(2));
+          totalPending = pendingInterest + pendingPrincipal;
+        }
+      }
       
       // Distribuir o pagamento proporcionalmente entre juros e capital
       let interestPaid = 0;

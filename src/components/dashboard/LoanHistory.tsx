@@ -142,17 +142,44 @@ export const LoanHistoryView: React.FC = () => {
   };
 
   const getInterestAmount = (inst: Installment) => {
+    const loan = loans.find(l => l.id === inst.loanId);
+    if (loan && loan.model === LoanModel.INTEREST_ONLY) {
+      // Juros calculados sobre o capital pendente atual
+      const allLoanInstallments = installments.filter(i => i.loanId === loan.id);
+      const totalCapitalPaid = allLoanInstallments.reduce((sum, i) => {
+        if (i.paymentHistory && i.paymentHistory.length > 0) {
+          return sum + i.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
+        }
+        return sum;
+      }, 0);
+      const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
+      return Number((pendingCapital * (loan.interestRate / 100)).toFixed(2));
+    }
+
+    // Para outros modelos, usar o valor salvo na parcela
     const interest = inst.interestAmount ?? Math.max(0, inst.amount - (inst.principalAmount ?? inst.amount));
     return interest > 0 ? interest : inst.amount;
   };
 
   const getLatestPromise = (inst: Installment) => inst.promisedPaymentHistory?.[inst.promisedPaymentHistory.length - 1];
 
+  const getPromiseBaseAmount = (inst: Installment) => {
+    const loan = loans.find(l => l.id === inst.loanId);
+    if (loan && loan.model === LoanModel.PRICE) {
+      // Para PRICE: mostrar valor total da parcela (considerando pendente, se houver)
+      const pendingAmount = (inst.amount || 0) - (inst.amountPaid || 0);
+      return pendingAmount > 0 ? pendingAmount : (inst.amount || 0);
+    }
+
+    // Para INTEREST_ONLY: mostrar apenas o valor dos juros
+    return getInterestAmount(inst);
+  };
+
   const getPromiseDefaults = (inst: Installment) => {
     const latest = getLatestPromise(inst);
     return {
       reason: latest?.reason ?? inst.promisedPaymentReason ?? '',
-      amount: latest?.amount ?? inst.promisedPaymentAmount ?? getInterestAmount(inst),
+      amount: latest?.amount ?? inst.promisedPaymentAmount ?? getPromiseBaseAmount(inst),
       date: latest?.date ?? inst.promisedPaymentDate ?? getTodayDateString()
     };
   };
@@ -228,7 +255,10 @@ export const LoanHistoryView: React.FC = () => {
     const reasonWithLateFee = promiseLateFee > 0 
       ? `${promiseReason.trim()} | Multa/Atraso: ${formatCurrency(promiseLateFee)}`
       : promiseReason.trim();
-    scheduleFuturePayment(promiseModal.installment.id, reasonWithLateFee, promiseAmount, promiseDate);
+
+    // A multa deve ser somada ao valor agendado (valor a receber)
+    const amountToCharge = Number((promiseAmount + (promiseLateFee || 0)).toFixed(2));
+    scheduleFuturePayment(promiseModal.installment.id, reasonWithLateFee, amountToCharge, promiseDate);
     setPromiseModal(null);
     setPromiseLateFee(0);
   };
