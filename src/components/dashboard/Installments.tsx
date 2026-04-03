@@ -31,7 +31,14 @@ export const InstallmentsView: React.FC = () => {
       const loan = loans.find(l => l.id === selectedInstallment.loanId);
       if (loan && loan.model === LoanModel.PRICE) {
         const pendingAmount = selectedInstallment.amount - (selectedInstallment.amountPaid || 0);
-        const finalAmount = pendingAmount > 0 ? pendingAmount : selectedInstallment.amount;
+        const latestPromiseAmount =
+          selectedInstallment.promisedPaymentHistory?.[selectedInstallment.promisedPaymentHistory.length - 1]?.amount ??
+          selectedInstallment.promisedPaymentAmount ??
+          0;
+
+        // Para PRICE: quando existir promessa (inclui multa), usar o valor total prometido.
+        const baseAmount = pendingAmount > 0 ? pendingAmount : selectedInstallment.amount;
+        const finalAmount = latestPromiseAmount > 0 ? latestPromiseAmount : baseAmount;
         if (paymentAmount !== finalAmount) {
           setPaymentAmount(finalAmount);
         }
@@ -53,6 +60,24 @@ export const InstallmentsView: React.FC = () => {
 
   const getClient = (id: string) => clients.find(c => c.id === id);
 
+  // A data exibida/considerada em telas e filtros deve refletir o agendamento de recebimento,
+  // quando existir. O `dueDate` original do contrato permanece para cálculo/encadeamento.
+  const getInstallmentDueDateForDisplay = useCallback((inst: Installment): string => {
+    // Usar a data do agendamento (promisedPaymentDate) quando existir.
+    if (inst.promisedPaymentDate) return inst.promisedPaymentDate;
+
+    const history = inst.promisedPaymentHistory ?? [];
+    if (history.length > 0) {
+      const toTime = (d: string) => {
+        const [y, m, day] = String(d).split('T')[0].split('-').map(Number);
+        return new Date(y, m - 1, day).getTime();
+      };
+      return history.reduce((maxDate, entry) => (toTime(entry.date) > toTime(maxDate) ? entry.date : maxDate), history[0].date);
+    }
+
+    return inst.dueDate;
+  }, []);
+
   // Verifica se uma parcela está realmente atrasada, considerando pagamentos
   const isActuallyLate = useCallback((inst: Installment): boolean => {
     // Se está paga, não está atrasada
@@ -70,7 +95,8 @@ export const InstallmentsView: React.FC = () => {
 
     // PRIMEIRO: Se a data de vencimento não passou, não está atrasada (independente de pagamentos)
     // Isso garante que parcelas com vencimento futuro nunca sejam consideradas atrasadas
-    if (!isLate(inst.dueDate)) {
+    const displayDueDate = getInstallmentDueDateForDisplay(inst);
+    if (!isLate(displayDueDate)) {
       return false;
     }
 
@@ -87,7 +113,7 @@ export const InstallmentsView: React.FC = () => {
         return dateStr;
       };
       
-      const due = normalizeDate(inst.dueDate);
+      const due = normalizeDate(displayDueDate);
       
       // Verificar se algum pagamento foi feito antes ou no dia do vencimento
       // Se sim, a parcela foi cadastrada retroativa mas o cliente pagou em dia
@@ -108,7 +134,7 @@ export const InstallmentsView: React.FC = () => {
     // - E (não há pagamentos OU todos os pagamentos foram feitos depois do vencimento)
     // - E a parcela não foi totalmente paga
     return true;
-  }, []);
+  }, [getInstallmentDueDateForDisplay]);
 
   // Função auxiliar para normalizar data para comparação
   const normalizeDateString = (dateStr: string): string => {
@@ -132,7 +158,13 @@ export const InstallmentsView: React.FC = () => {
         if (isFullyPaid || inst.status === InstallmentStatus.PAID) return false;
         return isActuallyLate(inst);
       }
-      if (filter === 'PENDING') return inst.status === InstallmentStatus.PENDING && !isActuallyLate(inst);
+      if (filter === 'PENDING') {
+        // Usar a data exibida/agendada para decidir se está atrasada de fato,
+        // mesmo que o status persistido no banco esteja desatualizado.
+        if (isFullyPaid || inst.status === InstallmentStatus.PAID) return false;
+        if (inst.status === InstallmentStatus.PARTIAL) return false;
+        return !isActuallyLate(inst);
+      }
       if (filter === 'PARTIAL') {
         // Parcelas pagas não devem aparecer no filtro PARTIAL
         if (isFullyPaid || inst.status === InstallmentStatus.PAID) return false;
@@ -146,7 +178,7 @@ export const InstallmentsView: React.FC = () => {
       const startNormalized = normalizeDateString(dateFilterStart);
       const endNormalized = normalizeDateString(dateFilterEnd);
       result = result.filter(inst => {
-        const dueNormalized = normalizeDateString(inst.dueDate);
+        const dueNormalized = normalizeDateString(getInstallmentDueDateForDisplay(inst));
         return dueNormalized >= startNormalized && dueNormalized <= endNormalized;
       });
     }
@@ -163,17 +195,19 @@ export const InstallmentsView: React.FC = () => {
     }
 
     return result.sort((a, b) => {
-      const [ya, ma, da] = String(a.dueDate).split('T')[0].split('-').map(Number);
-      const [yb, mb, db] = String(b.dueDate).split('T')[0].split('-').map(Number);
+      const aDate = getInstallmentDueDateForDisplay(a);
+      const bDate = getInstallmentDueDateForDisplay(b);
+      const [ya, ma, da] = String(aDate).split('T')[0].split('-').map(Number);
+      const [yb, mb, db] = String(bDate).split('T')[0].split('-').map(Number);
       return new Date(ya, ma - 1, da).getTime() - new Date(yb, mb - 1, db).getTime();
     });
-  }, [installments, filter, searchTerm, clients, dateFilterStart, dateFilterEnd, isActuallyLate]);
+  }, [installments, filter, searchTerm, clients, dateFilterStart, dateFilterEnd, isActuallyLate, getInstallmentDueDateForDisplay]);
 
   const handleWhatsapp = (inst: Installment) => {
     const client = getClient(inst.clientId);
     if (!client) return;
 
-    const message = `Olá ${client.name}, lembrete da parcela ${inst.number} no valor de ${formatCurrency(inst.amount)} vencendo em ${formatDate(inst.dueDate)}.`;
+    const message = `Olá ${client.name}, lembrete da parcela ${inst.number} no valor de ${formatCurrency(inst.amount)} vencendo em ${formatDate(getInstallmentDueDateForDisplay(inst))}.`;
     const url = `https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
   };
@@ -187,6 +221,17 @@ export const InstallmentsView: React.FC = () => {
     setSelectedInstallment(installment);
     
     const pendingAmount = installment.amount - (installment.amountPaid || 0);
+    const latestPromiseAmount =
+      installment.promisedPaymentHistory?.[installment.promisedPaymentHistory.length - 1]?.amount ??
+      installment.promisedPaymentAmount ??
+      0;
+
+    // Se existir agendamento, o valor a receber deve respeitar o valor prometido (inclui multa).
+    if (latestPromiseAmount > 0) {
+      setPaymentAmount(latestPromiseAmount);
+      setPaymentDate(getTodayDateString());
+      return;
+    }
     
     // IMPORTANTE: Para empréstimos PRICE, o valor a receber deve SEMPRE ser igual ao valor da parcela
     if (loan && loan.model === LoanModel.PRICE) {
@@ -252,11 +297,23 @@ export const InstallmentsView: React.FC = () => {
 
   const getLatestPromise = (inst: Installment) => inst.promisedPaymentHistory?.[inst.promisedPaymentHistory.length - 1];
 
+  const getPromiseBaseAmount = (inst: Installment) => {
+    const loan = loans.find(l => l.id === inst.loanId);
+    if (loan && loan.model === LoanModel.PRICE) {
+      // Para PRICE: mostrar o valor total da parcela (considerando pendente, se houver)
+      const pendingAmount = (inst.amount || 0) - (inst.amountPaid || 0);
+      return pendingAmount > 0 ? pendingAmount : (inst.amount || 0);
+    }
+
+    // Para INTEREST_ONLY: mostrar apenas o valor dos juros
+    return getInterestAmount(inst);
+  };
+
   const getPromiseDefaults = (inst: Installment) => {
     const latest = getLatestPromise(inst);
     return {
       reason: latest?.reason ?? inst.promisedPaymentReason ?? '',
-      amount: latest?.amount ?? inst.promisedPaymentAmount ?? getInterestAmount(inst),
+      amount: latest?.amount ?? inst.promisedPaymentAmount ?? getPromiseBaseAmount(inst),
       date: latest?.date ?? inst.promisedPaymentDate ?? getTodayDateString()
     };
   };
@@ -375,19 +432,28 @@ export const InstallmentsView: React.FC = () => {
     const roundedPaymentAmount = Math.round(paymentAmount * 100) / 100;
     const roundedOutstandingAmount = Math.round(outstandingAmount * 100) / 100;
     const roundedPendingAmount = Math.round(pendingAmount * 100) / 100;
+    const latestPromiseAmount =
+      selectedInstallment.promisedPaymentHistory?.[selectedInstallment.promisedPaymentHistory.length - 1]?.amount ??
+      selectedInstallment.promisedPaymentAmount ??
+      0;
+    const roundedLatestPromiseAmount = Math.round(latestPromiseAmount * 100) / 100;
 
     // Para empréstimos "somente juros", permitir pagamento até o valor total em aberto (capital + juros)
     // Para outros modelos, validar que não exceda o valor pendente da parcela
     if (loan.model === LoanModel.INTEREST_ONLY) {
       // Permitir pagamento até o valor total em aberto do empréstimo
-      if (roundedPaymentAmount > roundedOutstandingAmount) {
+      const maxAllowed = roundedLatestPromiseAmount > roundedOutstandingAmount ? roundedLatestPromiseAmount : roundedOutstandingAmount;
+      if (roundedPaymentAmount > maxAllowed) {
         alert(`O valor a receber não pode ser maior que o valor total em aberto do empréstimo (${formatCurrency(outstandingAmount)}).`);
         return;
       }
     } else {
       // Para outros modelos, validar que não exceda o valor pendente da parcela
-      if (roundedPaymentAmount > roundedPendingAmount) {
-        alert(`O valor a receber não pode ser maior que o valor pendente da parcela (${formatCurrency(pendingAmount)}).`);
+      const maxAllowed = roundedLatestPromiseAmount > roundedPendingAmount ? roundedLatestPromiseAmount : roundedPendingAmount;
+      if (roundedPaymentAmount > maxAllowed) {
+        alert(
+          `O valor a receber não pode ser maior que o valor pendente da parcela (${formatCurrency(pendingAmount)}).`
+        );
         return;
       }
     }
@@ -484,7 +550,9 @@ export const InstallmentsView: React.FC = () => {
       const reasonWithLateFee = promiseLateFee > 0 
         ? `${promiseReason.trim()} | Multa/Atraso: ${formatCurrency(promiseLateFee)}`
         : promiseReason.trim();
-      await scheduleFuturePayment(promiseModal.id, reasonWithLateFee, promiseAmount, promiseDate);
+      // A multa deve ser somada ao valor agendado (valor a receber)
+      const amountToCharge = Number((promiseAmount + (promiseLateFee || 0)).toFixed(2));
+      await scheduleFuturePayment(promiseModal.id, reasonWithLateFee, amountToCharge, promiseDate);
       setPromiseModal(null);
       setPromiseLateFee(0);
     } catch (error) {
@@ -668,7 +736,7 @@ export const InstallmentsView: React.FC = () => {
         : '';
 
       return {
-        'Data Vencimento': formatDate(inst.dueDate),
+        'Data Vencimento': formatDate(getInstallmentDueDateForDisplay(inst)),
         'Cliente': client?.name || 'Cliente não encontrado',
         'CPF': client?.cpf || '',
         'Telefone': client?.phone || '',
@@ -871,7 +939,7 @@ export const InstallmentsView: React.FC = () => {
                const late = isActuallyLate(inst);
                return (
                 <tr key={inst.id} className="hover:bg-slate-50">
-                    <td className="p-4">{formatDate(inst.dueDate)}</td>
+                    <td className="p-4">{formatDate(getInstallmentDueDateForDisplay(inst))}</td>
                     <td className="p-4 font-medium">{client?.name}</td>
                     <td className="p-4 text-slate-500">{inst.number}</td>
                     <td className="p-4 font-medium">
@@ -946,7 +1014,7 @@ export const InstallmentsView: React.FC = () => {
                 <div key={inst.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                     <div className="flex justify-between items-start mb-2">
                         <div>
-                            <span className="text-xs text-slate-500 font-medium">Vencimento {formatDate(inst.dueDate)}</span>
+                            <span className="text-xs text-slate-500 font-medium">Vencimento {formatDate(getInstallmentDueDateForDisplay(inst))}</span>
                             <h4 className="font-bold text-slate-800">{client?.name}</h4>
                             <span className="text-xs text-slate-400">Parcela {inst.number}</span>
                         </div>
@@ -1109,7 +1177,12 @@ export const InstallmentsView: React.FC = () => {
                   
                   // Para empréstimos PRICE, o valor a receber deve sempre ser igual ao valor da parcela
                   if (loan && loan.model === LoanModel.PRICE) {
-                    const finalPendingAmount = pendingAmount > 0 ? pendingAmount : selectedInstallment.amount;
+                    const latestPromiseAmount =
+                      selectedInstallment.promisedPaymentHistory?.[selectedInstallment.promisedPaymentHistory.length - 1]?.amount ??
+                      selectedInstallment.promisedPaymentAmount ??
+                      0;
+                    const baseAmount = pendingAmount > 0 ? pendingAmount : selectedInstallment.amount;
+                    const finalPendingAmount = latestPromiseAmount > 0 ? latestPromiseAmount : baseAmount;
                     
                     return (
                       <>
