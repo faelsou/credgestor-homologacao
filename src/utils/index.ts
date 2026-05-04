@@ -436,3 +436,5 @@ export const numberToWords = (value: number): string => {
 
   return resultado.trim();
 };
+
+export { generateSequentialHashes, promissoryIdentifyingTotal } from './promissoryHashes';
