@@ -1,7 +1,17 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Plus, Calculator, Pencil, Trash2, FileText, Clock8, Search, RotateCcw, Scale } from 'lucide-react';
 import { AppContext } from '@/pages/App';
-import { formatCurrency, formatDate, generateNoteHash, getTodayDateString, numberToWords, formatCpf, formatCep, formatInterestRate } from '@/utils';
+import {
+  formatCurrency,
+  formatDate,
+  getTodayDateString,
+  numberToWords,
+  formatCpf,
+  formatCep,
+  formatInterestRate,
+  generateSequentialHashes,
+  promissoryIdentifyingTotal,
+} from '@/utils';
 import { LoanStatus, Installment, InstallmentStatus, UserRole, Loan, PromissoryNote, IndicationType, Client, LoanModel } from '@/types';
 
 interface LoansViewProps {
@@ -30,6 +40,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   const [installmentsCount, setInstallmentsCount] = useState(1);
   // Emissão e 1ª parcela devem manter o mesmo dia base, mudando apenas o mês.
   const DATE_OFFSET_MONTHS = 1;
+  const MAX_LOAN_INSTALLMENTS = 120;
   const emissionDefault = getTodayDateString();
   const firstInstallmentDefault = (() => {
     const [y, m, d] = emissionDefault.split('-').map(Number);
@@ -169,21 +180,6 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setPromissoryNote(prev => ({ ...prev, [field]: value }));
   };
 
-  // Gerar hashes sequenciais para cada parcela da nota promissória
-  // Formato: #1/005#, #2/005#, #3/005#, etc.
-  // Onde o primeiro número é o número da parcela (1, 2, 3...) e o segundo é o total de parcelas
-  const generateSequentialHashes = (installmentsCount: number): string[] => {
-    const hashes: string[] = [];
-    const totalParcels = installmentsCount.toString().padStart(3, '0');
-    
-    // Gerar hash sequencial para cada parcela: Nº #1/005#, Nº #2/005#, etc.
-    for (let i = 1; i <= installmentsCount; i++) {
-      hashes.push(`#${i}/${totalParcels}#`);
-    }
-    
-    return hashes;
-  };
-
   const resetForm = () => {
     setSelectedClientId('');
     setAmount(1000);
@@ -258,20 +254,16 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     }
 
     const lastDueDate = generatedInstallments[generatedInstallments.length - 1]?.dueDate || startDate;
-    
-    // Hash inicial do empréstimo sempre é #1/001#
-    // Este hash é usado apenas para identificar o empréstimo
-    // As notas promissórias terão hashes sequenciais: #1/010#, #2/010#, #3/010#, etc.
+
+    const hashTotal = promissoryIdentifyingTotal(loanModel, installmentsCount);
+    const defaultFirstHash = generateSequentialHashes(hashTotal)[0];
     let noteNumber = promissoryNote.numberHash;
     if (!noteNumber) {
-      // Hash inicial sempre começa com #1/001#
-      noteNumber = '#1/001#';
+      noteNumber = defaultFirstHash;
     } else {
-      // Se já existe um hash, manter o formato mas garantir que seja válido
       const match = noteNumber.match(/#(\d+)\/(\d+)#/);
       if (!match) {
-        // Se o formato estiver incorreto, resetar para #1/001#
-        noteNumber = '#1/001#';
+        noteNumber = defaultFirstHash;
       }
     }
     
@@ -383,19 +375,12 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     }
   }, [isModalOpen, editingLoan]);
 
-  // Atualizar hash inicial do empréstimo quando o cliente for selecionado
-  // Hash inicial sempre é #1/001#
+  // Hash de referência da nota: 1ª parcela / total (ex.: #1/120#), alinhado ao modelo e à quantidade de parcelas
   useEffect(() => {
-    if (selectedClientId && !editingLoan) {
-      setPromissoryNote(prev => {
-        // Se não há hash ou o hash não é #1/001#, definir como #1/001#
-        if (!prev.numberHash || prev.numberHash !== '#1/001#') {
-          return { ...prev, numberHash: '#1/001#' };
-        }
-        return prev;
-      });
-    }
-  }, [selectedClientId, editingLoan]);
+    if (!selectedClientId || editingLoan) return;
+    const first = generateSequentialHashes(promissoryIdentifyingTotal(loanModel, installmentsCount))[0];
+    setPromissoryNote(prev => ({ ...prev, numberHash: first }));
+  }, [selectedClientId, editingLoan, installmentsCount, loanModel]);
 
   // Atualizar data de vencimento com a última parcela da simulação
   useEffect(() => {
@@ -1378,11 +1363,15 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                     <label className="block text-sm font-medium text-slate-700 mb-1">Parcelas</label>
                     <input
                       type="number"
-                      min="1" 
-                      max="48" 
+                      min={1}
+                      max={Math.max(MAX_LOAN_INSTALLMENTS, installmentsCount)}
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors" 
                       value={installmentsCount} 
-                      onChange={e => setInstallmentsCount(parseInt(e.target.value))} 
+                      onChange={e => {
+                        const v = parseInt(e.target.value, 10);
+                        if (!Number.isFinite(v)) return;
+                        setInstallmentsCount(Math.min(MAX_LOAN_INSTALLMENTS, Math.max(1, v)));
+                      }} 
                     />
                 </div>
                 <div>
@@ -1472,10 +1461,13 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-colors"
                       value={promissoryNote.numberHash}
                       onChange={e => handlePromissoryChange('numberHash', e.target.value)}
-                      placeholder="#1/001#"
+                      placeholder={
+                        generateSequentialHashes(promissoryIdentifyingTotal(loanModel, installmentsCount))[0] ||
+                        '#1/001#'
+                      }
                     />
                     <p className="text-xs text-slate-500 mt-1">
-                      Hash inicial do empréstimo: #1/001#. As notas promissórias terão hashes sequenciais: #1/010#, #2/010#, #3/010#, etc.
+                      Identifica a 1ª parcela no total do contrato (ex.: #1/120# para 120 parcelas). Na geração oficial, cada parcela recebe a sequência correspondente (#2/120#, #3/120#, …). Em empréstimos somente juros, o total na hash é 1 (uma parcela gerada).
                     </p>
                   </div>
                 </div>

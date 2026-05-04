@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { normalizeYmd, compareYmd, addMonthsYmd, isLate, formatDate } from './index';
 
