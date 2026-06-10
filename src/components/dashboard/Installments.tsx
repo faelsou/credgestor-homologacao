@@ -207,7 +207,7 @@ export const InstallmentsView: React.FC = () => {
     const client = getClient(inst.clientId);
     if (!client) return;
 
-    const message = `Bom dia. Hoje tem nosso compromisso beleza? R$:${formatCurrency(inst.amount)}.`;
+    const message = `Bom dia. Hoje tem nosso compromisso beleza? ${formatCurrency(inst.amount)}.`;
     const url = `https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
   };
