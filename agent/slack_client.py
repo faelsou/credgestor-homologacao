@@ -22,6 +22,9 @@ class SlackClient:
         self.signing_secret = config.SLACK_SIGNING_SECRET
         self.channel = config.SLACK_CHANNEL
         self.approval_timeout = config.APPROVAL_TIMEOUT
+        # ID do canal capturado da resposta do chat.postMessage (não depende
+        # de scopes de listagem de canais)
+        self.last_channel_id: Optional[str] = None
     
     def send_message(self, text: str, blocks: Optional[List[Dict]] = None) -> bool:
         """
@@ -88,6 +91,7 @@ class SlackClient:
             if response.status_code == 200:
                 data = response.json()
                 if data.get("ok"):
+                    self.last_channel_id = data.get("channel") or self.last_channel_id
                     return data.get("ts")  # Timestamp da mensagem
                 else:
                     error = data.get("error", "unknown")
@@ -109,6 +113,7 @@ class SlackClient:
                             if retry_response.status_code == 200:
                                 retry_data = retry_response.json()
                                 if retry_data.get("ok"):
+                                    self.last_channel_id = retry_data.get("channel") or self.last_channel_id
                                     return retry_data.get("ts")
                         print(f"   Adicione o bot ao canal manualmente com: /invite @bot no canal {self.channel}")
                     else:
@@ -138,8 +143,10 @@ class SlackClient:
             # Tentar buscar canal com paginação
             cursor = None
             while True:
+                # Apenas canais públicos: incluir private_channel exige o scope
+                # groups:read e derruba a chamada inteira com missing_scope
                 params = {
-                    "types": "public_channel,private_channel",
+                    "types": "public_channel",
                     "limit": 200,
                     "exclude_archived": True
                 }
@@ -395,8 +402,8 @@ class SlackClient:
         poll_interval = 5  # Verificar a cada 5 segundos
         channel = self.channel.lstrip('#')
         
-        # Obter ID do canal para usar nas APIs
-        channel_id = self._get_channel_id(self.channel) or channel
+        # Preferir o ID capturado do chat.postMessage (não depende de scopes de listagem)
+        channel_id = self.last_channel_id or self._get_channel_id(self.channel) or channel
         
         while True:
             elapsed = time.time() - start_time
@@ -485,7 +492,7 @@ class SlackClient:
         start_time = time.time()
         poll_interval = 10  # Verificar a cada 10 segundos (menos frequente pois é mais custoso)
         channel = self.channel.lstrip('#')
-        channel_id = self._get_channel_id(self.channel) or channel
+        channel_id = self.last_channel_id or self._get_channel_id(self.channel) or channel
         
         print(f"🔍 Procurando mensagem de aprovação no canal {self.channel}...")
         print(f"   Action ID: {action_id}")

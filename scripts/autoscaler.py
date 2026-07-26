@@ -115,7 +115,7 @@ def scale_service(service_name: str, replicas: int):
     """Escala um serviço para o número de réplicas especificado"""
     try:
         service = docker_client.services.get(service_name)
-        service.update(replicas=replicas)
+        service.scale(replicas)
         logger.info(f"Serviço {service_name} escalado para {replicas} réplicas")
         return True
     except Exception as e:
@@ -143,13 +143,24 @@ def process_service(service_name: str):
     if not should_scale(service_name):
         return
     
+    # Serviço abaixo do mínimo é tratado como incidente pelo agente AIOps,
+    # que pede aprovação no Slack antes de restaurar. O autoscaler não
+    # intervém para não competir com a tratativa aprovada.
+    current_replicas = get_current_replicas(service_name)
+    if current_replicas < config['min']:
+        logger.warning(
+            f"Serviço {service_name} abaixo do mínimo "
+            f"({current_replicas} < {config['min']}). "
+            f"Aguardando tratativa do agente AIOps."
+        )
+        return
+    
     # Obter métricas atuais
     cpu_usage = get_cpu_usage(service_name)
     if cpu_usage is None:
         logger.warning(f"Não foi possível obter CPU do serviço {service_name}")
         return
     
-    current_replicas = get_current_replicas(service_name)
     target_cpu = config['target']
     min_replicas = config['min']
     max_replicas = config['max']

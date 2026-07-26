@@ -1098,6 +1098,21 @@ async def slack_interactions(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/slack/approval-status/{action_id}")
+def slack_approval_status(action_id: str):
+    """
+    Consulta o status de uma aprovação registrada via botões do Slack.
+    Usado pelo agente AIOps (container separado) para saber se a ação foi aprovada.
+    """
+    entry = pending_approvals.get(action_id)
+    if not entry:
+        return {"status": "pending"}
+    return {
+        "status": "approved" if entry.get("approved") else "rejected",
+        "user": entry.get("user", "unknown"),
+    }
+
+
 @app.post("/slack/test")
 def slack_test_send(message: str = Body(default=None, embed=True)):
     """

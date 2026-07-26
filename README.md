@@ -414,6 +414,45 @@ export DATABASE_URL="postgresql://user:pass@host:5432/dbname"
    - Comparação de produtos
    - Análise de capacidade de pagamento
 
+## 🤖 Agente AIOps
+
+Monitoramento automatizado da stack em Docker Swarm com notificação no Slack,
+diagnóstico por LLM e correção mediante aprovação humana.
+
+Serviço no Swarm: `agent_agent` · Código em `agent/` · Canal `#credgestor-agent`
+
+### Fluxo de um incidente
+
+| Etapa | Comportamento |
+|---|---|
+| Serviço fica indisponível | Alerta no Slack em até 30 segundos |
+| Troubleshooting | Coleta estado, tasks e logs; analisa com LLM e envia relatório |
+| Aprovação | Mensagem com botões **Aprovar** / **Rejeitar**, uma por serviço afetado |
+| Resolução | Executa a ação, aguarda estabilizar e envia o relatório |
+| Normalização | Envia "Serviço Recuperado" |
+| Sem resposta | Pedido expira em 10 min e é reaberto a cada 15 min |
+
+Quando tudo está saudável, o agente envia um status de hora em hora — suprimido
+enquanto houver incidente em aberto.
+
+### O que é detectado
+
+- Task com falha (ex: `exit 137: unhealthy container`)
+- Serviço escalado para 0 réplicas ou abaixo do mínimo do autoscale
+- Réplicas desejadas > 0 sem nenhuma rodando
+- Serviço degradado (rodando menos réplicas que o desejado)
+
+### Comandos úteis
+
+```bash
+docker service logs agent_agent -f        # acompanhar o agente
+docker service update --force agent_agent # aplicar mudanças de código
+curl https://credgestor.app.br/agent/health
+```
+
+Detalhes de arquitetura, variáveis de ambiente, operação e limitações:
+**[`AIOPS_AGENTE.md`](AIOPS_AGENTE.md)**.
+
 ## 🐛 Troubleshooting
 
 ### Erro de Conexão:
