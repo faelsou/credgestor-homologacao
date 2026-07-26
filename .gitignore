@@ -1,5 +1,67 @@
-# ... existing code ...
+# ===================================================================
+# Segredos e configuração local
+# ===================================================================
+.env
+.env.*
+!.env.example
+credentials.json
+secrets.json
+*.key
+*.p12
+*.pfx
+id_rsa*
 
+# ===================================================================
+# Python
+# ===================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ===================================================================
+# Node / Vite
+# ===================================================================
+node_modules/
+dist/
+dist-ssr/
+.vite/
+coverage/
+*.tsbuildinfo
+.eslintcache
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ===================================================================
+# Logs e temporários
+# ===================================================================
+*.log
+logs/
+tmp/
+.cache/
+
+# ===================================================================
+# Editores e sistema operacional
+# ===================================================================
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ===================================================================
+# Específicos do projeto
+# ===================================================================
 # Versionamento (manter VERSION no git, mas não .version.local)
 .version.local
 
