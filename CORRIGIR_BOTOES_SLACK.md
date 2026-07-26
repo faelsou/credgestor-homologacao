@@ -1,96 +1,86 @@
-# 🔧 Correção dos Botões do Slack
+# 🔧 Botões de Aprovação do Slack
 
-## Problemas Identificados
+Documentação completa do agente: `AIOPS_AGENTE.md`.
 
-1. ❌ **URL de Interatividade não configurada** - Tooltip mostra: "This app is not configured to handle interactive responses"
-2. ❌ **Código antigo em execução** - Botões ainda têm emojis e confirmação (mesmo após correções)
+## Estado atual
 
-## ✅ Correções Aplicadas no Código
+Os botões **Aprovar** / **Rejeitar** funcionam, inclusive quando o serviço
+`credgestor_api` está indisponível. Os cliques são recebidos pelo próprio agente
+(`agent/slack_interactions.py`, porta `8085`), não pelo backend.
 
-### 1. Botões Simplificados
-- ✅ Removidos emojis dos botões (agora apenas "Aprovar" e "Rejeitar")
-- ✅ Removidas confirmações (botões respondem diretamente)
-- ✅ Adicionado `value` aos botões para compatibilidade
+Fluxo confirmado no log:
 
-### 2. Melhor Detecção de Canal
-- ✅ Paginação na busca de canais
-- ✅ Tentativa automática de adicionar bot ao canal
-- ✅ Retry automático após adicionar bot
+```
+✅ Mensagem de aprovação enviada via Bot API (com botões)
+✅ Decisão recebida de <usuário> para credgestor_api-7a8d36e5
+✅ Aprovação recebida via botão
+✅ Serviço credgestor_api escalado para 1 réplica(s)
+```
 
-### 3. Mensagens Atualizadas
-- ✅ Instruções focam apenas em botões (sem mencionar reações)
-- ✅ Fallback mantém reações apenas quando botões não disponíveis
+## Por que o receptor saiu do backend
 
-## 🚀 Como Aplicar as Correções
+O endpoint original vivia em `backend/main.py` (`/slack/interactions`). Quando o
+incidente era a própria API estar em 0 réplicas, o Traefik não tinha backend para
+a Request URL e o clique era perdido — justamente no cenário em que a aprovação
+era necessária.
 
-### Passo 1: Configurar URL de Interatividade no Slack
+O agente passou a expor o receptor e o Traefik roteia as duas URLs para ele:
 
-1. Acesse: https://api.slack.com/apps
-2. Selecione seu app (Credgestor-Agent)
-3. Vá em **"Interactivity & Shortcuts"**
-4. Ative **"Interactivity"**
-5. Configure **Request URL**:
-   ```
-   https://credgestor.app.br/api/slack/interactions
-   ```
-6. Clique em **"Save Changes"**
+| URL | Rota |
+|---|---|
+| `https://credgestor.app.br/api/slack/interactions` | Rota histórica, `priority=1000` acima do `PathPrefix(/api)` |
+| `https://credgestor.app.br/agent/slack/interactions` | Rota nova |
 
-### Passo 2: Atualizar Código do Agente na VPS
+O endpoint no backend continua existindo (com `GET /slack/approval-status/{id}`)
+como caminho alternativo, mas não é mais o principal.
 
-O código foi corrigido, mas precisa ser atualizado no agente:
+## Requisitos
+
+1. **`SLACK_BOT_TOKEN`** configurado — os botões só existem via Bot API; o
+   webhook é fallback sem botões;
+2. **Bot no canal** `#credgestor-agent` (`/invite @Credgestor-Agent`);
+3. **`SLACK_SIGNING_SECRET`** com 32 caracteres hexadecimais, igual ao do Slack
+   App (Basic Information → App Credentials);
+4. **Interactivity ativada** no Slack App, com a Request URL apontando para uma
+   das duas rotas acima.
+
+## Verificação
 
 ```bash
-# Na VPS
-cd /var/www/credgestor-homologacao
+# Receptor ativo?
+docker service logs agent_agent | grep "Receptor de interações"
+curl https://credgestor.app.br/agent/health
 
-# Fazer pull das alterações (se já commitadas)
-git pull origin main
-
-# Ou atualizar o volume do agente (se usando volume)
-# O código já está atualizado no repositório
-
-# Reiniciar o agente para carregar novo código
-docker service update --force agent_agent
+# Teste de assinatura válida x inválida (deve responder 200 e 403)
+docker exec $(docker ps -q -f name=agent_agent) python3 -c "
+import hashlib, hmac, os, time, json, urllib.parse, requests
+s = os.environ['SLACK_SIGNING_SECRET']
+aid = 'teste-doc'
+p = {'type':'block_actions','user':{'name':'doc'},'actions':[{'action_id':'approve_'+aid}]}
+body = 'payload=' + urllib.parse.quote(json.dumps(p)); ts = str(int(time.time()))
+sig = 'v0=' + hmac.new(s.encode(), f'v0:{ts}:{body}'.encode(), hashlib.sha256).hexdigest()
+url = 'https://credgestor.app.br/api/slack/interactions'
+h = {'Content-Type':'application/x-www-form-urlencoded','X-Slack-Request-Timestamp':ts}
+print('valida  ->', requests.post(url, data=body, headers={**h,'X-Slack-Signature':sig}).status_code)
+print('invalida->', requests.post(url, data=body, headers={**h,'X-Slack-Signature':'v0=falsa'}).status_code)
+"
 ```
 
-### Passo 3: Verificar Configurações
+## Troubleshooting
 
-```bash
-# Verificar se variáveis estão configuradas
-grep SLACK .env
+| Sintoma | Causa provável | Ação |
+|---|---|---|
+| Clique não faz nada e log mostra `assinatura não confere` | `SLACK_SIGNING_SECRET` errado | Copiar o secret do Slack App (32 hex) |
+| Log mostra `SLACK_SIGNING_SECRET ausente ou em formato inválido` | Variável com valor de outro token | Corrigir a variável; até então vale o modo degradado |
+| Log mostra `timestamp fora da janela` | Relógio do host dessincronizado | `chronyd` / `ntpdate` |
+| `Decisão recusada: origem não verificada` | `action_id` já expirado ou inexistente | Aguardar o novo pedido (lembrete a cada 15 min) |
+| Botões não aparecem na mensagem | `SLACK_BOT_TOKEN` ausente ou bot fora do canal | Configurar token e convidar o bot |
+| `⚠️ Erro ao listar canais: missing_scope` | Falta `channels:read`/`groups:read` | Inofensivo: o ID do canal é obtido da resposta do envio |
 
-# Deve ter:
-# SLACK_BOT_TOKEN=xoxb-...
-# SLACK_SIGNING_SECRET=...
-# SLACK_CHANNEL=#credgestor-agent
-```
+## Arquivos envolvidos
 
-### Passo 4: Adicionar Bot ao Canal
-
-No Slack, no canal `#credgestor-agent`:
-```
-/invite @Credgestor-Agent
-```
-
-## 🔍 Verificação
-
-Após configurar:
-
-1. ✅ Tooltip "This app is not configured..." deve desaparecer
-2. ✅ Botões devem aparecer sem emojis
-3. ✅ Botões devem funcionar sem confirmação
-4. ✅ Instruções devem mencionar apenas botões
-
-## 📝 Arquivos Modificados
-
-- `agent/slack_client.py` - Botões simplificados, melhor detecção de canal
-- `backend/main.py` - Endpoint `/api/slack/interactions` já implementado
-- `docker-compose-agent.yml` - Configuração do agente
-
-## ⚠️ Importante
-
-O endpoint `/api/slack/interactions` está em `backend/main.py` e deve estar acessível em:
-- **Produção**: `https://credgestor.app.br/api/slack/interactions`
-- **Desenvolvimento**: `http://localhost:8000/slack/interactions`
-
-O Traefik deve rotear `/api/*` para o backend automaticamente.
+- `agent/slack_interactions.py` — receptor HTTP, validação e store de aprovações
+- `agent/slack_client.py` — envio das mensagens com botões e polling da decisão
+- `agent/resolver.py` — registra o `action_id` aguardado e executa a ação
+- `docker-compose-agent.yml` — labels do Traefik e `AGENT_HTTP_PORT`
+- `backend/main.py` — endpoints alternativos `/slack/interactions` e `/slack/approval-status/{id}`

@@ -1,98 +1,86 @@
-# 🔧 Configurar URL de Interatividade do Slack
+# 🔧 Request URL de Interatividade do Slack
 
-## ⚠️ Problema Identificado
+Documentação completa do agente: `AIOPS_AGENTE.md`.
 
-O tooltip mostra: **"This app is not configured to handle interactive responses"**
+## Estado atual
 
-Isso significa que a URL de interatividade não está configurada no Slack App.
+Nenhuma alteração é necessária no Slack App. A Request URL histórica continua
+válida porque o Traefik a roteia para o agente AIOps:
 
-## ✅ Solução
-
-### Passo 1: Configurar URL no Slack App
-
-1. Acesse: https://api.slack.com/apps
-2. Selecione seu app (Credgestor-Agent)
-3. No menu lateral, vá em **"Interactivity & Shortcuts"**
-4. Ative **"Interactivity"**
-5. Configure a **Request URL**:
-   ```
-   https://credgestor.app.br/api/slack/interactions
-   ```
-6. Clique em **"Save Changes"**
-
-### Passo 2: Verificar se o Endpoint Está Acessível
-
-Teste se o endpoint está respondendo:
-
-```bash
-# Teste local
-curl -X POST https://credgestor.app.br/api/slack/interactions \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "payload={\"type\":\"url_verification\",\"token\":\"test\"}"
-
-# Deve retornar algo como: {"ok": true}
+```
+https://credgestor.app.br/api/slack/interactions
 ```
 
-### Passo 3: Verificar Variáveis de Ambiente
+Rota equivalente, também servida pelo agente:
 
-Certifique-se de que no `.env` da VPS:
-
-```bash
-SLACK_BOT_TOKEN=xoxb-...
-SLACK_SIGNING_SECRET=...
-SLACK_CHANNEL=#credgestor-agent
+```
+https://credgestor.app.br/agent/slack/interactions
 ```
 
-### Passo 4: Verificar Permissões do Bot
+Ambas chegam ao receptor em `agent/slack_interactions.py` (porta `8085`). A regra
+`Path(/api/slack/interactions)` tem `priority=1000`, acima do
+`PathPrefix(/api)` do serviço `credgestor_api` — por isso funciona mesmo com a
+API em 0 réplicas.
 
-O bot precisa ter as seguintes permissões (scopes):
+## Se precisar (re)configurar no Slack App
 
-- `chat:write` - Para enviar mensagens
-- `channels:read` - Para listar canais
-- `channels:join` - Para entrar em canais
-- `reactions:read` - Para ler reações (fallback)
-- `users:read` - Para obter informações do usuário
+1. Acesse https://api.slack.com/apps e selecione **Credgestor-Agent**;
+2. **Interactivity & Shortcuts** → ative **Interactivity**;
+3. Em **Request URL**, use uma das duas URLs acima;
+4. **Save Changes**.
 
-### Passo 5: Adicionar Bot ao Canal
+## Signing Secret
+
+A validação das interações usa HMAC-SHA256 com o **Signing Secret** do app
+(Basic Information → App Credentials). Ele tem **32 caracteres hexadecimais** —
+não confundir com o *Verification Token* (24 caracteres, formato diferente), que
+já foi colocado nessa variável por engano e causava recusa de todos os cliques.
 
 ```bash
-# No Slack, no canal #credgestor-agent, digite:
-/invite @Credgestor-Agent
+# Conferir formato sem expor o valor
+docker exec $(docker ps -q -f name=agent_agent) python3 -c "
+import os, re
+s = os.environ.get('SLACK_SIGNING_SECRET','')
+print('len:', len(s), '| formato valido:', bool(re.fullmatch(r'[0-9a-fA-F]{32}', s)))
+"
 
-# Ou adicione manualmente:
-# Canal → Settings → Integrations → Add apps → Credgestor-Agent
+# Aplicar nos serviços que validam interações
+docker service update --env-add SLACK_SIGNING_SECRET=<32-hex> agent_agent
+docker service update --env-add SLACK_SIGNING_SECRET=<32-hex> credgestor_api
 ```
 
-## 🔍 Verificação
+Sem um secret válido, o agente opera em modo degradado: aceita apenas decisões
+cujo `action_id` está sendo aguardado pelo resolutor naquele momento, e registra
+o aviso no log.
 
-Após configurar, teste:
+## Scopes do bot
 
-1. O tooltip "This app is not configured..." deve desaparecer
-2. Os botões devem funcionar ao clicar
-3. Deve aparecer uma mensagem de confirmação ao clicar
+Em uso hoje: `chat:write`, `incoming-webhook`, `channels:read`, `users:read`,
+`reactions:write`, `im:read`, `im:write`, `files:write`, `commands`.
 
-## 🐛 Troubleshooting
+Faltando: **`reactions:read`** — sem ele a aprovação por reação 👍/👎 não
+funciona, apenas os botões. Adicionar em OAuth & Permissions exige reinstalar o
+app no workspace.
 
-### Erro: "Invalid signature"
-- Verifique se `SLACK_SIGNING_SECRET` está correto no `.env`
-- O secret deve ser o mesmo configurado no Slack App
+## Verificação
 
-### Erro: "Request timestamp too old"
-- Verifique se o relógio do servidor está sincronizado
-- Use `ntpdate` ou `chronyd` para sincronizar
+```bash
+curl https://credgestor.app.br/agent/health          # {"status":"ok"}
+docker service logs agent_agent -f | grep -Ei "Decisão|Interação|aprovação"
+```
 
-### Botões não aparecem
-- Verifique se `SLACK_BOT_TOKEN` está configurado
-- Verifique se o bot está no canal
-- Verifique logs: `docker service logs agent_agent -f`
+## Troubleshooting
 
-### Endpoint não acessível
-- Verifique se o Traefik está roteando corretamente
-- Verifique se o backend está rodando: `docker service ps credgestor_api`
-- Teste o endpoint diretamente: `curl https://credgestor.app.br/api/health`
+| Sintoma | Causa | Ação |
+|---|---|---|
+| `Invalid signature` / `assinatura não confere` | Signing Secret errado | Recopiar do Slack App (32 hex) |
+| `Request timestamp too old` | Relógio do host fora de sincronia | Sincronizar com `chronyd` / `ntpdate` |
+| Clique falha com a API fora do ar | Rota de prioridade ausente no Traefik | Conferir labels `credgestor-agent-interactions` em `docker-compose-agent.yml` |
+| Botões não aparecem | `SLACK_BOT_TOKEN` ausente ou bot fora do canal | Configurar e convidar o bot no canal |
 
-## 📝 Notas
+## Notas
 
-- A URL de interatividade deve ser **HTTPS** (não HTTP)
-- O endpoint deve responder em menos de 3 segundos
-- O Slack valida a assinatura de todas as requisições
+- A URL precisa ser **HTTPS** e responder em menos de 3 segundos (o receptor
+  responde imediatamente e a ação roda em background);
+- O endpoint aceita `url_verification` do Slack;
+- Toda requisição sem assinatura válida é recusada com HTTP 403.
