@@ -1,19 +1,14 @@
 """
 Monitor de serviços Docker Swarm da stack.
 
-Detecta, a cada ciclo do loop principal (~30s):
-- Tasks com falha (ex: exit 137 / unhealthy container);
-- Indisponibilidade: serviço escalado abaixo do mínimo (label
-  com.docker.swarm.autoscale.min) ou sem nenhuma réplica rodando;
-- Degradação: réplicas rodando abaixo do desejado;
-- Recuperação: serviço voltou ao estado normal.
+Produz duas saídas a cada ciclo:
 
-Os eventos gerados alimentam o alerta no Slack e a tratativa dos
-agentes de troubleshooting e resolutor.
+- eventos pontuais de task com falha (ex: `exit 137: unhealthy container`), que
+  alertam uma única vez por task;
+- findings de estado dos serviços (indisponível, abaixo do mínimo do autoscale,
+  degradado), cuja evolução no tempo é acompanhada por IssueTracker.
 """
-import os
 import re
-import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -24,16 +19,6 @@ import docker
 STARTUP_GRACE = timedelta(minutes=15)
 
 AUTOSCALE_MIN_LABEL = "com.docker.swarm.autoscale.min"
-
-# Intervalo para relembrar no Slack um incidente que continua em aberto
-REALERT_INTERVAL = int(os.getenv("REALERT_INTERVAL", "900"))
-
-
-def _severity_rank(issue_type: Optional[str]) -> int:
-    """Ranking de severidade por tipo de problema (degraded=HIGH, demais=CRITICAL)."""
-    if issue_type is None:
-        return 0
-    return 1 if issue_type == "degraded" else 2
 
 
 def _parse_docker_ts(value: str) -> Optional[datetime]:
@@ -51,23 +36,22 @@ def _parse_docker_ts(value: str) -> Optional[datetime]:
 class DockerMonitor:
     """Acompanha o estado dos serviços da stack via Docker socket."""
 
-    def __init__(self, stack: str, realert_interval: int = REALERT_INTERVAL):
+    def __init__(self, stack: str):
         self.stack = stack
         self.client = docker.from_env()
         self.seen_failed_tasks: set = set()
-        # serviço -> {"type", "started_at", "last_alert_at"} do problema ativo
-        self.active_issues: Dict[str, Dict[str, Any]] = {}
-        self.realert_interval = realert_interval
         self._seed_existing_failures()
-
-    @property
-    def is_healthy(self) -> bool:
-        return not self.active_issues
 
     def _stack_services(self) -> List[Any]:
         return self.client.services.list(
             filters={"label": f"com.docker.stack.namespace={self.stack}"}
         )
+
+    def count_services(self) -> int:
+        try:
+            return len(self._stack_services())
+        except Exception:
+            return 0
 
     @staticmethod
     def _failed_tasks(service) -> List[Dict[str, Any]]:
@@ -104,20 +88,19 @@ class DockerMonitor:
         except Exception as e:
             print(f"⚠️  Erro ao inicializar monitor Docker: {e}")
 
-    def check(self) -> List[Dict[str, Any]]:
+    def collect(self) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
         """
-        Verifica a stack e retorna eventos novos.
+        Devolve (eventos pontuais, findings por serviço).
 
-        Cada evento tem "kind" ("issue" ou "recovery"). Issues carregam
-        "issue_type" (task_failed | scaled_below_min | unavailable | degraded)
-        e os campos esperados por SlackClient.send_issue_detected.
+        Os eventos pontuais já vêm prontos para envio; os findings passam pelo
+        IssueTracker, que decide entre alerta novo, lembrete ou recuperação.
         """
         events: List[Dict[str, Any]] = []
+        findings: Dict[str, Dict[str, Any]] = {}
 
         for service in self._stack_services():
             name = service.name
 
-            # 1) Novas tasks com falha (evento pontual, alerta uma vez por task)
             for task in self._failed_tasks(service):
                 task_id = task["ID"]
                 if task_id in self.seen_failed_tasks:
@@ -139,100 +122,59 @@ class DockerMonitor:
                         f"*Task:* {task_id[:12]} | *Horário:* {ts_str}"
                     ),
                     "symptoms": [error],
+                    "actionable": False,
+                    "repeat": False,
                 })
 
-            # 2) Estado do serviço (evento com transição entrada/saída)
             desired, running, min_required = self._service_state(service)
-            issue_type = None
-            description = None
+            if desired is None:
+                continue
 
-            if desired is not None:
-                if min_required is not None and desired < min_required:
-                    issue_type = "scaled_below_min"
-                    description = (
-                        f"Serviço `{name}` INDISPONÍVEL: escalado para {desired} réplica(s), "
-                        f"abaixo do mínimo configurado ({min_required})."
-                    )
-                elif desired == 0:
-                    # Serviço sem label de autoscale escalado para 0: os serviços
-                    # da stack devem ter ao menos 1 réplica
-                    issue_type = "scaled_to_zero"
-                    description = (
-                        f"Serviço `{name}` INDISPONÍVEL: escalado para 0 réplicas."
-                    )
-                elif desired > 0 and running == 0:
-                    issue_type = "unavailable"
-                    description = (
+            if min_required is not None and desired < min_required:
+                findings[name] = {
+                    "issue_type": "scaled_below_min",
+                    "component": name,
+                    "severity": "CRITICAL",
+                    "description": (
+                        f"Serviço `{name}` INDISPONÍVEL: escalado para {desired} "
+                        f"réplica(s), abaixo do mínimo configurado ({min_required})."
+                    ),
+                }
+            elif desired == 0:
+                findings[name] = {
+                    "issue_type": "scaled_to_zero",
+                    "component": name,
+                    "severity": "CRITICAL",
+                    "description": f"Serviço `{name}` INDISPONÍVEL: escalado para 0 réplicas.",
+                }
+            elif running == 0:
+                findings[name] = {
+                    "issue_type": "unavailable",
+                    "component": name,
+                    "severity": "CRITICAL",
+                    "description": (
                         f"Serviço `{name}` INDISPONÍVEL: nenhuma das {desired} "
                         f"réplica(s) desejadas está rodando."
-                    )
-                elif running < desired:
-                    issue_type = "degraded"
-                    description = (
-                        f"Serviço `{name}` degradado: {running}/{desired} réplicas rodando."
-                    )
-
-            previous = self.active_issues.get(name)
-            if issue_type:
-                now = time.monotonic()
-
-                # Alertar na entrada do incidente, em escalada de severidade ou
-                # como lembrete periódico enquanto o problema seguir em aberto.
-                # Mudanças laterais (ex: scaled_to_zero -> unavailable enquanto
-                # o container sobe) não geram alerta novo.
-                is_new = previous is None
-                escalated = (
-                    not is_new
-                    and _severity_rank(issue_type) > _severity_rank(previous["type"])
-                )
-                is_reminder = (
-                    not is_new
-                    and not escalated
-                    and now - previous["last_alert_at"] >= self.realert_interval
-                )
-
-                if is_new:
-                    self.active_issues[name] = {
-                        "type": issue_type,
-                        "started_at": now,
-                        "last_alert_at": now,
-                    }
-                else:
-                    previous["type"] = issue_type
-                    if escalated or is_reminder:
-                        previous["last_alert_at"] = now
-
-                if is_new or escalated or is_reminder:
-                    entry = self.active_issues[name]
-                    text = description
-                    if is_reminder:
-                        minutes = int((now - entry["started_at"]) // 60)
-                        text = (
-                            f"{description}\n"
-                            f"_Incidente segue em aberto há {minutes} min sem resolução._"
-                        )
-                    events.append({
-                        "kind": "issue",
-                        "issue_type": issue_type,
-                        "component": name,
-                        "severity": "HIGH" if issue_type == "degraded" else "CRITICAL",
-                        "description": text,
-                        "symptoms": [description],
-                        "desired": desired,
-                        "running": running,
-                        "min_required": min_required,
-                        "repeat": is_reminder,
-                    })
-            elif previous:
-                del self.active_issues[name]
-                events.append({
-                    "kind": "recovery",
-                    "component": name,
-                    "description": (
-                        f"✅ *Serviço Recuperado*\n\n"
-                        f"O serviço `{name}` voltou ao normal "
-                        f"({running}/{desired} réplicas rodando)."
                     ),
+                }
+            elif running < desired:
+                findings[name] = {
+                    "issue_type": "degraded",
+                    "component": name,
+                    "severity": "HIGH",
+                    "description": (
+                        f"Serviço `{name}` degradado: {running}/{desired} réplicas rodando."
+                    ),
+                }
+
+            if name in findings:
+                findings[name].update({
+                    "symptoms": [findings[name]["description"]],
+                    "desired": desired,
+                    "running": running,
+                    "min_required": min_required,
+                    "target_service": name,
+                    "actionable": True,
                 })
 
-        return events
+        return events, findings

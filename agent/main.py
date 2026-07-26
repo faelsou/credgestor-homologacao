@@ -7,22 +7,25 @@ from typing import Any, Dict, Optional
 
 from agent.slack_client import SlackClient
 from agent.monitor import DockerMonitor
+from agent.probes import HealthProbes
+from agent.issue_tracker import IssueTracker
 from agent.troubleshooter import Troubleshooter
 from agent.resolver import Resolver
 from agent.slack_interactions import start_server as start_interactions_server
 
 
-def build_legacy_healthy_text() -> str:
+def build_healthy_text(services_checked: int) -> str:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     parts = [
         ":white_check_mark: Status Saudável",
         "",
-        "Todos os componentes estão funcionando corretamente.",
+        "Todas as camadas verificadas estão funcionando corretamente.",
         "",
-        ":white_check_mark: API: API respondendo corretamente",
-        ":white_check_mark: DOCKER: Todos os 2 serviços estão rodando",
-        ":white_check_mark: DATABASE: Configuração de banco de dados encontrada",
-        ":white_check_mark: FRONTEND: Frontend respondendo corretamente",
+        ":white_check_mark: API: respondendo na rede interna e pela URL pública",
+        f":white_check_mark: DOCKER: {services_checked} serviço(s) da stack com réplicas em ordem",
+        ":white_check_mark: DATABASE: banco acessível e dentro da latência esperada",
+        ":white_check_mark: FRONTEND: respondendo corretamente",
+        ":white_check_mark: HOST: memória e disco em níveis normais",
         "",
         f"Timestamp: {timestamp}",
     ]
@@ -37,17 +40,12 @@ def send_startup(slack: SlackClient, monitor_interval: int) -> None:
         pass
 
 
-def send_healthy(slack: SlackClient) -> bool:
-    # Enviar no formato legado solicitado
-    text = build_legacy_healthy_text()
-    return slack.send_message(text)
+def send_healthy(slack: SlackClient, services_checked: int) -> bool:
+    return slack.send_message(build_healthy_text(services_checked))
 
 
 class IncidentPipeline:
     """Orquestra a tratativa de um incidente: troubleshooting + resolutor."""
-
-    # Tipos de problema que disparam a tratativa completa
-    TREATABLE = {"scaled_below_min", "scaled_to_zero", "unavailable", "degraded"}
 
     def __init__(self, slack: SlackClient, monitor: DockerMonitor):
         self.slack = slack
@@ -58,13 +56,12 @@ class IncidentPipeline:
         self._lock = threading.Lock()
 
     def forget(self, component: str) -> None:
-        """Descarta o diagnóstico após a recuperação do serviço."""
-        self._last_diagnosis.pop(component, None)
+        """Descarta os diagnósticos do componente após a recuperação."""
+        for key in [k for k in self._last_diagnosis if k.startswith(f"{component}:")]:
+            self._last_diagnosis.pop(key, None)
 
     def handle(self, issue: Dict[str, Any]) -> None:
-        """Inicia a tratativa em background (uma por serviço por vez)."""
-        if issue.get("issue_type") not in self.TREATABLE:
-            return
+        """Inicia a tratativa em background (uma por alvo por vez)."""
         component = issue["component"]
         with self._lock:
             if component in self._treating:
@@ -81,19 +78,27 @@ class IncidentPipeline:
         try:
             # Em lembretes de incidente já diagnosticado, reaproveitar a análise
             # e reabrir apenas o pedido de aprovação
-            diagnosis = self._last_diagnosis.get(component) if issue.get("repeat") else None
+            # Cache por tipo de problema: um lembrete de indisponibilidade não
+            # deve reaproveitar o diagnóstico de outro problema do mesmo serviço
+            cache_key = f"{component}:{issue.get('issue_type')}"
+            cached = self._last_diagnosis.get(cache_key) if issue.get("repeat") else None
+            action_plan = None
 
-            if diagnosis is None:
+            if cached is None:
                 print(f"🔍 Iniciando troubleshooting de {component}...")
-                diagnostics = self.troubleshooter.collect_diagnostics(component)
+                diagnostics = self.troubleshooter.collect_diagnostics(
+                    component, issue.get("target_service")
+                )
                 diagnosis, action_plan = self.troubleshooter.analyze(issue, diagnostics)
-                self._last_diagnosis[component] = diagnosis
+                self._last_diagnosis[cache_key] = {**diagnosis, "plano": action_plan}
                 self.slack.send_troubleshooting_report(issue, diagnosis, action_plan)
             else:
-                print(f"🔁 Reabrindo aprovação de {component} (diagnóstico já realizado)")
+                print(f"🔁 Reabrindo tratativa de {component} (diagnóstico já realizado)")
+                diagnosis = cached
+                action_plan = cached.get("plano")
 
             print(f"🛠️  Acionando resolutor para {component}...")
-            self.resolver.resolve(issue, diagnosis)
+            self.resolver.resolve(issue, diagnosis, action_plan)
         except Exception as e:
             print(f"⚠️  Erro na tratativa de {component}: {e}")
         finally:
@@ -104,13 +109,23 @@ class IncidentPipeline:
 def run_monitor_check(
     slack: SlackClient,
     monitor: Optional[DockerMonitor],
+    probes: Optional[HealthProbes],
+    tracker: Optional[IssueTracker],
     pipeline: Optional[IncidentPipeline],
 ) -> None:
-    """Verifica a stack, alerta no Slack e dispara a tratativa dos incidentes."""
-    if monitor is None:
+    """
+    Verifica todas as camadas (réplicas, API, banco, frontend, host), alerta no
+    Slack e dispara a tratativa dos incidentes.
+    """
+    if monitor is None or tracker is None:
         return
     try:
-        for event in monitor.check():
+        events, findings = monitor.collect()
+        if probes is not None:
+            findings.update(probes.collect())
+        events.extend(tracker.evaluate(findings))
+
+        for event in events:
             try:
                 if event["kind"] == "issue":
                     sent = slack.send_issue_detected(event)
@@ -131,7 +146,7 @@ def run_monitor_check(
             except Exception as e:
                 print(f"⚠️  Falha ao processar evento de {event.get('component')}: {e}")
     except Exception as e:
-        print(f"⚠️  Erro ao verificar serviços Docker: {e}")
+        print(f"⚠️  Erro ao verificar a stack: {e}")
 
 
 def main() -> None:
@@ -145,12 +160,20 @@ def main() -> None:
     start_interactions_server()
 
     docker_stack = os.getenv("DOCKER_STACK", "credgestor").strip() or "credgestor"
+    realert_interval = int(os.getenv("REALERT_INTERVAL", "900"))
     try:
         monitor: Optional[DockerMonitor] = DockerMonitor(stack=docker_stack)
+        probes: Optional[HealthProbes] = HealthProbes(monitor.client)
+        tracker: Optional[IssueTracker] = IssueTracker(realert_interval=realert_interval)
         pipeline: Optional[IncidentPipeline] = IncidentPipeline(slack, monitor)
-        print(f"✅ Monitor Docker iniciado para a stack '{docker_stack}'")
+        print(
+            f"✅ Monitor iniciado para a stack '{docker_stack}' "
+            f"(réplicas, API, banco, frontend e host)"
+        )
     except Exception as e:
         monitor = None
+        probes = None
+        tracker = None
         pipeline = None
         print(f"⚠️  Monitor Docker indisponível (alertas de erro desativados): {e}")
 
@@ -171,14 +194,15 @@ def main() -> None:
     while not stop_flag["stop"]:
         now = time.time()
 
-        # Verificar falhas nos serviços da stack, alertar e tratar
-        run_monitor_check(slack, monitor, pipeline)
+        # Verificar todas as camadas, alertar e tratar
+        run_monitor_check(slack, monitor, probes, tracker, pipeline)
 
         # Enviar status saudável se habilitado, passado o intervalo e sem problemas ativos
-        stack_healthy = monitor is None or monitor.is_healthy
+        stack_healthy = tracker is None or tracker.is_healthy
         if send_healthy_enabled and stack_healthy and (now - last_healthy_sent_at >= healthy_interval):
             try:
-                ok = send_healthy(slack)
+                services_checked = monitor.count_services() if monitor else 0
+                send_healthy(slack, services_checked)
                 # Atualizar marcador apenas em caso de tentativa (independente de ok/falha)
                 last_healthy_sent_at = now
             except Exception:

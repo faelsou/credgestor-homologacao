@@ -93,7 +93,9 @@ services:
         - com.docker.swarm.autoscale.target=80  # CPU %
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      # Liveness puro: /health consulta o Supabase e uma queda do banco reprovaria
+      # o healthcheck, matando o container (exit 137) sem a aplicação ter culpa
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3

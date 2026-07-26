@@ -21,8 +21,17 @@ services:
       # Modelo LLM - claude-sonnet-4-5 (modelos claude-3-5-* foram aposentados)
       - LLM_MODEL=${LLM_MODEL:-claude-sonnet-4-5}
       - DOCKER_STACK=${DOCKER_STACK:-credgestor}
-      - API_URL=${API_URL:-http://api:8000}
+      # URL pública (caminho do usuário) × URL interna (rede Swarm)
+      - API_URL=${API_URL:-https://credgestor.app.br/api}
+      - API_INTERNAL_URL=${API_INTERNAL_URL:-http://credgestor_api:8000}
+      # Liveness (healthcheck do Swarm) × readiness (diagnóstico do banco)
+      - API_LIVE_ENDPOINT=${API_LIVE_ENDPOINT:-/health/live}
       - API_HEALTH_ENDPOINT=${API_HEALTH_ENDPOINT:-/health}
+      # Limites das sondagens ativas
+      - PROBE_DB_SLOW_MS=${PROBE_DB_SLOW_MS:-3000}
+      - PROBE_HOST_MEMORY_MIN_PERCENT=${PROBE_HOST_MEMORY_MIN_PERCENT:-10}
+      - PROBE_HOST_DISK_MAX_PERCENT=${PROBE_HOST_DISK_MAX_PERCENT:-85}
+      - PROBE_HTTP_TIMEOUT=${PROBE_HTTP_TIMEOUT:-15}
       - MONITOR_INTERVAL=${MONITOR_INTERVAL:-3600}
       - SEND_HEALTHY_STATUS=${SEND_HEALTHY_STATUS:-true}
       - HEALTHY_STATUS_INTERVAL=${HEALTHY_STATUS_INTERVAL:-3600}
@@ -31,7 +40,7 @@ services:
       # reabra o pedido de aprovação em vez de encontrá-lo ainda pendente
       - APPROVAL_TIMEOUT=${APPROVAL_TIMEOUT:-600}
       - REALERT_INTERVAL=${REALERT_INTERVAL:-900}
-      - FRONTEND_URL=${FRONTEND_URL:-http://site:80}
+      - FRONTEND_URL=${FRONTEND_URL:-https://credgestor.app.br}
       - DOCS_DIR=/app/docs/troubleshooting
       - AGENT_HTTP_PORT=8085
     # Executar como root para evitar problemas de permissão ao instalar pacotes

@@ -435,12 +435,12 @@ Serviço no Swarm: `agent_agent` · Código em `agent/` · Canal `#credgestor-ag
 Quando tudo está saudável, o agente envia um status de hora em hora — suprimido
 enquanto houver incidente em aberto.
 
-### O que é detectado
+### O que é detectado (todas as camadas)
 
-- Task com falha (ex: `exit 137: unhealthy container`)
-- Serviço escalado para 0 réplicas ou abaixo do mínimo do autoscale
-- Réplicas desejadas > 0 sem nenhuma rodando
-- Serviço degradado (rodando menos réplicas que o desejado)
+- Docker: task com falha, réplicas em 0 / abaixo do mínimo, degradado, container unhealthy
+- API: liveness (`/health/live`) e readiness (`/health`) na rede interna e na URL pública
+- Banco: inacessível ou lento (sem derrubar o container — ver incidente exit 137)
+- Frontend, Traefik/borda, memória e disco do host
 
 ### Comandos úteis
 

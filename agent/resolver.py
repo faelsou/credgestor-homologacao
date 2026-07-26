@@ -24,26 +24,46 @@ class Resolver:
         self.slack = slack
         self.require_approval = config.REQUIRE_APPROVAL
 
-    def plan_action(self, issue: Dict[str, Any]) -> Tuple[str, Optional[int], str]:
-        """Retorna (tipo da ação, valor, descrição legível)."""
-        component = issue["component"]
+    def plan_action(
+        self, issue: Dict[str, Any]
+    ) -> Optional[Tuple[str, Optional[int], str]]:
+        """
+        Retorna (tipo da ação, valor, descrição legível) ou None quando não há
+        ação segura a executar — caso de dependência externa, borda e host, em
+        que reiniciar o serviço não resolve o problema.
+        """
+        service = issue.get("target_service")
+        if not service or not issue.get("actionable", False):
+            return None
+
         if issue.get("issue_type") in {"scaled_below_min", "scaled_to_zero"}:
             minimum = issue.get("min_required") or 1
             return (
                 "scale",
                 minimum,
-                f"Escalar o serviço `{component}` de volta para {minimum} réplica(s)",
+                f"Escalar o serviço `{service}` de volta para {minimum} réplica(s)",
             )
         return (
             "restart",
             None,
-            f"Forçar reinício das tasks do serviço `{component}` (equivalente a docker service update --force)",
+            f"Forçar reinício das tasks do serviço `{service}` (equivalente a docker service update --force)",
         )
 
-    def resolve(self, issue: Dict[str, Any], diagnosis: Dict[str, str]) -> bool:
+    def resolve(
+        self,
+        issue: Dict[str, Any],
+        diagnosis: Dict[str, str],
+        action_plan: Optional[list] = None,
+    ) -> bool:
         component = issue["component"]
-        action_kind, action_value, action_description = self.plan_action(issue)
-        action_id = f"{component}-{uuid.uuid4().hex[:8]}"
+        plan = self.plan_action(issue)
+        if plan is None:
+            self._report_manual(issue, diagnosis, action_plan)
+            return False
+
+        service = issue["target_service"]
+        action_kind, action_value, action_description = plan
+        action_id = f"{service}-{uuid.uuid4().hex[:8]}"
 
         if self.require_approval:
             register_pending(action_id)
@@ -52,7 +72,7 @@ class Resolver:
                     action_description=action_description,
                     action_id=action_id,
                     action_details={
-                        "Serviço": component,
+                        "Serviço": service,
                         "Problema": issue.get("description", "N/A"),
                         "Causa raiz": diagnosis.get("causa_raiz", "N/A"),
                     },
@@ -67,7 +87,7 @@ class Resolver:
                 )
                 return False
 
-        ok, result_message = self._execute(component, action_kind, action_value)
+        ok, result_message = self._execute(service, action_kind, action_value)
         self.slack.send_resolution_report({
             "problem": issue.get("description", "N/A"),
             "root_cause": diagnosis.get("causa_raiz", "N/A"),
@@ -75,6 +95,27 @@ class Resolver:
             "result": result_message,
         })
         return ok
+
+    def _report_manual(
+        self,
+        issue: Dict[str, Any],
+        diagnosis: Dict[str, str],
+        action_plan: Optional[list],
+    ) -> None:
+        """Avisa que o problema exige intervenção humana, sem pedir aprovação."""
+        steps = "\n".join(f"• {step}" for step in (action_plan or [])) or "• Analisar manualmente"
+        print(
+            f"🧰 Sem ação automática para {issue['component']} "
+            f"({issue.get('issue_type')}): enviando orientação manual"
+        )
+        self.slack.send_message(
+            f"🧰 *Intervenção manual necessária: {issue['component']}*\n\n"
+            f"*Problema:* {issue.get('description', 'N/A')}\n"
+            f"*Causa raiz:* {diagnosis.get('causa_raiz', 'N/A')}\n\n"
+            f"Não há ação automática segura para este tipo de problema "
+            f"(`{issue.get('issue_type')}`).\n"
+            f"*Próximos passos:*\n{steps}"
+        )
 
     def _execute(self, component: str, kind: str, value: Optional[int]) -> Tuple[bool, str]:
         try:

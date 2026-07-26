@@ -892,6 +892,20 @@ def _authenticate_user(payload: LoginRequest):
         )
 
 
+@app.get("/health/live")
+def liveness():
+    """
+    Liveness: responde apenas se o processo está vivo, sem tocar em dependências
+    externas.
+
+    É o endpoint usado pelo healthcheck do container. Manter o banco fora daqui
+    é essencial: uma lentidão ou queda do Supabase no /health reprova o
+    healthcheck e o Swarm mata o container (exit 137), derrubando a aplicação
+    por um problema que não é dela.
+    """
+    return {"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
 @app.get("/health")
 def healthcheck():
     """Health check endpoint que verifica conectividade com Supabase"""
