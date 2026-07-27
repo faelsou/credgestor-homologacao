@@ -51,6 +51,8 @@ class IncidentPipeline:
         self.slack = slack
         self.troubleshooter = Troubleshooter(monitor.client)
         self.resolver = Resolver(monitor.client, slack)
+        # Chave = componente:tipo — cada tipo de problema tem sua própria
+        # tratativa e SEMPRE gera relatório + pedido de aprovação no Slack
         self._treating: set = set()
         self._last_diagnosis: Dict[str, Dict[str, str]] = {}
         self._lock = threading.Lock()
@@ -61,49 +63,85 @@ class IncidentPipeline:
             self._last_diagnosis.pop(key, None)
 
     def handle(self, issue: Dict[str, Any]) -> None:
-        """Inicia a tratativa em background (uma por alvo por vez)."""
+        """Inicia a tratativa em background (uma por componente+tipo por vez)."""
         component = issue["component"]
+        issue_type = issue.get("issue_type") or "unknown"
+        treat_key = f"{component}:{issue_type}"
         with self._lock:
-            if component in self._treating:
+            if treat_key in self._treating:
+                print(
+                    f"⏳ Tratativa de {treat_key} já em andamento — "
+                    f"mantendo pedido de aprovação existente no Slack"
+                )
                 return
-            self._treating.add(component)
+            self._treating.add(treat_key)
 
         thread = threading.Thread(
-            target=self._run, args=(issue,), name=f"tratativa-{component}", daemon=True
+            target=self._run,
+            args=(issue, treat_key),
+            name=f"tratativa-{treat_key}",
+            daemon=True,
         )
         thread.start()
 
-    def _run(self, issue: Dict[str, Any]) -> None:
+    def _run(self, issue: Dict[str, Any], treat_key: str) -> None:
         component = issue["component"]
         try:
-            # Em lembretes de incidente já diagnosticado, reaproveitar a análise
-            # e reabrir apenas o pedido de aprovação
-            # Cache por tipo de problema: um lembrete de indisponibilidade não
-            # deve reaproveitar o diagnóstico de outro problema do mesmo serviço
-            cache_key = f"{component}:{issue.get('issue_type')}"
-            cached = self._last_diagnosis.get(cache_key) if issue.get("repeat") else None
+            # Em lembretes, reaproveitar diagnóstico e reabrir só a aprovação
+            cached = self._last_diagnosis.get(treat_key) if issue.get("repeat") else None
             action_plan = None
 
             if cached is None:
-                print(f"🔍 Iniciando troubleshooting de {component}...")
+                print(f"🔍 Iniciando troubleshooting de {treat_key}...")
                 diagnostics = self.troubleshooter.collect_diagnostics(
                     component, issue.get("target_service")
                 )
                 diagnosis, action_plan = self.troubleshooter.analyze(issue, diagnostics)
-                self._last_diagnosis[cache_key] = {**diagnosis, "plano": action_plan}
-                self.slack.send_troubleshooting_report(issue, diagnosis, action_plan)
+                self._last_diagnosis[treat_key] = {**diagnosis, "plano": action_plan}
+                report_ok = self.slack.send_troubleshooting_report(
+                    issue, diagnosis, action_plan
+                )
+                print(
+                    f"📋 Relatório de troubleshooting de {treat_key}: "
+                    f"{'enviado ao Slack' if report_ok else 'FALHA NO ENVIO AO SLACK'}"
+                )
+                if not report_ok:
+                    # Fallback mínimo para o canal não ficar sem contexto
+                    self.slack.send_message(
+                        f"🔴 *Troubleshooting (fallback)* — `{component}`\n"
+                        f"*Tipo:* `{issue.get('issue_type')}`\n"
+                        f"*Problema:* {issue.get('description', 'N/A')}\n"
+                        f"*Causa raiz:* {diagnosis.get('causa_raiz', 'N/A')}\n"
+                        f"*Plano:* {'; '.join(action_plan or [])}"
+                    )
             else:
-                print(f"🔁 Reabrindo tratativa de {component} (diagnóstico já realizado)")
+                print(f"🔁 Reabrindo aprovação de {treat_key} (diagnóstico já realizado)")
                 diagnosis = cached
                 action_plan = cached.get("plano")
+                # Em lembrete, reenviar o resumo do diagnóstico antes da aprovação
+                self.slack.send_message(
+                    f"🔁 *Lembrete de incidente* — `{component}`\n"
+                    f"*Tipo:* `{issue.get('issue_type')}`\n"
+                    f"{issue.get('description', '')}\n"
+                    f"*Causa raiz:* {diagnosis.get('causa_raiz', 'N/A')}\n"
+                    f"_Reabrindo pedido de aprovação._"
+                )
 
-            print(f"🛠️  Acionando resolutor para {component}...")
+            print(f"🛠️  Acionando resolutor para {treat_key} (aprovação obrigatória no Slack)...")
             self.resolver.resolve(issue, diagnosis, action_plan)
         except Exception as e:
-            print(f"⚠️  Erro na tratativa de {component}: {e}")
+            print(f"⚠️  Erro na tratativa de {treat_key}: {e}")
+            try:
+                self.slack.send_message(
+                    f"⚠️ *Falha na tratativa automática* de `{component}` "
+                    f"(`{issue.get('issue_type')}`): `{e}`\n"
+                    f"Intervenção manual necessária."
+                )
+            except Exception:
+                pass
         finally:
             with self._lock:
-                self._treating.discard(component)
+                self._treating.discard(treat_key)
 
 
 def run_monitor_check(

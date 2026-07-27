@@ -68,6 +68,7 @@ class Resolver:
         if self.require_approval:
             register_pending(action_id)
             try:
+                print(f"📤 Enviando pedido de aprovação ao Slack ({action_id})...")
                 approved = self.slack.send_approval_request(
                     action_description=action_description,
                     action_id=action_id,
@@ -80,20 +81,24 @@ class Resolver:
             finally:
                 discard_pending(action_id)
             if approved is not True:
-                status = "rejeitada" if approved is False else "expirou sem aprovação"
+                status = "rejeitada" if approved is False else "expirou sem aprovação / não chegou ao Slack"
                 self.slack.send_message(
                     f"⚠️ Ação corretiva para `{component}` {status}. "
-                    f"Nenhuma alteração foi executada."
+                    f"Nenhuma alteração foi executada pelo agente."
                 )
                 return False
 
         ok, result_message = self._execute(service, action_kind, action_value)
-        self.slack.send_resolution_report({
+        report_ok = self.slack.send_resolution_report({
             "problem": issue.get("description", "N/A"),
             "root_cause": diagnosis.get("causa_raiz", "N/A"),
             "actions": [f"• {action_description}"],
             "result": result_message,
         })
+        print(
+            f"📨 Relatório de resolução de {component}: "
+            f"{'enviado ao Slack' if report_ok else 'FALHA NO ENVIO AO SLACK'}"
+        )
         return ok
 
     def _report_manual(
@@ -102,19 +107,24 @@ class Resolver:
         diagnosis: Dict[str, str],
         action_plan: Optional[list],
     ) -> None:
-        """Avisa que o problema exige intervenção humana, sem pedir aprovação."""
+        """Avisa no Slack que o problema exige intervenção humana."""
         steps = "\n".join(f"• {step}" for step in (action_plan or [])) or "• Analisar manualmente"
         print(
             f"🧰 Sem ação automática para {issue['component']} "
-            f"({issue.get('issue_type')}): enviando orientação manual"
+            f"({issue.get('issue_type')}): enviando orientação ao Slack"
         )
-        self.slack.send_message(
+        ok = self.slack.send_message(
             f"🧰 *Intervenção manual necessária: {issue['component']}*\n\n"
             f"*Problema:* {issue.get('description', 'N/A')}\n"
+            f"*Diagnóstico:* {diagnosis.get('diagnostico', 'N/A')}\n"
             f"*Causa raiz:* {diagnosis.get('causa_raiz', 'N/A')}\n\n"
             f"Não há ação automática segura para este tipo de problema "
             f"(`{issue.get('issue_type')}`).\n"
             f"*Próximos passos:*\n{steps}"
+        )
+        print(
+            f"🧰 Orientação manual de {issue['component']}: "
+            f"{'enviada ao Slack' if ok else 'FALHA NO ENVIO AO SLACK'}"
         )
 
     def _execute(self, component: str, kind: str, value: Optional[int]) -> Tuple[bool, str]:

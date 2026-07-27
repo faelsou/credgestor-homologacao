@@ -111,6 +111,12 @@ class DockerMonitor:
                 error = status.get("Err") or "erro não informado"
                 ts = _parse_docker_ts(status.get("Timestamp", ""))
                 ts_str = ts.astimezone().strftime("%Y-%m-%d %H:%M:%S") if ts else "N/A"
+                # Exit 137 / unhealthy: há ação segura (restart) → pedir aprovação
+                restartable = (
+                    "137" in error
+                    or "unhealthy" in error.lower()
+                    or "health" in error.lower()
+                )
                 events.append({
                     "kind": "issue",
                     "issue_type": "task_failed",
@@ -122,7 +128,8 @@ class DockerMonitor:
                         f"*Task:* {task_id[:12]} | *Horário:* {ts_str}"
                     ),
                     "symptoms": [error],
-                    "actionable": False,
+                    "target_service": name,
+                    "actionable": restartable,
                     "repeat": False,
                 })
 

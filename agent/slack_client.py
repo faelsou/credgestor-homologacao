@@ -28,40 +28,44 @@ class SlackClient:
     
     def send_message(self, text: str, blocks: Optional[List[Dict]] = None) -> bool:
         """
-        Envia mensagem para o Slack
-        
-        Args:
-            text: Texto da mensagem
-            blocks: Blocos opcionais (para botões, etc.)
-        
-        Returns:
-            True se enviado com sucesso
+        Envia mensagem para o Slack com fallback Bot API ↔ webhook e 1 retry.
+
+        Troubleshooting e pedidos de aprovação NÃO podem falhar em silêncio.
         """
-        # Se tem blocks (botões), tentar enviar via Bot API primeiro
-        if blocks and self.bot_token:
-            message_ts = self._send_via_bot_api(text, blocks)
-            if message_ts:
+        for attempt in (1, 2):
+            # Bot API: com ou sem blocks (texto simples também)
+            if self.bot_token:
+                message_ts = self._send_via_bot_api(text, blocks or [])
+                if message_ts:
+                    return True
+
+            if self.webhook_url and self._send_via_webhook(text):
                 return True
-        
-        # Fallback para webhook
-        if self.webhook_url:
-            return self._send_via_webhook(text)
-        
-        print("⚠️  Nenhum método de envio configurado (SLACK_WEBHOOK_URL ou SLACK_BOT_TOKEN)")
+
+            if attempt == 1:
+                print("⚠️  Falha no envio ao Slack — nova tentativa em 2s...")
+                time.sleep(2)
+
+        print("❌ FALHA DEFINITIVA ao enviar mensagem ao Slack (bot + webhook)")
         return False
     
     def _send_via_webhook(self, text: str) -> bool:
         """Envia mensagem via webhook"""
+        if not self.webhook_url:
+            return False
         try:
             payload = {"text": text}
             response = requests.post(self.webhook_url, json=payload, timeout=10)
-            return response.status_code == 200
+            ok = response.status_code == 200
+            if not ok:
+                print(f"❌ Webhook Slack HTTP {response.status_code}: {response.text[:120]}")
+            return ok
         except Exception as e:
             print(f"❌ Erro ao enviar via webhook: {str(e)}")
             return False
     
-    def _send_via_bot_api(self, text: str, blocks: List[Dict]) -> Optional[str]:
-        """Envia mensagem via Bot API (com suporte a botões)"""
+    def _send_via_bot_api(self, text: str, blocks: Optional[List[Dict]] = None) -> Optional[str]:
+        """Envia mensagem via Bot API (com suporte opcional a botões)"""
         if not self.bot_token:
             return None
         
@@ -75,8 +79,9 @@ class SlackClient:
             payload = {
                 "channel": channel_id,
                 "text": text,
-                "blocks": blocks
             }
+            if blocks:
+                payload["blocks"] = blocks
             
             response = requests.post(
                 "https://slack.com/api/chat.postMessage",
@@ -358,17 +363,19 @@ class SlackClient:
             webhook_sent = self.send_message(approval_text)
             
             if not webhook_sent:
-                print("❌ Não foi possível enviar solicitação de aprovação. Ação NÃO será executada.")
-                return None  # Não assumir aprovação - retornar None para não executar
+                # Última tentativa: texto simples sem blocks, ainda assim visível no canal
+                emergency = (
+                    f"🚨 *FALHA AO ENVIAR BOTÕES — APROVAÇÃO URGENTE*\n"
+                    f"*Ação:* {action_description}\n"
+                    f"*Action ID:* `{action_id}`\n"
+                    f"Responda neste canal com a reação 👍 para aprovar ou 👎 para rejeitar."
+                )
+                if not self.send_message(emergency):
+                    print("❌ Não foi possível enviar solicitação de aprovação ao Slack.")
+                    return None
             
-            print("⚠️  Mensagem enviada via webhook (sem botões). Use reações 👍/👎 para aprovar/rejeitar.")
-            print("⚠️  Configure SLACK_BOT_TOKEN e adicione bot ao canal para usar botões interativos.")
-            print(f"⏳ Aguardando aprovação via reações (sem timestamp da mensagem)...")
-            print(f"   Adicione reação 👍 (thumbsup) para aprovar ou 👎 (thumbsdown) para rejeitar")
-            print(f"   Timeout: {self.approval_timeout} segundos")
-            
-            # Tentar aguardar aprovação via polling de reações mesmo sem timestamp
-            # Usar um método alternativo: verificar últimas mensagens do canal
+            print("⚠️  Mensagem de aprovação no Slack (fallback sem botões ou emergência).")
+            print(f"⏳ Aguardando aprovação para {action_id} (timeout {self.approval_timeout}s)...")
             return self._wait_for_approval_via_webhook(action_id)
         
         # Aguardar aprovação real via polling
