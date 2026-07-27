@@ -23,10 +23,15 @@ SEVERITY_RANK = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
 
 
 class IssueTracker:
+    # Evita spam de "Recuperado" durante rolling update / flap de healthcheck
+    RECOVERY_GRACE_SECONDS = 90
+
     def __init__(self, realert_interval: int):
         self.realert_interval = realert_interval
-        # chave do alvo -> {"issue_type", "severity", "started_at", "last_alert_at"}
+        # chave do alvo -> estado ativo do problema
         self.active: Dict[str, Dict[str, Any]] = {}
+        # chave -> desde quando o finding sumiu (candidatos a recuperação)
+        self._missing_since: Dict[str, float] = {}
 
     @property
     def is_healthy(self) -> bool:
@@ -41,6 +46,7 @@ class IssueTracker:
         now = time.monotonic()
 
         for key, finding in findings.items():
+            self._missing_since.pop(key, None)
             previous = self.active.get(key)
             severity = finding.get("severity", "HIGH")
 
@@ -81,9 +87,16 @@ class IssueTracker:
                 )
             events.append(event)
 
-        # Alvos que saíram da lista de problemas se recuperaram
+        # Recuperação só após o finding ficar ausente por RECOVERY_GRACE_SECONDS
         for key in [k for k in self.active if k not in findings]:
+            if key not in self._missing_since:
+                self._missing_since[key] = now
+                continue
+            if now - self._missing_since[key] < self.RECOVERY_GRACE_SECONDS:
+                continue
+
             entry = self.active.pop(key)
+            self._missing_since.pop(key, None)
             minutes = int((now - entry["started_at"]) // 60)
             component = entry.get("component", key)
             events.append({
