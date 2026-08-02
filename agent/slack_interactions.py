@@ -27,6 +27,8 @@ from agent.config import config
 _approvals: Dict[str, Dict[str, object]] = {}
 # action_ids que o resolutor está aguardando neste momento
 _pending: Set[str] = set()
+# action_ids cancelados porque o problema se resolveu sozinho
+_cancelled: Set[str] = set()
 _lock = threading.Lock()
 
 # Signing secret do Slack é sempre hexadecimal de 32 caracteres
@@ -44,12 +46,33 @@ _API_FALLBACK_URLS = [
 def register_pending(action_id: str) -> None:
     """Marca que o resolutor está aguardando decisão para este action_id."""
     with _lock:
+        _cancelled.discard(action_id)
         _pending.add(action_id)
 
 
 def discard_pending(action_id: str) -> None:
     with _lock:
         _pending.discard(action_id)
+
+
+def cancel_pending(action_id: str) -> bool:
+    """
+    Cancela a espera de aprovação (ex.: serviço já recuperado).
+    Retorna True se havia uma ação pendente para cancelar.
+    """
+    with _lock:
+        if action_id not in _pending and action_id not in _cancelled:
+            # Ainda marca cancelamento para o caso de corrida com register_pending
+            _cancelled.add(action_id)
+            return False
+        _pending.discard(action_id)
+        _cancelled.add(action_id)
+        return True
+
+
+def was_cancelled(action_id: str) -> bool:
+    with _lock:
+        return action_id in _cancelled
 
 
 def record_approval(action_id: str, approved: bool, user: str = "unknown") -> None:
@@ -60,6 +83,7 @@ def record_approval(action_id: str, approved: bool, user: str = "unknown") -> No
             "timestamp": time.time(),
         }
         _pending.discard(action_id)
+        _cancelled.discard(action_id)
 
 
 def check_approval_status(action_id: str) -> Optional[bool]:

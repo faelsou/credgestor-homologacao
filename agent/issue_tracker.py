@@ -97,15 +97,17 @@ class IssueTracker:
 
             entry = self.active.pop(key)
             self._missing_since.pop(key, None)
-            minutes = int((now - entry["started_at"]) // 60)
+            minutes = max(1, int((now - entry["started_at"]) // 60))
             component = entry.get("component", key)
             events.append({
                 "kind": "recovery",
                 "component": component,
                 "description": (
-                    f"✅ *Recuperado: {component}*\n\n"
+                    f"✅ *Problema resolvido: {component}*\n\n"
+                    f"O serviço voltou ao estado saudável. "
                     f"O problema `{entry['issue_type']}` deixou de ser detectado "
-                    f"após {minutes} min."
+                    f"após {minutes} min.\n"
+                    f"_Nenhuma ação corretiva adicional é necessária._"
                 ),
             })
 

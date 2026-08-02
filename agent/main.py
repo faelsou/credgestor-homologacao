@@ -61,9 +61,10 @@ class IncidentPipeline:
         self._lock = threading.Lock()
 
     def forget(self, component: str) -> None:
-        """Descarta os diagnósticos do componente após a recuperação."""
+        """Descarta diagnóstico e cancela aprovação pendente após a recuperação."""
         for key in [k for k in self._last_diagnosis if k.startswith(f"{component}:")]:
             self._last_diagnosis.pop(key, None)
+        self.resolver.cancel_for_component(component)
 
     def handle(self, issue: Dict[str, Any]) -> None:
         """Inicia a tratativa em background (uma por componente+tipo por vez)."""
@@ -79,6 +80,9 @@ class IncidentPipeline:
                 return
             self._treating.add(treat_key)
 
+        # Novo incidente: limpar cancelamento de uma recuperação anterior
+        self.resolver.clear_cancel(component)
+
         thread = threading.Thread(
             target=self._run,
             args=(issue, treat_key),
@@ -90,6 +94,10 @@ class IncidentPipeline:
     def _run(self, issue: Dict[str, Any], treat_key: str) -> None:
         component = issue["component"]
         try:
+            if self.resolver.is_cancelled(component):
+                print(f"✅ Tratativa de {treat_key} abortada: componente já recuperado")
+                return
+
             # Em lembretes, reaproveitar diagnóstico e reabrir só a aprovação
             cached = self._last_diagnosis.get(treat_key) if issue.get("repeat") else None
             action_plan = None
@@ -99,6 +107,9 @@ class IncidentPipeline:
                 diagnostics = self.troubleshooter.collect_diagnostics(
                     component, issue.get("target_service")
                 )
+                if self.resolver.is_cancelled(component):
+                    print(f"✅ Tratativa de {treat_key} abortada: componente já recuperado")
+                    return
                 diagnosis, action_plan = self.troubleshooter.analyze(issue, diagnostics)
                 self._last_diagnosis[treat_key] = {**diagnosis, "plano": action_plan}
                 report_ok = self.slack.send_troubleshooting_report(
@@ -130,16 +141,21 @@ class IncidentPipeline:
                     f"_Reabrindo pedido de aprovação._"
                 )
 
+            if self.resolver.is_cancelled(component):
+                print(f"✅ Tratativa de {treat_key} abortada: componente já recuperado")
+                return
+
             print(f"🛠️  Acionando resolutor para {treat_key} (aprovação obrigatória no Slack)...")
             self.resolver.resolve(issue, diagnosis, action_plan)
         except Exception as e:
             print(f"⚠️  Erro na tratativa de {treat_key}: {e}")
             try:
-                self.slack.send_message(
-                    f"⚠️ *Falha na tratativa automática* de `{component}` "
-                    f"(`{issue.get('issue_type')}`): `{e}`\n"
-                    f"Intervenção manual necessária."
-                )
+                if not self.resolver.is_cancelled(component):
+                    self.slack.send_message(
+                        f"⚠️ *Falha na tratativa automática* de `{component}` "
+                        f"(`{issue.get('issue_type')}`): `{e}`\n"
+                        f"Intervenção manual necessária."
+                    )
             except Exception:
                 pass
         finally:
