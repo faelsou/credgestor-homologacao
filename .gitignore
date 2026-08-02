@@ -68,3 +68,12 @@ Thumbs.db
 
 # Arquivos grandes do Dynatrace
 Dynatrace-OneAgent-*.sh
+
+# ===================================================================
+# Playwright E2E
+# ===================================================================
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/artifacts/e2e/

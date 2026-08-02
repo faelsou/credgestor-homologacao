@@ -419,6 +419,15 @@ class SlackClient:
             if elapsed >= self.approval_timeout:
                 print(f"⏰ Timeout de aprovação ({self.approval_timeout}s). Ação não será executada.")
                 return None
+
+            # Cancelada porque o componente já se recuperou
+            try:
+                from agent.slack_interactions import was_cancelled
+                if was_cancelled(action_id):
+                    print(f"🛑 Aprovação {action_id} cancelada: componente já recuperado")
+                    return None
+            except Exception:
+                pass
             
             # Verificar reações na mensagem
             try:
@@ -511,6 +520,21 @@ class SlackClient:
             if elapsed >= self.approval_timeout:
                 print(f"⏰ Timeout de aprovação ({self.approval_timeout}s). Ação não será executada.")
                 return None
+
+            try:
+                from agent.slack_interactions import check_approval_status, was_cancelled
+                if was_cancelled(action_id):
+                    print(f"🛑 Aprovação {action_id} cancelada: componente já recuperado")
+                    return None
+                approval_status = check_approval_status(action_id)
+                if approval_status is True:
+                    print(f"✅ Aprovação recebida via botão")
+                    return True
+                if approval_status is False:
+                    print(f"❌ Rejeição recebida via botão")
+                    return False
+            except Exception as e:
+                print(f"⚠️  Erro ao verificar aprovação via interações: {str(e)}")
             
             # Buscar últimas mensagens do canal procurando pela mensagem de aprovação
             try:

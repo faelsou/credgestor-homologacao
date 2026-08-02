@@ -8,12 +8,18 @@ Define e executa a ação corretiva para um problema detectado:
 Com REQUIRE_APPROVAL habilitado, solicita aprovação no Slack (botões ou
 reação 👍/👎) antes de executar. Ao final envia relatório de resolução.
 """
+import threading
 import time
 import uuid
 from typing import Any, Dict, Optional, Tuple
 
 from agent.config import config
-from agent.slack_interactions import discard_pending, register_pending
+from agent.slack_interactions import (
+    cancel_pending,
+    discard_pending,
+    register_pending,
+    was_cancelled,
+)
 
 
 class Resolver:
@@ -23,6 +29,36 @@ class Resolver:
         self.docker = docker_client
         self.slack = slack
         self.require_approval = config.REQUIRE_APPROVAL
+        # component -> action_id da aprovação em andamento
+        self._active_actions: Dict[str, str] = {}
+        # componentes cuja tratativa deve abortar (já recuperados)
+        self._cancelled_components: set = set()
+        self._lock = threading.Lock()
+
+    def cancel_for_component(self, component: str) -> bool:
+        """
+        Aborta a tratativa/aprovação pendente porque o componente já se recuperou.
+        Retorna True se havia uma aprovação ativa para cancelar.
+        """
+        with self._lock:
+            self._cancelled_components.add(component)
+            action_id = self._active_actions.get(component)
+        if action_id:
+            cancel_pending(action_id)
+            print(
+                f"🛑 Aprovação pendente de `{component}` cancelada "
+                f"(serviço já recuperado)"
+            )
+            return True
+        return False
+
+    def is_cancelled(self, component: str) -> bool:
+        with self._lock:
+            return component in self._cancelled_components
+
+    def clear_cancel(self, component: str) -> None:
+        with self._lock:
+            self._cancelled_components.discard(component)
 
     def plan_action(
         self, issue: Dict[str, Any]
@@ -56,6 +92,10 @@ class Resolver:
         action_plan: Optional[list] = None,
     ) -> bool:
         component = issue["component"]
+        if self.is_cancelled(component):
+            print(f"✅ Resolutor de `{component}` abortado: componente já recuperado")
+            return False
+
         plan = self.plan_action(issue)
         if plan is None:
             self._report_manual(issue, diagnosis, action_plan)
@@ -67,7 +107,16 @@ class Resolver:
 
         if self.require_approval:
             register_pending(action_id)
+            with self._lock:
+                self._active_actions[component] = action_id
             try:
+                if self.is_cancelled(component):
+                    print(
+                        f"✅ Resolutor de `{component}` abortado antes da aprovação: "
+                        f"componente já recuperado"
+                    )
+                    return False
+
                 print(f"📤 Enviando pedido de aprovação ao Slack ({action_id})...")
                 approved = self.slack.send_approval_request(
                     action_description=action_description,
@@ -80,13 +129,32 @@ class Resolver:
                 )
             finally:
                 discard_pending(action_id)
+                with self._lock:
+                    self._active_actions.pop(component, None)
+
+            if was_cancelled(action_id) or self.is_cancelled(component):
+                # Recuperação já notificada pelo IssueTracker — não enviar timeout
+                print(
+                    f"✅ Ação corretiva de `{component}` dispensada: "
+                    f"serviço já se recuperou sozinho"
+                )
+                return False
+
             if approved is not True:
-                status = "rejeitada" if approved is False else "expirou sem aprovação / não chegou ao Slack"
+                status = (
+                    "rejeitada"
+                    if approved is False
+                    else "expirou sem aprovação / não chegou ao Slack"
+                )
                 self.slack.send_message(
                     f"⚠️ Ação corretiva para `{component}` {status}. "
                     f"Nenhuma alteração foi executada pelo agente."
                 )
                 return False
+
+        if self.is_cancelled(component):
+            print(f"✅ Resolutor de `{component}` abortado: componente já recuperado")
+            return False
 
         ok, result_message = self._execute(service, action_kind, action_value)
         report_ok = self.slack.send_resolution_report({
@@ -108,6 +176,8 @@ class Resolver:
         action_plan: Optional[list],
     ) -> None:
         """Avisa no Slack que o problema exige intervenção humana."""
+        if self.is_cancelled(issue["component"]):
+            return
         steps = "\n".join(f"• {step}" for step in (action_plan or [])) or "• Analisar manualmente"
         print(
             f"🧰 Sem ação automática para {issue['component']} "
