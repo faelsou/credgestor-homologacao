@@ -33,7 +33,9 @@ O projeto utiliza uma arquitetura moderna com:
 - **Branch**: `develop` ou `staging`
 - **Objetivo**: Testes de integração e validação
 - **Deploy**: Automático via GitHub Actions
-- **URL**: `https://staging.credgestor.com`
+- **URL**: `https://staging.credgestor.app.br`
+- **Path VPS**: `/var/www/credgestor-homologacao/staging`
+- **Stack**: `credgestor-staging`
 
 ### Production
 - **Branch**: `main`

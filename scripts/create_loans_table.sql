@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS public.installments (
     promised_payment_amount numeric(15,2),
     promised_payment_date date,
     promised_payment_history jsonb DEFAULT '[]'::jsonb,
+    payment_history jsonb NOT NULL DEFAULT '[]'::jsonb,
     status text NOT NULL DEFAULT 'PENDING',
     paid_date date,
     created_at timestamptz NOT NULL DEFAULT now(),

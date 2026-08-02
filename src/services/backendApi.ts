@@ -435,6 +435,7 @@ const normalizeApiInstallment = (apiInst: any): any => {
     promisedPaymentAmount: apiInst.promised_payment_amount || apiInst.promisedPaymentAmount ? parseFloat(apiInst.promised_payment_amount || apiInst.promisedPaymentAmount) : undefined,
     promisedPaymentDate: apiInst.promised_payment_date || apiInst.promisedPaymentDate || undefined,
     promisedPaymentHistory: promisedPaymentHistory,
+    paymentHistory: apiInst.payment_history || apiInst.paymentHistory || [],
     status: apiInst.status || 'PENDING',
     paidDate: apiInst.paid_date || apiInst.paidDate || undefined,
   };
@@ -503,6 +504,7 @@ export async function createBackendInstallmentsBatch(
       promised_payment_amount: inst.promisedPaymentAmount || null,
       promised_payment_date: inst.promisedPaymentDate || null,
       promised_payment_history: inst.promisedPaymentHistory || [],
+      payment_history: inst.paymentHistory || [],
     };
   });
   
@@ -555,6 +557,7 @@ export async function createBackendInstallment(
     promised_payment_amount: installment.promisedPaymentAmount || null,
     promised_payment_date: installment.promisedPaymentDate || null,
     promised_payment_history: installment.promisedPaymentHistory || [],
+    payment_history: installment.paymentHistory || [],
   };
 
   const endpoint = `tenants/${tenantId}/installments`;
@@ -623,6 +626,9 @@ export async function updateBackendInstallment(
   }
   if (installment.promisedPaymentHistory !== undefined) {
     payload.promised_payment_history = installment.promisedPaymentHistory;
+  }
+  if (installment.paymentHistory !== undefined) {
+    payload.payment_history = installment.paymentHistory;
   }
   if (installment.paidDate !== undefined) {
     payload.paid_date = installment.paidDate;

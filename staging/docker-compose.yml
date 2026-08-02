@@ -1,0 +1,127 @@
+version: '3.9'
+
+services:
+  # API FastAPI (Backend) — Staging
+  api:
+    image: faelsouz/credgestor-homologacao-backend:${DOCKER_VERSION:-latest}
+    env_file:
+      - .env
+    environment:
+      API_HOST: ${API_HOST:-0.0.0.0}
+      API_PORT: ${API_PORT:-8000}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      DATABASE_URL: ${DATABASE_URL:-}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-credgestor-api-staging}
+      OTEL_SERVICE_VERSION: ${OTEL_SERVICE_VERSION:-0.1.0}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-otlp}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-otlp}
+      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-otlp}
+    ports:
+      - "8001:8000"
+    networks:
+      - network_public
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=network_public
+
+        # HTTP -> HTTPS redirect para API (staging)
+        - traefik.http.routers.credgestor-staging-api-web.rule=Host(`staging.credgestor.app.br`) && PathPrefix(`/api`)
+        - traefik.http.routers.credgestor-staging-api-web.entrypoints=web
+        - traefik.http.routers.credgestor-staging-api-web.middlewares=credgestor-staging-api-https-redirect
+        - traefik.http.middlewares.credgestor-staging-api-https-redirect.redirectscheme.scheme=https
+        - traefik.http.middlewares.credgestor-staging-api-https-redirect.redirectscheme.permanent=true
+        - traefik.http.routers.credgestor-staging-api-web.service=credgestor-staging-api
+
+        # HTTPS para API (staging)
+        - traefik.http.routers.credgestor-staging-api-secure.rule=Host(`staging.credgestor.app.br`) && PathPrefix(`/api`)
+        - traefik.http.routers.credgestor-staging-api-secure.entrypoints=websecure
+        - traefik.http.routers.credgestor-staging-api-secure.tls=true
+        - traefik.http.routers.credgestor-staging-api-secure.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.credgestor-staging-api-secure.service=credgestor-staging-api
+        - traefik.http.routers.credgestor-staging-api-secure.tls.domains[0].main=staging.credgestor.app.br
+
+        # Remove /api antes de encaminhar ao backend
+        - traefik.http.middlewares.credgestor-staging-api-stripprefix.stripprefix.prefixes=/api
+        - traefik.http.routers.credgestor-staging-api-secure.middlewares=credgestor-staging-api-stripprefix
+
+        - traefik.http.services.credgestor-staging-api.loadbalancer.server.port=8000
+
+        - prometheus.io/scrape=true
+        - prometheus.io/port=8000
+        - prometheus.io/path=/metrics
+        - prometheus.io/job=credgestor-api-staging
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend React + Vite (Site) — Staging
+  site:
+    image: faelsouz/credgestor-homologacao-frontend:${DOCKER_VERSION:-latest}
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=network_public
+
+        # HTTP -> HTTPS
+        - traefik.http.routers.credgestor-staging-web.rule=Host(`staging.credgestor.app.br`)
+        - traefik.http.routers.credgestor-staging-web.entrypoints=web
+        - traefik.http.routers.credgestor-staging-web.middlewares=credgestor-staging-https-redirect
+        - traefik.http.middlewares.credgestor-staging-https-redirect.redirectscheme.scheme=https
+        - traefik.http.middlewares.credgestor-staging-https-redirect.redirectscheme.permanent=true
+        - traefik.http.routers.credgestor-staging-web.service=credgestor-staging
+
+        # HTTPS
+        - traefik.http.routers.credgestor-staging-secure.rule=Host(`staging.credgestor.app.br`)
+        - traefik.http.routers.credgestor-staging-secure.entrypoints=websecure
+        - traefik.http.routers.credgestor-staging-secure.tls=true
+        - traefik.http.routers.credgestor-staging-secure.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.credgestor-staging-secure.service=credgestor-staging
+        - traefik.http.routers.credgestor-staging-secure.tls.domains[0].main=staging.credgestor.app.br
+
+        - traefik.http.services.credgestor-staging.loadbalancer.server.port=80
+    networks:
+      - network_public
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+networks:
+  network_public:
+    external: true
+
+# ===================================================================
+# STAGING — https://staging.credgestor.app.br
+# Stack: credgestor-staging
+# Porta API local: 8001 (produção usa 8000)
+# Deploy: ./staging/deploy-stack.sh [tag]
+#         docker stack deploy -c staging/docker-compose.yml credgestor-staging
+# ===================================================================
