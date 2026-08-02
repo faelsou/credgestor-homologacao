@@ -388,8 +388,13 @@ export const InstallmentsView: React.FC = () => {
     const allLoanInstallments = installments.filter(inst => inst.loanId === loan.id);
     
     const calculateOutstandingAmount = (): number => {
-      // Se o empréstimo foi finalizado, valor em aberto deve ser sempre 0
-      if (loan.status === LoanStatus.PAID) {
+      // Empréstimo PAID só zera o valor em aberto se realmente não houver parcela com saldo.
+      // Caso contrário (tipo A: loan PAID + parcela pendente), recalcula normalmente —
+      // senão o recebimento fica bloqueado com "em aberto R$ 0,00".
+      const hasPendingBalance = allLoanInstallments.some(
+        inst => inst.status !== InstallmentStatus.PAID && (inst.amountPaid || 0) < (inst.amount || 0)
+      );
+      if (loan.status === LoanStatus.PAID && !hasPendingBalance) {
         return 0;
       }
       

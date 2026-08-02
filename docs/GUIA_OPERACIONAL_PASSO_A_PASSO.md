@@ -2,6 +2,9 @@
 
 Este documento foi feito para quem precisa de instruções bem detalhadas, com exemplos práticos, para evitar erros de cadastro e operação. Siga cada passo com calma e use os checklists ao final de cada seção.
 
+> Visão completa do app (menus, perfis, fluxo diário e modelos Price / Somente Juros):  
+> [`GUIA_WEBAPP_END_TO_END.md`](./GUIA_WEBAPP_END_TO_END.md)
+
 1. Cadastrar clientes
 2. Criar novo emprestimo
 3. Receber pagamento
@@ -102,6 +105,10 @@ Passo a passo detalhado:
 O que acontece:
 - Pagamento parcial fica registrado no histórico.
 - Status da parcela e do emprestimo pode mudar automaticamente.
+- Em **Somente Juros**:
+  - pagou só os juros do mês → parcela fica **Paga** e nasce a próxima parcela (+1 mês) se ainda houver capital;
+  - pagou menos que os juros → parcela fica **Parcial**;
+  - pagou juros + capital total → empréstimo **Finalizado**.
 
 Erros comuns (e como evitar):
 - Baixar a parcela errada: confira nome do cliente, nº da parcela e valor previsto.

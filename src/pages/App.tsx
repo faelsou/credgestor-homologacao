@@ -2690,42 +2690,66 @@ const App: React.FC = () => {
     if (!installment) return;
 
     const paymentValue = installment.status === InstallmentStatus.PAID ? 0 : (amount ?? installment.amount);
-    const loan = loans.find(l => l.id === installment.loanId);
+    let loan = loans.find(l => l.id === installment.loanId);
     if (!loan) return;
     
     // Usar a data fornecida ou a data de hoje como padrão
     const actualPaymentDate = paymentDate || getTodayDateString();
 
-    // IMPORTANTE: Se o empréstimo já foi quitado mas ainda existem parcelas pendentes
-    // (inconsistência causada por falha de gravação no passado), a baixa deve apenas
-    // regularizar essas parcelas como pagas. Sem este tratamento, a baixa cai no fluxo
-    // parcial, nunca marca a parcela como PAID e ainda cria nova parcela futura,
-    // fazendo o cliente quitado voltar como devedor todos os dias.
+    // Empréstimo marcado PAID com parcelas ainda abertas (tipo A):
+    // - Se há SALDO real → reabrir para ACTIVE e seguir o recebimento normal
+    //   (evita o bloqueio "valor em aberto R$ 0,00", caso João Guedes).
+    // - Se só o status da parcela está errado (já quitada pelo valor) → regularizar PAID.
     if (loan.status === LoanStatus.PAID) {
       const pendingInstallments = installments.filter(
-        inst => inst.loanId === loan.id && inst.status !== InstallmentStatus.PAID
+        inst => inst.loanId === loan!.id && inst.status !== InstallmentStatus.PAID
       );
       if (pendingInstallments.length === 0) return;
 
-      const regularizedInstallments: Installment[] = pendingInstallments.map(inst => ({
-        ...inst,
-        status: InstallmentStatus.PAID,
-        paidDate: inst.paidDate || actualPaymentDate
-      }));
+      const withRealBalance = pendingInstallments.filter(
+        inst => (inst.amountPaid || 0) < (inst.amount || 0)
+      );
 
-      await persistInstallmentsToBackend(regularizedInstallments);
+      if (withRealBalance.length === 0) {
+        const regularizedInstallments: Installment[] = pendingInstallments.map(inst => ({
+          ...inst,
+          status: InstallmentStatus.PAID,
+          paidDate: inst.paidDate || actualPaymentDate
+        }));
 
-      setInstallments(prev => {
-        const regularizedMap = new Map(regularizedInstallments.map(inst => [inst.id, inst]));
-        return prev.map(inst => regularizedMap.get(inst.id) || inst);
-      });
-      return;
+        await persistInstallmentsToBackend(regularizedInstallments);
+
+        setInstallments(prev => {
+          const regularizedMap = new Map(regularizedInstallments.map(inst => [inst.id, inst]));
+          return prev.map(inst => regularizedMap.get(inst.id) || inst);
+        });
+        return;
+      }
+
+      loan = { ...loan, status: LoanStatus.ACTIVE };
+      setLoans(prev => prev.map(l => (l.id === loan!.id ? loan! : l)));
+      if (isBackendConfiguredValue && session?.accessToken) {
+        try {
+          const { updateBackendLoan } = await import('@/services/backendApi');
+          await updateBackendLoan(
+            session.accessToken,
+            session.tenantId || '',
+            loan.id,
+            loan
+          );
+        } catch (error) {
+          console.error('Erro ao reabrir empréstimo no backend', error);
+        }
+      }
     }
 
     // Função auxiliar para calcular valor em aberto do empréstimo
     const calculateOutstandingAmount = (loan: Loan, relatedInstallments: Installment[]): number => {
-      // Se o empréstimo foi finalizado, valor em aberto deve ser sempre 0
-      if (loan.status === LoanStatus.PAID) {
+      const hasPendingBalance = relatedInstallments.some(
+        inst => inst.status !== InstallmentStatus.PAID && (inst.amountPaid || 0) < (inst.amount || 0)
+      );
+      // Só zera se PAID E sem saldo pendente real
+      if (loan.status === LoanStatus.PAID && !hasPendingBalance) {
         return 0;
       }
       
