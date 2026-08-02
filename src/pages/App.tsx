@@ -1376,7 +1376,7 @@
 //
 //export default App;
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { LandingPage } from '@/components/LandingPage';
 import { ResetPassword } from '@/components/ResetPassword';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
@@ -1403,6 +1403,22 @@ type LocalAppState = {
   installments?: Installment[];
   view?: string;
   theme?: ThemeOption;
+};
+
+// --- LOGOUT POR INATIVIDADE ---
+const LAST_STATE_KEY = 'credgestor:last-state';
+const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutos sem interação
+const ACTIVITY_SAVE_INTERVAL_MS = 10 * 1000; // intervalo mínimo entre gravações do estado
+const KNOWN_VIEWS = ['home', 'clients', 'loans', 'installments', 'users', 'loanHistory'];
+
+type InstallmentsFilter = 'ALL' | 'PENDING' | 'LATE' | 'PAID' | 'PARTIAL';
+
+type PersistedLastState = {
+  view?: string;
+  theme?: ThemeOption;
+  installmentsInitialFilter?: InstallmentsFilter | null;
+  installmentsDateRange?: { start: string; end: string } | null;
+  lastActivityAt?: number;
 };
 
 const MOCK_CLIENTS: Client[] = [
@@ -1661,6 +1677,22 @@ const App: React.FC = () => {
     if (!isBackendConfiguredValue) return;
     const stored = localStorage.getItem(BACKEND_SESSION_STORAGE_KEY);
     if (!stored) return;
+
+    // Se a última atividade registrada passou de 15 minutos, não restaurar a sessão:
+    // força novo login, mas mantém LAST_STATE_KEY para restaurar o último estado depois
+    try {
+      const lastStateRaw = localStorage.getItem(LAST_STATE_KEY);
+      if (lastStateRaw) {
+        const lastState = JSON.parse(lastStateRaw) as PersistedLastState;
+        if (lastState.lastActivityAt && Date.now() - lastState.lastActivityAt > INACTIVITY_TIMEOUT_MS) {
+          console.warn('⏱️ Sessão expirada por inatividade (15 min). Novo login necessário.');
+          localStorage.removeItem(BACKEND_SESSION_STORAGE_KEY);
+          return;
+        }
+      }
+    } catch {
+      localStorage.removeItem(LAST_STATE_KEY);
+    }
 
     try {
       const parsed = JSON.parse(stored) as { session: BackendSession; user: User };
@@ -2139,6 +2171,10 @@ const App: React.FC = () => {
   }, [fetchUserProfile, mapAuthUserToLocalUser, isBackendConfiguredValue]);
 
   const logout = useCallback(async () => {
+    // Logout manual limpa o último estado salvo; o logout por inatividade
+    // regrava o estado logo após esta função terminar
+    localStorage.removeItem(LAST_STATE_KEY);
+
     // REGRA IMPORTANTE: Limpar TODOS os dados ao fazer logout para evitar compartilhamento
     if (isBackendConfiguredValue) {
       // Limpar sessão e dados do usuário
@@ -2175,6 +2211,75 @@ const App: React.FC = () => {
     localStorage.removeItem(CLIENTS_STORAGE_KEY);
     localStorage.removeItem(LOCAL_APP_STATE_KEY);
   }, [isBackendConfiguredValue]);
+
+  // --- LOGOUT AUTOMÁTICO APÓS 15 MINUTOS DE INATIVIDADE (persistindo o último estado) ---
+  const lastStateRef = useRef<PersistedLastState>({});
+
+  useEffect(() => {
+    lastStateRef.current = { view, theme, installmentsInitialFilter, installmentsDateRange };
+  }, [view, theme, installmentsInitialFilter, installmentsDateRange]);
+
+  const saveLastState = useCallback(() => {
+    const payload: PersistedLastState = { ...lastStateRef.current, lastActivityAt: Date.now() };
+    localStorage.setItem(LAST_STATE_KEY, JSON.stringify(payload));
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let logoutTimer: ReturnType<typeof setTimeout> | undefined;
+    let lastSaveAt = 0;
+
+    const handleInactivityLogout = async () => {
+      console.warn('⏱️ 15 minutos sem atividade. Deslogando e salvando o último estado...');
+      await logout();
+      // Grava depois do logout para sobreviver à limpeza do localStorage
+      saveLastState();
+    };
+
+    const registerActivity = () => {
+      if (logoutTimer) clearTimeout(logoutTimer);
+      logoutTimer = setTimeout(handleInactivityLogout, INACTIVITY_TIMEOUT_MS);
+
+      // Persiste o estado + timestamp de atividade de forma espaçada,
+      // para detectar inatividade mesmo se a aba for fechada
+      const now = Date.now();
+      if (now - lastSaveAt >= ACTIVITY_SAVE_INTERVAL_MS) {
+        lastSaveAt = now;
+        saveLastState();
+      }
+    };
+
+    const events: (keyof WindowEventMap)[] = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    events.forEach(eventName => window.addEventListener(eventName, registerActivity, { passive: true }));
+    registerActivity();
+
+    return () => {
+      if (logoutTimer) clearTimeout(logoutTimer);
+      events.forEach(eventName => window.removeEventListener(eventName, registerActivity));
+    };
+  }, [user, logout, saveLastState]);
+
+  // Restaura o último estado salvo assim que o usuário loga novamente
+  useEffect(() => {
+    if (!user) return;
+
+    const stored = localStorage.getItem(LAST_STATE_KEY);
+    if (!stored) return;
+
+    try {
+      const parsed = JSON.parse(stored) as PersistedLastState;
+      if (parsed.view && KNOWN_VIEWS.includes(parsed.view)) setView(parsed.view);
+      if (parsed.theme) setTheme(parsed.theme);
+      if (parsed.installmentsInitialFilter !== undefined) setInstallmentsInitialFilter(parsed.installmentsInitialFilter);
+      if (parsed.installmentsDateRange !== undefined) setInstallmentsDateRange(parsed.installmentsDateRange);
+      console.log('♻️ Último estado restaurado após login:', parsed.view);
+    } catch (error) {
+      console.error('Não foi possível restaurar o último estado salvo', error);
+    }
+
+    localStorage.removeItem(LAST_STATE_KEY);
+  }, [user]);
 
   // ⭐ FUNÇÃO CORRIGIDA - Salva no backend FastAPI quando autenticado
   const addClient = useCallback(async (client: Client): Promise<Client | null> => {
@@ -2516,6 +2621,65 @@ const App: React.FC = () => {
     }
   }, [isBackendConfiguredValue, session]);
 
+  // Persiste um conjunto de parcelas no backend, resolvendo IDs locais (não-UUID)
+  // para os UUIDs reais. Uma falha em uma parcela não impede a gravação das demais.
+  // Se alguma gravação falhar, o operador é avisado (senão a baixa "some" no dia
+  // seguinte, quando os dados são recarregados do backend).
+  const persistInstallmentsToBackend = useCallback(async (
+    installmentsToSave: Installment[]
+  ): Promise<number[]> => {
+    if (!isBackendConfiguredValue || !session?.accessToken || installmentsToSave.length === 0) {
+      return [];
+    }
+
+    const failedNumbers: number[] = [];
+
+    try {
+      const tenantId = requireTenantId(session.tenantId, 'operar com parcelas');
+      const { updateBackendInstallment, fetchBackendInstallments } = await import('@/services/backendApi');
+
+      // Buscar as parcelas do backend uma única vez, apenas se houver IDs locais
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      let backendInstallments: any[] | undefined;
+      if (installmentsToSave.some(inst => !uuidRegex.test(inst.id))) {
+        try {
+          backendInstallments = await fetchBackendInstallments(session.accessToken, tenantId);
+        } catch (error) {
+          console.error('Erro ao buscar parcelas no backend para sincronização', error);
+        }
+      }
+
+      for (const inst of installmentsToSave) {
+        try {
+          const backendId = await getInstallmentBackendId(inst, backendInstallments);
+          if (!backendId) {
+            console.warn(`Parcela não encontrada no backend: loanId=${inst.loanId}, number=${inst.number}`);
+            failedNumbers.push(inst.number);
+            continue;
+          }
+          await updateBackendInstallment(session.accessToken, tenantId, backendId, inst);
+        } catch (error) {
+          console.error(`Erro ao salvar parcela ${inst.number} no backend`, error);
+          failedNumbers.push(inst.number);
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao salvar parcelas no backend', error);
+      failedNumbers.push(...installmentsToSave.map(inst => inst.number));
+    }
+
+    if (failedNumbers.length > 0) {
+      const plural = failedNumbers.length > 1;
+      alert(
+        `Atenção: não foi possível salvar ${plural ? 'as parcelas' : 'a parcela'} ` +
+        `${failedNumbers.join(', ')} no servidor. A baixa pode ser desfeita quando os dados ` +
+        `forem recarregados. Verifique sua conexão e dê a baixa novamente.`
+      );
+    }
+
+    return failedNumbers;
+  }, [isBackendConfiguredValue, session, getInstallmentBackendId]);
+
   const payInstallment = useCallback(async (id: string, amount?: number, paymentDate?: string) => {
     if (user?.role === UserRole.COLLECTION) {
       alert("Acesso restrito: Cobradores não podem baixar pagamentos, apenas visualizar.");
@@ -2531,6 +2695,32 @@ const App: React.FC = () => {
     
     // Usar a data fornecida ou a data de hoje como padrão
     const actualPaymentDate = paymentDate || getTodayDateString();
+
+    // IMPORTANTE: Se o empréstimo já foi quitado mas ainda existem parcelas pendentes
+    // (inconsistência causada por falha de gravação no passado), a baixa deve apenas
+    // regularizar essas parcelas como pagas. Sem este tratamento, a baixa cai no fluxo
+    // parcial, nunca marca a parcela como PAID e ainda cria nova parcela futura,
+    // fazendo o cliente quitado voltar como devedor todos os dias.
+    if (loan.status === LoanStatus.PAID) {
+      const pendingInstallments = installments.filter(
+        inst => inst.loanId === loan.id && inst.status !== InstallmentStatus.PAID
+      );
+      if (pendingInstallments.length === 0) return;
+
+      const regularizedInstallments: Installment[] = pendingInstallments.map(inst => ({
+        ...inst,
+        status: InstallmentStatus.PAID,
+        paidDate: inst.paidDate || actualPaymentDate
+      }));
+
+      await persistInstallmentsToBackend(regularizedInstallments);
+
+      setInstallments(prev => {
+        const regularizedMap = new Map(regularizedInstallments.map(inst => [inst.id, inst]));
+        return prev.map(inst => regularizedMap.get(inst.id) || inst);
+      });
+      return;
+    }
 
     // Função auxiliar para calcular valor em aberto do empréstimo
     const calculateOutstandingAmount = (loan: Loan, relatedInstallments: Installment[]): number => {
@@ -2744,22 +2934,12 @@ const App: React.FC = () => {
       }
 
       // Atualizar parcelas no backend se configurado
+      // IMPORTANTE: persistir TODAS as parcelas alteradas (não apenas as PAID),
+      // com resolução de IDs locais e sem abortar as demais em caso de falha.
       if (isBackendConfiguredValue && session?.accessToken) {
-        try {
-          const { updateBackendInstallment } = await import('@/services/backendApi');
-          for (const inst of finalInstallments) {
-            if (inst.status === InstallmentStatus.PAID) {
-              await updateBackendInstallment(
-                session.accessToken,
-                requireTenantId(session.tenantId, 'operar com parcelas'),
-                inst.id,
-                inst
-              );
-            }
-          }
-        } catch (error) {
-          console.error('Erro ao atualizar parcelas no backend', error);
-        }
+        const originalById = new Map(allLoanInstallments.map(inst => [inst.id, inst]));
+        const changedInstallments = finalInstallments.filter(inst => originalById.get(inst.id) !== inst);
+        await persistInstallmentsToBackend(changedInstallments);
       }
 
       // Atualizar todas as parcelas
@@ -2942,14 +3122,17 @@ const App: React.FC = () => {
       // Valor total aplicado nesta parcela (juros + principal)
       const appliedToThisInstallment = interestPayment + principalPayment;
 
-      // Para empréstimos "somente juros", o amount é apenas os juros, não juros + principal
-      // O status é PAID quando não há mais juros nem principal pendentes
-      // IMPORTANTE: Para pagamentos retroativos, o amount original deve ser preservado
-      // Não recalcular o amount baseado no capital restante para manter o valor inicial
-      const newStatus = (updatedInterest <= 0 && updatedPrincipal <= 0) 
-        ? InstallmentStatus.PAID 
-        : (appliedToThisInstallment > 0) 
-          ? InstallmentStatus.PARTIAL 
+      // Semântica INTEREST_ONLY:
+      // - A parcela representa a cobrança do mês (juros + eventual multa).
+      // - PAID = cobrança do mês quitada (juros integralmente recebidos).
+      // - PARTIAL = pagou menos que os juros do mês (ainda há saldo nesta parcela).
+      // - A dívida de capital fica no empréstimo (ACTIVE + outstanding_amount)
+      //   e é cobrada via criação da próxima parcela mensal.
+      const monthlyChargeFullyPaid = updatedInterest <= 0;
+      const newStatus = monthlyChargeFullyPaid
+        ? InstallmentStatus.PAID
+        : (appliedToThisInstallment > 0)
+          ? InstallmentStatus.PARTIAL
           : installment.status;
 
       // Registrar pagamento no histórico
@@ -2963,168 +3146,85 @@ const App: React.FC = () => {
       const existingHistory = installment.paymentHistory || [];
       const updatedPaymentHistory = [...existingHistory, paymentHistoryEntry];
 
-      // IMPORTANTE: Preservar o amount original da parcela para não alterar o valor inicial
-      // Isso é especialmente importante para pagamentos retroativos
-      // Apenas atualizar interestAmount e principalAmount, mantendo o amount original
-      // IMPORTANTE: Se a parcela foi paga (PAID), ela não deve mais estar como LATE
-      const finalStatus = newStatus === InstallmentStatus.PAID 
-        ? InstallmentStatus.PAID 
+      const finalStatus = newStatus === InstallmentStatus.PAID
+        ? InstallmentStatus.PAID
         : (newStatus === InstallmentStatus.PARTIAL && installment.status === InstallmentStatus.LATE)
-          ? InstallmentStatus.PARTIAL // Se estava LATE e agora está parcialmente paga, remover status LATE
+          ? InstallmentStatus.PARTIAL
           : newStatus;
-      
-      // IMPORTANTE: Para empréstimos "somente juros", preservar o valor ORIGINAL dos juros
-      // O interestAmount deve sempre representar o valor ORIGINAL dos juros (não o pendente)
-      // Isso garante que o contrato permaneça o mesmo do início ao fim
-      // Exemplo: Empréstimo de R$ 1.000 com 10% = R$ 100 de juros sempre
-      // Reutilizar originalInterestAmount já calculado acima
-      
-      // IMPORTANTE: Usar o valor correto dos juros baseado no capital pendente
-      // O updatedInterest representa o valor pendente após o pagamento atual
-      // Reutilizar tolerance já declarado acima
-      const currentInterestAmount = installment.interestAmount ?? 0;
-      const finalInterestAmount = (currentInterestAmount === 0 || Math.abs(currentInterestAmount - correctInterestAmount) > tolerance)
-        ? correctInterestAmount // Usar valor correto se estiver incorreto
-        : correctInterestAmount; // SEMPRE usar o valor correto baseado no capital pendente
-      
+
+      // Usar o valor correto dos juros baseado no capital pendente
+      const finalInterestAmount = correctInterestAmount;
+
+      // Capital pendente APÓS este pagamento (inclui amortização feita agora)
+      const capitalPaidAfterThis = totalCapitalPaid + principalPayment;
+      const pendingCapitalAfterPayment = Math.max(0, loan.amount - capitalPaidAfterThis);
+
       const updatedInstallment = {
         ...installment,
-        amount: installment.amount, // Preservar o valor original da parcela
-        interestAmount: finalInterestAmount, // Valor ORIGINAL dos juros (sempre constante)
-        principalAmount: updatedPrincipal, // Capital restante após amortização
+        amount: installment.amount, // Preservar o valor original da parcela (juros do mês)
+        interestAmount: finalInterestAmount,
+        principalAmount: updatedPrincipal, // Capital de referência do contrato
         amountPaid: Number(((installment.amountPaid || 0) + appliedToThisInstallment).toFixed(2)),
         paymentHistory: updatedPaymentHistory,
         status: finalStatus,
-        paidDate: finalStatus === InstallmentStatus.PAID ? new Date().toISOString() : installment.paidDate
+        paidDate: finalStatus === InstallmentStatus.PAID ? actualPaymentDate : installment.paidDate
       };
 
-      // 3. IMPORTANTE: O capital NÃO deve ser abatido automaticamente das próximas parcelas
-      // O capital deve permanecer intacto até que o admin dê baixa recebendo todo o pagamento
-      // Apenas os juros são abatidos - o capital permanece até pagamento total explícito
       const updatedInstallments: Installment[] = [updatedInstallment];
-      
-      // Se houver pagamento excedente após abater os juros, ele não será aplicado automaticamente
-      // O capital permanece intacto até que seja explicitamente pago pelo admin
 
       // Atualizar parcelas no backend se configurado
       if (isBackendConfiguredValue && session?.accessToken) {
-        try {
-          const { updateBackendInstallment, fetchBackendInstallments } = await import('@/services/backendApi');
-          // Buscar parcelas do backend para obter os UUIDs corretos
-          const backendInstallments = await fetchBackendInstallments(
-            session.accessToken,
-            requireTenantId(session.tenantId, 'operar com parcelas')
-          );
-          
-          for (const inst of updatedInstallments) {
-            // Verificar se o ID é um UUID válido (formato: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
-            const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(inst.id);
-            
-            if (!isValidUUID) {
-              // Se não for UUID válido, buscar a parcela no backend pelo loanId e number
-              const backendInst = backendInstallments.find(
-                (bi: any) => bi.loanId === inst.loanId && bi.number === inst.number
-              );
-              
-              if (backendInst) {
-                // Usar o UUID do backend
-                await updateBackendInstallment(
-                  session.accessToken,
-                  requireTenantId(session.tenantId, 'operar com parcelas'),
-                  backendInst.id,
-                  inst
-                );
-              } else {
-                console.warn(`Parcela não encontrada no backend para atualização: loanId=${inst.loanId}, number=${inst.number}`);
-              }
-            } else {
-              // ID é UUID válido, atualizar diretamente
-              await updateBackendInstallment(
-                session.accessToken,
-                requireTenantId(session.tenantId, 'operar com parcelas'),
-                inst.id,
-                inst
-              );
-            }
-          }
-        } catch (error) {
-          console.error('Erro ao atualizar parcelas no backend', error);
-        }
+        await persistInstallmentsToBackend(updatedInstallments);
       }
 
-      // IMPORTANTE: Para empréstimos INTEREST_ONLY, o capital sempre permanece como o valor original
-      // Não precisamos calcular "capital restante" porque o capital nunca muda
-      // As novas parcelas são criadas apenas quando necessário para cobrar os juros mensais
-      // Primeiro, atualizar a lista de parcelas com as modificadas
       const allUpdatedInstallments = [...updatedInstallments];
-      
+
       // Encontrar o próximo número de parcela
       const allLoanInstallmentsForNew = installments.filter(inst => inst.loanId === loan.id);
       const maxNumber = Math.max(...allLoanInstallmentsForNew.map(inst => inst.number), 0);
       const nextNumber = maxNumber + 1;
 
-      // IMPORTANTE: Para empréstimos INTEREST_ONLY:
-      // 1. Sempre criar nova parcela quando uma parcela é paga parcialmente (apenas juros)
-      // 2. O empréstimo só é finalizado quando capital + todos os juros forem pagos completamente
-      // 3. Verificar se já existe uma próxima parcela antes de criar uma nova
-      
-      // Verificar se ainda há capital ou juros pendentes
-      // O capital sempre permanece como o valor original até ser totalmente pago
-      const hasOutstandingCapital = updatedPrincipal > 0;
-      const hasOutstandingInterest = updatedInterest > 0;
-      const hasOtherPendingInstallments = allLoanInstallmentsForNew.some(
-        inst => inst.status !== InstallmentStatus.PAID && inst.id !== id
-      );
-      
       // Verificar se já existe uma próxima parcela com o número calculado
       const nextInstallmentExists = allLoanInstallmentsForNew.some(
         inst => inst.number === nextNumber
       );
-      
-      // Criar nova parcela se:
-      // 1. Ainda há capital ou juros pendentes na parcela atual OU há outras parcelas pendentes
-      // 2. E não existe ainda uma próxima parcela
-      // 3. E a parcela atual foi paga parcialmente (apenas juros) ou há outras pendentes
-      const shouldCreateNewInstallment = 
-        (hasOutstandingCapital || hasOutstandingInterest || hasOtherPendingInstallments) &&
+
+      // Já existe outra parcela futura/pendente (não criar duplicata)
+      const hasFuturePendingInstallment = allLoanInstallmentsForNew.some(
+        inst =>
+          inst.id !== id &&
+          inst.status !== InstallmentStatus.PAID &&
+          inst.number > installment.number
+      );
+
+      // Criar próxima parcela quando:
+      // 1. A cobrança do mês atual foi quitada (PAID)
+      // 2. Ainda há capital pendente no empréstimo
+      // 3. Ainda não existe a próxima parcela
+      const shouldCreateNewInstallment =
+        monthlyChargeFullyPaid &&
+        pendingCapitalAfterPayment > 0 &&
         !nextInstallmentExists &&
-        (updatedInstallment.status === InstallmentStatus.PARTIAL || hasOtherPendingInstallments);
-      
+        !hasFuturePendingInstallment;
+
       if (shouldCreateNewInstallment) {
         const rateDecimal = loan.interestRate / 100;
-        // IMPORTANTE: Calcular capital pendente para determinar os juros da nova parcela
-        // Os juros devem ser calculados sobre o capital pendente atual (não sobre o capital original)
-        const totalCapitalPaidForNewInstallment = allLoanInstallments.reduce((sum, allInst) => {
-          if (allInst.paymentHistory && allInst.paymentHistory.length > 0) {
-            return sum + allInst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
-          }
-          return sum;
-        }, 0);
-        const pendingCapitalForNewInstallment = Math.max(0, loan.amount - totalCapitalPaidForNewInstallment);
-        
-        // IMPORTANTE: Juros da nova parcela devem ser calculados sobre o capital pendente atual
-        // Quando o capital é pago, os juros das novas parcelas diminuem proporcionalmente
-        // Exemplo: R$ 1.000 com 10% = R$ 100 inicial
-        //          Após pagar R$ 100 de capital: Capital restante R$ 900, Juros = 10% de R$ 900 = R$ 90
-        const nextInterestAmount = Number((pendingCapitalForNewInstallment * rateDecimal).toFixed(2));
-        
+        // Juros da nova parcela sobre o capital pendente APÓS este pagamento
+        const nextInterestAmount = Number((pendingCapitalAfterPayment * rateDecimal).toFixed(2));
+
         // Encontrar a data de vencimento mais recente entre todas as parcelas do empréstimo
-        // Isso garante que as parcelas seguem uma sequência lógica mesmo em cadastros retroativos
         const allDates = [
           ...allLoanInstallmentsForNew.map(inst => inst.dueDate),
           updatedInstallment.dueDate
         ];
-        const mostRecentDueDate = allDates.sort((a, b) => 
-          // Ordenação determinística de YYYY-MM-DD
+        const mostRecentDueDate = allDates.sort((a, b) =>
           (() => {
             const [yA, mA, dA] = String(a).split('T')[0].split('-').map(Number);
             const [yB, mB, dB] = String(b).split('T')[0].split('-').map(Number);
             return new Date(yB, mB - 1, dB).getTime() - new Date(yA, mA - 1, dA).getTime();
           })()
         )[0];
-        
-        // Criar a próxima parcela 1 mês após a data de vencimento mais recente
-        // Isso mantém a sequência correta mesmo em cadastros retroativos
+
         const nextDueDate = addMonths(mostRecentDueDate, 1);
 
         const newInstallment: Installment = {
@@ -3133,9 +3233,9 @@ const App: React.FC = () => {
           clientId: installment.clientId,
           number: nextNumber,
           dueDate: nextDueDate,
-          amount: nextInterestAmount, // Valor da parcela = juros (sempre)
-          interestAmount: nextInterestAmount, // Juros sempre baseados no capital original
-          principalAmount: loan.amount, // SEMPRE usar o capital original do empréstimo
+          amount: nextInterestAmount,
+          interestAmount: nextInterestAmount,
+          principalAmount: loan.amount,
           amountPaid: 0,
           status: InstallmentStatus.PENDING
         };
@@ -3157,7 +3257,7 @@ const App: React.FC = () => {
 
         allUpdatedInstallments.push(newInstallment);
       }
-      
+
       // Atualizar referência para usar a lista completa
       updatedInstallments.length = 0;
       updatedInstallments.push(...allUpdatedInstallments);
@@ -3166,15 +3266,47 @@ const App: React.FC = () => {
       setInstallments(prev => {
         const updatedMap = new Map(updatedInstallments.map(inst => [inst.id, inst]));
         const existingIds = new Set(prev.map(inst => inst.id));
-        
-        // Atualizar parcelas existentes
+
         const updated = prev.map(inst => updatedMap.get(inst.id) || inst);
-        
-        // Adicionar novas parcelas que não existem ainda
         const newInstallments = updatedInstallments.filter(inst => !existingIds.has(inst.id));
-        
+
         return [...updated, ...newInstallments];
       });
+
+      // Atualizar empréstimo: PAID só quando o capital for totalmente quitado.
+      // Enquanto houver capital, permanece ACTIVE com outstanding recalculado.
+      const relatedAfterUpdate = allLoanInstallmentsForNew
+        .map(inst => (inst.id === id ? updatedInstallment : inst))
+        .concat(allUpdatedInstallments.filter(inst => !allLoanInstallmentsForNew.some(e => e.id === inst.id)));
+
+      const isCapitalFullyPaid = pendingCapitalAfterPayment <= 0;
+      const hasPendingCharges = relatedAfterUpdate.some(inst => inst.status !== InstallmentStatus.PAID);
+      const isLoanPaid = isCapitalFullyPaid && !hasPendingCharges;
+      const outstandingAmount = isLoanPaid
+        ? 0
+        : calculateOutstandingAmount({ ...loan, status: LoanStatus.ACTIVE }, relatedAfterUpdate);
+
+      const updatedLoan = {
+        ...loan,
+        status: isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE,
+        outstandingAmount
+      };
+
+      setLoans(prev => prev.map(l => (l.id === loan.id ? updatedLoan : l)));
+
+      if (isBackendConfiguredValue && session?.accessToken) {
+        try {
+          const { updateBackendLoan } = await import('@/services/backendApi');
+          await updateBackendLoan(
+            session.accessToken,
+            session.tenantId || '',
+            loan.id,
+            updatedLoan
+          );
+        } catch (error) {
+          console.error('Erro ao atualizar empréstimo no backend', error);
+        }
+      }
     } else {
       // Lógica para outros modelos de empréstimo (PRICE, etc.)
       const paidAmount = Math.min(installment.amount, (installment.amountPaid || 0) + paymentValue);
@@ -3253,17 +3385,7 @@ const App: React.FC = () => {
 
       // Atualizar no backend se configurado
       if (isBackendConfiguredValue && session?.accessToken) {
-        try {
-          const { updateBackendInstallment } = await import('@/services/backendApi');
-          await updateBackendInstallment(
-            session.accessToken,
-            requireTenantId(session.tenantId, 'operar com parcelas'),
-            id,
-            updatedInstallment
-          );
-        } catch (error) {
-          console.error('Erro ao atualizar parcela no backend', error);
-        }
+        await persistInstallmentsToBackend([updatedInstallment]);
       }
 
       setInstallments(prev => {
@@ -3357,7 +3479,7 @@ const App: React.FC = () => {
         return updated;
       });
     }
-  }, [installments, loans, user?.role, isBackendConfiguredValue, session]);
+  }, [installments, loans, user?.role, isBackendConfiguredValue, session, persistInstallmentsToBackend]);
 
   const addUser = useCallback(async (newUser: User): Promise<User | null> => {
     // Se usar backend, criar usuário via API do backend

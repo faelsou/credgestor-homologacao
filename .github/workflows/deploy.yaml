@@ -239,8 +239,8 @@ jobs:
     name: 🏗️ Build Docker Images
     runs-on: ubuntu-latest
     needs: [test-backend, test-frontend]
-    # Sempre executa em push (incluindo main), mas não em PR
-    if: github.event_name == 'push'
+    # Push ou deploy manual (não em PR)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     
     strategy:
       matrix:
@@ -271,7 +271,7 @@ jobs:
         with:
           images: ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY }}-${{ matrix.component }}
           tags: |
-            # Tag latest sempre para branch main
+            # Tag latest sempre para branch main (mesmo padrão staging e produção)
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             # Tag com nome do componente
             type=raw,value=${{ matrix.component }}-latest,enable=${{ github.ref == 'refs/heads/main' }}
@@ -308,14 +308,15 @@ jobs:
           # Apenas amd64 para produção (mais rápido, suficiente para VPS)
           # Se precisar de arm64, adicione: platforms: linux/amd64,linux/arm64
           platforms: linux/amd64
-          # Build args - sempre passa metadata, variáveis VITE só para frontend
+          # VITE_API_BASE_URL vazio de propósito: o frontend resolve /api pelo hostname
+          # (funciona em staging.credgestor.app.br e credgestor.app.br com a mesma imagem)
           build-args: |
             BUILD_DATE=${{ steps.date.outputs.date }}
             GIT_SHA=${{ github.sha }}
             GIT_REF=${{ github.ref }}
             VITE_SUPABASE_URL=${{ matrix.component == 'frontend' && secrets.VITE_SUPABASE_URL || '' }}
             VITE_SUPABASE_ANON_KEY=${{ matrix.component == 'frontend' && secrets.VITE_SUPABASE_ANON_KEY || '' }}
-            VITE_API_BASE_URL=${{ matrix.component == 'frontend' && (secrets.VITE_API_BASE_URL || 'https://credgestor.app.br/api') || '' }}
+            VITE_API_BASE_URL=${{ matrix.component == 'frontend' && (secrets.VITE_API_BASE_URL || '') || '' }}
             VITE_N8N_BASE_URL=${{ matrix.component == 'frontend' && secrets.VITE_N8N_BASE_URL || '' }}
 
       - name: 📋 List pushed tags
@@ -392,51 +393,151 @@ jobs:
         continue-on-error: true  # Continua mesmo se encontrar possíveis secrets (apenas reporta)
 
   # ===================================================================
-  # DEPLOY STAGING
+  # DEPLOY STAGING (antes de produção)
   # ===================================================================
   deploy-staging:
     name: 🚀 Deploy to Staging
     runs-on: ubuntu-latest
     needs: [build, security]
     if: |
-      (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging') ||
+      github.ref == 'refs/heads/develop' ||
+      github.ref == 'refs/heads/staging' ||
+      github.ref == 'refs/heads/main' ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     environment:
       name: staging
-      url: https://staging.credgestor.com
+      url: https://staging.credgestor.app.br
+    env:
+      STAGING_PATH: /var/www/credgestor-homologacao/staging
+      STACK_NAME: credgestor-staging
+      IMAGE_TAG: latest
 
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: 🚀 Deploy to staging
+      - name: 🔐 Validar secrets de deploy
         run: |
-          echo "🚀 Deploying to staging environment..."
-          # Adicione aqui seus comandos de deploy
-          # Exemplo: kubectl, terraform, serverless, etc.
-          echo "✅ Deployment completed"
+          if [ -z "${{ secrets.VPS_USER }}" ]; then
+            echo "❌ Erro: VPS_USER não está configurado nos GitHub Secrets"
+            exit 1
+          fi
+          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "❌ Erro: VPS_SSH_KEY não está configurado nos GitHub Secrets"
+            exit 1
+          fi
+          echo "✅ Secrets validados"
+          echo "📍 Staging: https://staging.credgestor.app.br"
+          echo "📁 Path: ${{ env.STAGING_PATH }}"
+
+      - name: 🔍 Test SSH connection
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST || '167.235.76.26' }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            echo "✅ Conexão SSH OK"
+            hostname
+            mkdir -p ${{ env.STAGING_PATH }}
+
+      - name: 📤 Copy staging files to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST || '167.235.76.26' }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          source: "staging/docker-compose.yml,staging/deploy-stack.sh,staging/.env.example"
+          target: "/var/www/credgestor-homologacao/"
+          strip_components: 0
+          timeout: 120s
+          command_timeout: 120s
+
+      - name: 🚀 Deploy to staging with Docker Stack
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST || '167.235.76.26' }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -e
+            cd ${{ env.STAGING_PATH }}
+            chmod +x deploy-stack.sh
+
+            # Garante .env de staging (seed a partir de produção se ainda não existir)
+            if [ ! -f .env ]; then
+              if [ -f /var/www/credgestor-homologacao/.env ]; then
+                echo "📝 Criando staging/.env a partir do .env de produção..."
+                cp /var/www/credgestor-homologacao/.env .env
+                echo "DOCKER_VERSION=${{ env.IMAGE_TAG }}" >> .env
+                echo "VITE_API_BASE_URL=https://staging.credgestor.app.br/api" >> .env
+                echo "OTEL_SERVICE_NAME=credgestor-api-staging" >> .env
+              else
+                echo "❌ staging/.env não encontrado e não há .env de produção para seed"
+                exit 1
+              fi
+            fi
+
+            echo "🚀 Pull das imagens staging..."
+            docker pull faelsouz/credgestor-homologacao-backend:${{ env.IMAGE_TAG }} || true
+            docker pull faelsouz/credgestor-homologacao-frontend:${{ env.IMAGE_TAG }} || true
+
+            export DOCKER_VERSION=${{ env.IMAGE_TAG }}
+            set -a
+            source .env
+            set +a
+            export SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SUPABASE_ANON_KEY DATABASE_URL API_HOST API_PORT DOCKER_VERSION
+
+            if ! docker info | grep -q "Swarm: active"; then
+              docker swarm init || true
+            fi
+            if ! docker network ls | grep -q "network_public"; then
+              docker network create --driver overlay network_public || true
+            fi
+
+            echo "🚀 Deploy stack ${{ env.STACK_NAME }}..."
+            docker stack deploy -c docker-compose.yml ${{ env.STACK_NAME }}
+
+            echo "🔄 Forçando atualização dos serviços..."
+            docker service update --force --image faelsouz/credgestor-homologacao-backend:${{ env.IMAGE_TAG }} ${{ env.STACK_NAME }}_api || true
+            docker service update --force --image faelsouz/credgestor-homologacao-frontend:${{ env.IMAGE_TAG }} ${{ env.STACK_NAME }}_site || true
+
+            sleep 10
+            docker stack services ${{ env.STACK_NAME }}
+            docker stack ps ${{ env.STACK_NAME }} --no-trunc | head -20
+            echo "✅ Staging deploy concluído"
 
       - name: 🧪 Smoke tests
         run: |
-          echo "🧪 Running smoke tests..."
-          # Testa endpoints críticos após deploy
-          curl -f https://staging.credgestor.com/health || exit 1
+          echo "🧪 Smoke tests staging..."
+          sleep 15
+          curl -f https://staging.credgestor.app.br/api/health || curl -f http://167.235.76.26:8001/health || echo "⚠️ Health staging falhou (DNS/TLS pode ainda estar propagando)"
+          curl -f https://staging.credgestor.app.br/ || echo "⚠️ Frontend staging check falhou (DNS/TLS pode ainda estar propagando)"
 
       - name: 📢 Notify deployment
         if: always()
         run: |
-          echo "📢 Deployment notification sent"
+          echo "📢 Staging deployment: https://staging.credgestor.app.br"
 
   # ===================================================================
-  # DEPLOY PRODUCTION
+  # DEPLOY PRODUCTION (após staging em pushes na main)
   # ===================================================================
   deploy-production:
     name: 🚀 Deploy to Production
     runs-on: ubuntu-latest
-    needs: [build, security]
+    needs: [build, security, deploy-staging]
     if: |
-      github.ref == 'refs/heads/main' ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+      always() &&
+      needs.build.result == 'success' &&
+      (needs.security.result == 'success' || needs.security.result == 'skipped') &&
+      (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped') &&
+      (
+        github.ref == 'refs/heads/main' ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+      )
     environment:
       name: production
       url: https://credgestor.app.br

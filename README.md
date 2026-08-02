@@ -3,6 +3,7 @@
 ## 🌐 Acesso à Aplicação
 
 - **Produção**: [https://credgestor.app.br](https://credgestor.app.br)
+- **Staging**: [https://staging.credgestor.app.br](https://staging.credgestor.app.br)
 - **API Docs**: [https://credgestor.app.br/api/docs](https://credgestor.app.br/api/docs) ou [http://167.235.76.26:8000/docs](http://167.235.76.26:8000/docs)
 - **Health Check**: [https://credgestor.app.br/api/health](https://credgestor.app.br/api/health) ou [http://167.235.76.26:8000/health](http://167.235.76.26:8000/health)
 

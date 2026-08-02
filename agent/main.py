@@ -4,6 +4,7 @@ import time
 import signal
 from datetime import datetime
 from typing import Any, Dict, Optional
+from zoneinfo import ZoneInfo
 
 from agent.slack_client import SlackClient
 from agent.monitor import DockerMonitor
@@ -13,9 +14,11 @@ from agent.troubleshooter import Troubleshooter
 from agent.resolver import Resolver
 from agent.slack_interactions import start_server as start_interactions_server
 
+TZ_SP = ZoneInfo("America/Sao_Paulo")
+
 
 def build_healthy_text(services_checked: int) -> str:
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now(TZ_SP).strftime("%Y-%m-%d %H:%M:%S")
     parts = [
         ":white_check_mark: Status Saudável",
         "",
