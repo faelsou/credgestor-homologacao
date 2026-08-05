@@ -444,3 +444,14 @@ export {
   parseCurrencyInput,
   buildInvalidReceiveAmountAlert,
 } from './currencyInput';
+export {
+  HIDDEN_PAYMENT_HISTORY_KEY_PREFIX,
+  buildPaymentHistoryEntryId,
+  storageKeyForHiddenPayments,
+  hidePaymentEntry,
+  hidePaymentEntries,
+  clearHiddenPaymentIds,
+  isPaymentHidden,
+  readHiddenPaymentIds,
+  writeHiddenPaymentIds,
+} from './hiddenPaymentHistory';
