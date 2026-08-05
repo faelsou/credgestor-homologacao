@@ -32,6 +32,68 @@ function roundMoney(value: number): number {
   return Number(value.toFixed(2));
 }
 
+/** Saldo restante da parcela: amount − amountPaid (nunca reincha com juros cheios). */
+export function getInstallmentPendingAmount(installment: Installment): number {
+  return roundMoney(Math.max(0, (installment.amount || 0) - (installment.amountPaid || 0)));
+}
+
+/** Capital ainda não amortizado (loan.amount − Σ principalPaid). */
+export function getPendingCapital(
+  loan: Loan,
+  installments: readonly Installment[],
+): number {
+  const related = installments.filter(inst => inst.loanId === loan.id);
+  return roundMoney(Math.max(0, loan.amount - sumPrincipalPaid(related)));
+}
+
+/**
+ * Juros do mês INTEREST_ONLY sobre capital pendente.
+ * Fórmula canônica (toFixed(2)) — mesma usada em outstandingInterestOnly.
+ */
+export function calculateInterestOnlyMonthlyInterest(
+  loan: Loan,
+  installments: readonly Installment[],
+): number {
+  const pendingCapital = getPendingCapital(loan, installments);
+  return roundMoney(pendingCapital * (loan.interestRate / 100));
+}
+
+export type InterestOnlyReceiveSummary = {
+  /** Valor da parcela no banco (fonte da verdade). */
+  displayAmount: number;
+  /** Saldo real da parcela (amount − amountPaid). */
+  pendingAmount: number;
+  /** Juros do mês sobre capital pendente. */
+  monthlyInterest: number;
+  /** Capital ainda não amortizado. */
+  pendingCapital: number;
+  /** Teto para quitação: capital pendente + juros do mês (ou cobranças abertas). */
+  maxQuitAmount: number;
+};
+
+/**
+ * Resumo do modal "Receber" para INTEREST_ONLY.
+ * Pendente NÃO usa Math.max(..., jurosCheios) — isso reinchava após parcial.
+ */
+export function getInterestOnlyReceiveSummary(
+  loan: Loan,
+  installment: Installment,
+  installments: readonly Installment[],
+): InterestOnlyReceiveSummary {
+  const pendingCapital = getPendingCapital(loan, installments);
+  const monthlyInterest = calculateInterestOnlyMonthlyInterest(loan, installments);
+  const pendingAmount = getInstallmentPendingAmount(installment);
+  const maxQuitAmount = calculateLoanOutstandingAmount(loan, installments);
+
+  return {
+    displayAmount: roundMoney(installment.amount || 0),
+    pendingAmount,
+    monthlyInterest,
+    pendingCapital,
+    maxQuitAmount,
+  };
+}
+
 function outstandingInterestOnly(
   loan: Loan,
   installments: readonly Installment[],

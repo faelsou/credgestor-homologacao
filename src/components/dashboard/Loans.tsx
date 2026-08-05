@@ -12,6 +12,9 @@ import {
   generateSequentialHashes,
   promissoryIdentifyingTotal,
 } from '@/utils';
+import {
+  calculateLoanOutstandingAmount,
+} from '@/utils/loanBalances';
 import { CurrencyInput } from '@/components/CurrencyInput';
 import { LoanStatus, Installment, InstallmentStatus, UserRole, Loan, PromissoryNote, IndicationType, Client, LoanModel } from '@/types';
 
@@ -447,55 +450,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   };
 
   // Função para calcular o valor em aberto do empréstimo
-  const calculateOutstandingAmount = (loan: Loan): number => {
-    // Se o empréstimo foi finalizado, valor em aberto deve ser sempre 0
-    if (loan.status === LoanStatus.PAID) {
-      return 0;
-    }
-    
-    const related = installments.filter(inst => inst.loanId === loan.id);
-    
-    if (related.length === 0) {
-      return loan.totalAmount;
-    }
-    
-    // Para empréstimos "somente juros", calcular capital + juros totais
-    if (loan.model === LoanModel.INTEREST_ONLY) {
-      // Calcular capital total pago através do histórico de pagamentos
-      const totalCapitalPaid = related.reduce((sum, inst) => {
-        if (inst.paymentHistory && inst.paymentHistory.length > 0) {
-          return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
-        }
-        return sum;
-      }, 0);
-      
-      // Capital pendente = Capital original - Capital pago
-      const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
-      
-      // IMPORTANTE: VALOR EM ABERTO = Capital pendente + Juros sobre capital pendente
-      // Juros são calculados sobre o capital pendente (não sobre o capital original)
-      // Quando cliente paga apenas juros, o capital não muda, então VALOR EM ABERTO permanece igual
-      // Quando cliente paga juros + capital, o capital diminui e os juros são recalculados sobre o novo capital
-      // Exemplo: R$ 1.000 com 10% = R$ 1.100 inicial
-      //          Cliente paga R$ 200 (R$ 100 juros + R$ 100 capital)
-      //          Capital restante: R$ 900, Juros: 10% de R$ 900 = R$ 90
-      //          VALOR EM ABERTO = R$ 900 + R$ 90 = R$ 990
-      // Arredondar juros para cima para garantir que os centavos sejam sempre arredondados para cima
-      const monthlyInterest = Math.ceil(pendingCapital * (loan.interestRate / 100));
-      
-      // Usar o número de parcelas do empréstimo ou o número de parcelas existentes
-      const totalInstallments = loan.installmentsCount || related.length || 1;
-      const totalInterest = monthlyInterest * totalInstallments;
-      
-      const totalOutstanding = pendingCapital + totalInterest;
-      return Number(totalOutstanding.toFixed(2));
-    }
-    
-    // Para outros modelos, calcular valor total menos o que já foi pago
-    const totalPaid = related.reduce((sum, inst) => sum + (inst.amountPaid || 0), 0);
-    const outstanding = Math.max(0, loan.totalAmount - totalPaid);
-    return Number(outstanding.toFixed(2));
-  };
+  const calculateOutstandingAmount = (loan: Loan): number =>
+    calculateLoanOutstandingAmount(loan, installments);
 
   const getPrincipalAmount = (inst: Installment) => {
     const interest = inst.interestAmount ?? 0;
