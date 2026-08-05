@@ -11,11 +11,14 @@ import {
   formatInterestRate,
   generateSequentialHashes,
   promissoryIdentifyingTotal,
+  validateLoanForm,
+  type LoanFormField,
 } from '@/utils';
 import {
   calculateLoanOutstandingAmount,
 } from '@/utils/loanBalances';
 import { CurrencyInput } from '@/components/CurrencyInput';
+import { FormAlertBanner } from '@/components/FormAlertBanner';
 import { LoanStatus, Installment, InstallmentStatus, UserRole, Loan, PromissoryNote, IndicationType, Client, LoanModel } from '@/types';
 
 interface LoansViewProps {
@@ -57,6 +60,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
   })();
   const [startDate, setStartDate] = useState(firstInstallmentDefault);
   const [loanModel, setLoanModel] = useState<LoanModel>(LoanModel.PRICE);
+  const [formError, setFormError] = useState('');
+  const [formErrorField, setFormErrorField] = useState<LoanFormField | null>(null);
   const createDefaultPromissoryNote = (issueDate: string, dueDate: string, defaultInterestRate: number = 0.0): PromissoryNote => ({
     capital: amount,
     interestRate: defaultInterestRate,
@@ -196,6 +201,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setStartDate(firstInstallment);
     setPromissoryNote(createDefaultPromissoryNote(today, firstInstallment, 0.0));
     setEditingLoan(null);
+    setFormError('');
+    setFormErrorField(null);
   };
 
   const handleCloseModal = () => {
@@ -206,7 +213,24 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
 
   const handleCreateLoan = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedClientId) return;
+
+    const validation = validateLoanForm({
+      clientId: selectedClientId,
+      amount,
+      interestRate,
+      installmentsCount,
+      startDate,
+      maxInstallments: MAX_LOAN_INSTALLMENTS,
+    });
+
+    if (validation.ok === false) {
+      setFormError(validation.message);
+      setFormErrorField(validation.field);
+      return;
+    }
+
+    setFormError('');
+    setFormErrorField(null);
 
     const loanId = editingLoan?.id || Math.random().toString(36).substr(2, 9);
     
@@ -215,7 +239,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     if (loanModel === LoanModel.INTEREST_ONLY) {
       const firstScheduleItem = schedulePreview[0];
       if (!firstScheduleItem) {
-        alert('Erro ao gerar parcela inicial.');
+        setFormError('Erro ao gerar parcela inicial. Revise valor, juros e datas.');
+        setFormErrorField('amount');
         return;
       }
       
@@ -355,6 +380,8 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     }
     setPromissoryNote(promissory);
     setLoanModel(loan.model || LoanModel.PRICE);
+    setFormError('');
+    setFormErrorField(null);
     setIsModalOpen(true);
   };
 
@@ -1186,15 +1213,26 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                 <Calculator />
                 <h3 className="text-xl font-bold text-slate-900">{editingLoan ? 'Editar Empréstimo' : 'Simular Empréstimo'}</h3>
             </div>
+
+            {formError && <FormAlertBanner message={formError} className="mb-4" />}
             
             <form onSubmit={handleCreateLoan} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Cliente</label>
                 <select 
                     required 
-                    className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors"
+                    aria-invalid={formErrorField === 'clientId'}
+                    className={`w-full border rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors ${
+                      formErrorField === 'clientId' ? 'border-red-400 focus:ring-2 focus:ring-red-400' : 'border-slate-300'
+                    }`}
                     value={selectedClientId}
-                    onChange={e => setSelectedClientId(e.target.value)}
+                    onChange={e => {
+                      setSelectedClientId(e.target.value);
+                      if (formErrorField === 'clientId') {
+                        setFormError('');
+                        setFormErrorField(null);
+                      }
+                    }}
                 >
                     <option value="">Selecione um cliente...</option>
                     {clients
@@ -1208,16 +1246,22 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
               <div className="grid grid-cols-2 gap-4">
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Valor (R$)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors"
+                    <CurrencyInput
+                      aria-label="Valor do empréstimo"
+                      aria-invalid={formErrorField === 'amount'}
+                      className={`w-full border rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors ${
+                        formErrorField === 'amount' ? 'border-red-400 focus:ring-2 focus:ring-red-400' : 'border-slate-300'
+                      }`}
                       value={amount}
-                      onChange={e => {
-                        const value = parseFloat(e.target.value);
+                      onChange={value => {
                         setAmount(value);
                         setPromissoryNote(prev => ({ ...prev, capital: value }));
+                        if (formErrorField === 'amount') {
+                          setFormError('');
+                          setFormErrorField(null);
+                        }
                       }}
+                      placeholder="0,00"
                     />
                 </div>
                 <div>
@@ -1225,7 +1269,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                     <input
                       type="text"
                       inputMode="decimal"
-                      className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors"
+                      aria-invalid={formErrorField === 'interestRate'}
+                      className={`w-full border rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors ${
+                        formErrorField === 'interestRate' ? 'border-red-400 focus:ring-2 focus:ring-red-400' : 'border-slate-300'
+                      }`}
                       value={interestRateDisplay}
                       onChange={e => {
                         let inputValue = e.target.value;
@@ -1272,6 +1319,11 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                             setInterestRate(roundedValue);
                             setPromissoryNote(prev => ({ ...prev, interestRate: roundedValue }));
                           }
+                        }
+
+                        if (formErrorField === 'interestRate') {
+                          setFormError('');
+                          setFormErrorField(null);
                         }
                       }}
                       onBlur={e => {
@@ -1324,12 +1376,19 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                       type="number"
                       min={1}
                       max={Math.max(MAX_LOAN_INSTALLMENTS, installmentsCount)}
-                      className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors" 
+                      aria-invalid={formErrorField === 'installmentsCount'}
+                      className={`w-full border rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors ${
+                        formErrorField === 'installmentsCount' ? 'border-red-400 focus:ring-2 focus:ring-red-400' : 'border-slate-300'
+                      }`}
                       value={installmentsCount} 
                       onChange={e => {
                         const v = parseInt(e.target.value, 10);
                         if (!Number.isFinite(v)) return;
                         setInstallmentsCount(Math.min(MAX_LOAN_INSTALLMENTS, Math.max(1, v)));
+                        if (formErrorField === 'installmentsCount') {
+                          setFormError('');
+                          setFormErrorField(null);
+                        }
                       }} 
                     />
                 </div>
@@ -1338,7 +1397,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                     <input
                       type="date"
                       required
-                      className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors"
+                      aria-invalid={formErrorField === 'startDate'}
+                      className={`w-full border rounded-lg p-3 bg-slate-50 focus:bg-white transition-colors ${
+                        formErrorField === 'startDate' ? 'border-red-400 focus:ring-2 focus:ring-red-400' : 'border-slate-300'
+                      }`}
                       value={startDate}
                       onChange={e => {
                         const value = e.target.value;
@@ -1346,6 +1408,10 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
                         const nextIssueDate = addMonths(value, -DATE_OFFSET_MONTHS);
                         const nextDueDate = addMonths(value, Math.max(0, installmentsCount - 1));
                         setPromissoryNote(prev => ({ ...prev, issueDate: nextIssueDate, dueDate: nextDueDate }));
+                        if (formErrorField === 'startDate') {
+                          setFormError('');
+                          setFormErrorField(null);
+                        }
                       }}
                     />
                 </div>

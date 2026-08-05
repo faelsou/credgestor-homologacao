@@ -8,6 +8,7 @@ import {
   isLate,
   formatInterestRate,
   buildInvalidReceiveAmountAlert,
+  buildFormFieldAlert,
   buildPaymentHistoryEntryId,
   hidePaymentEntry,
   hidePaymentEntries,
@@ -24,6 +25,7 @@ import {
   getPendingCapital,
 } from '@/utils/loanBalances';
 import { CurrencyInput } from '@/components/CurrencyInput';
+import { FormAlertBanner } from '@/components/FormAlertBanner';
 import { InstallmentStatus, Installment, UserRole, LoanModel } from '@/types';
 
 export const InstallmentsView: React.FC = () => {
@@ -47,6 +49,7 @@ export const InstallmentsView: React.FC = () => {
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [paymentDate, setPaymentDate] = useState(getTodayDateString());
+  const [paymentError, setPaymentError] = useState('');
   const [promiseModal, setPromiseModal] = useState<Installment | null>(null);
   const [promiseReason, setPromiseReason] = useState('');
   const [promiseAmount, setPromiseAmount] = useState(0);
@@ -254,6 +257,7 @@ export const InstallmentsView: React.FC = () => {
     const loan = loans.find(l => l.id === installment.loanId);
     
     setSelectedInstallment(installment);
+    setPaymentError('');
     
     const pendingAmount = getInstallmentPendingAmount(installment);
     const latestPromiseAmount =
@@ -367,7 +371,7 @@ export const InstallmentsView: React.FC = () => {
     if (!selectedInstallment) return;
 
     if (!paymentAmount || paymentAmount <= 0) {
-      alert(
+      setPaymentError(
         buildInvalidReceiveAmountAlert({
           informedAmount: paymentAmount,
           reason: 'Informe um valor válido maior que zero no campo "Valor a receber".',
@@ -377,7 +381,12 @@ export const InstallmentsView: React.FC = () => {
     }
 
     if (!paymentDate) {
-      alert('Informe a data do pagamento.');
+      setPaymentError(
+        buildFormFieldAlert({
+          field: 'Data do pagamento',
+          reason: 'Informe a data do pagamento.',
+        })
+      );
       return;
     }
 
@@ -407,7 +416,7 @@ export const InstallmentsView: React.FC = () => {
             : Math.round((selectedInstallment.amount || 0) * 100) / 100;
 
       if (roundedPaymentAmount !== expectedPriceAmount) {
-        alert(
+        setPaymentError(
           buildInvalidReceiveAmountAlert({
             informedAmount: roundedPaymentAmount,
             expectedAmount: expectedPriceAmount,
@@ -427,7 +436,7 @@ export const InstallmentsView: React.FC = () => {
       // Permitir pagamento até o valor total em aberto do empréstimo
       const maxAllowed = roundedLatestPromiseAmount > roundedOutstandingAmount ? roundedLatestPromiseAmount : roundedOutstandingAmount;
       if (roundedPaymentAmount > maxAllowed) {
-        alert(
+        setPaymentError(
           buildInvalidReceiveAmountAlert({
             informedAmount: roundedPaymentAmount,
             expectedAmount: maxAllowed,
@@ -440,7 +449,7 @@ export const InstallmentsView: React.FC = () => {
       // Para outros modelos, validar que não exceda o valor pendente da parcela
       const maxAllowed = roundedLatestPromiseAmount > roundedPendingAmount ? roundedLatestPromiseAmount : roundedPendingAmount;
       if (roundedPaymentAmount > maxAllowed) {
-        alert(
+        setPaymentError(
           buildInvalidReceiveAmountAlert({
             informedAmount: roundedPaymentAmount,
             expectedAmount: maxAllowed,
@@ -459,6 +468,7 @@ export const InstallmentsView: React.FC = () => {
       setSelectedInstallment(null);
       setPaymentAmount(0);
       setPaymentDate(getTodayDateString());
+      setPaymentError('');
       return;
     }
 
@@ -485,7 +495,7 @@ export const InstallmentsView: React.FC = () => {
         const reason = loan.model === LoanModel.INTEREST_ONLY
           ? `O valor mínimo a receber é ${formatCurrency(interestAmount)} (juros sobre o capital pendente, taxa ${formatInterestRate(loan.interestRate)}).`
           : `O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${formatInterestRate(loan.interestRate)} do empréstimo).`;
-        alert(
+        setPaymentError(
           buildInvalidReceiveAmountAlert({
             informedAmount: paymentAmount,
             expectedAmount: interestAmount,
@@ -501,6 +511,7 @@ export const InstallmentsView: React.FC = () => {
     setSelectedInstallment(null);
     setPaymentAmount(0);
     setPaymentDate(getTodayDateString());
+    setPaymentError('');
   };
 
   const openPromiseModal = (inst: Installment) => {
@@ -1119,6 +1130,8 @@ export const InstallmentsView: React.FC = () => {
               <p className="text-sm text-slate-600">Informe o valor a receber.</p>
             </div>
 
+            {paymentError && <FormAlertBanner message={paymentError} className="mb-4" />}
+
             <div className="space-y-4">
               <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
                 <div className="text-sm text-slate-600 mb-1">Valor da parcela</div>
@@ -1192,11 +1205,19 @@ export const InstallmentsView: React.FC = () => {
                     <>
                       <CurrencyInput
                         value={paymentAmount}
-                        onChange={setPaymentAmount}
-                        className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        onChange={value => {
+                          setPaymentAmount(value);
+                          if (paymentError) setPaymentError('');
+                        }}
+                        className={`w-full border rounded-lg p-3 bg-white focus:ring-2 focus:border-emerald-500 ${
+                          paymentError
+                            ? 'border-red-400 focus:ring-red-400'
+                            : 'border-slate-300 focus:ring-emerald-500'
+                        }`}
                         placeholder="0,00"
                         autoFocus
                         aria-label="Valor a receber"
+                        aria-invalid={Boolean(paymentError)}
                       />
                       {isPrice && (
                         <p className="mt-1 text-xs text-slate-600">
@@ -1267,9 +1288,17 @@ export const InstallmentsView: React.FC = () => {
                 <input
                   type="date"
                   value={paymentDate}
-                  onChange={e => setPaymentDate(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  onChange={e => {
+                    setPaymentDate(e.target.value);
+                    if (paymentError) setPaymentError('');
+                  }}
+                  className={`w-full border rounded-lg p-3 bg-white focus:ring-2 focus:border-emerald-500 ${
+                    paymentError.includes('Data do pagamento')
+                      ? 'border-red-400 focus:ring-red-400'
+                      : 'border-slate-300 focus:ring-emerald-500'
+                  }`}
                   max={getTodayDateString()}
+                  aria-invalid={paymentError.includes('Data do pagamento')}
                 />
                 <p className="mt-1 text-xs text-slate-600">
                   Para pagamentos retroativos, selecione a data em que o pagamento foi realizado.
@@ -1283,6 +1312,7 @@ export const InstallmentsView: React.FC = () => {
                   setSelectedInstallment(null);
                   setPaymentAmount(0);
                   setPaymentDate(getTodayDateString());
+                  setPaymentError('');
                 }} 
                 className="flex-1 py-2 rounded-lg border hover:bg-slate-50"
               >

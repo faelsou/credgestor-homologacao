@@ -442,8 +442,18 @@ export {
   formatCurrencyInput,
   sanitizeCurrencyInput,
   parseCurrencyInput,
-  buildInvalidReceiveAmountAlert,
 } from './currencyInput';
+export {
+  buildFormFieldAlert,
+  buildInvalidReceiveAmountAlert,
+  validateLoanForm,
+} from './formAlerts';
+export type {
+  FormAlertParams,
+  LoanFormField,
+  LoanFormValues,
+  LoanFormValidationResult,
+} from './formAlerts';
 export {
   HIDDEN_PAYMENT_HISTORY_KEY_PREFIX,
   buildPaymentHistoryEntryId,
