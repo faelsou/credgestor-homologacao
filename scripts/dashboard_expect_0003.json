@@ -1,0 +1,25 @@
+{
+  "p_capital": 663043,
+  "p_parcelas": 848899,
+  "p_lucro": 163143.20,
+  "p_total": 848899,
+  "p_recebido": 140955,
+  "p_a_receber": 707944,
+  "p_atraso": 37975,
+  "p_atraso_qtd": 51,
+  "p_ativos": 104,
+  "j_capital": 381580,
+  "j_juros": 116561.64,
+  "j_total": 498141.64,
+  "j_recebido": 82210,
+  "j_a_receber": 47955.48,
+  "j_atraso": 23908.20,
+  "j_atraso_qtd": 79,
+  "j_ativos": 101,
+  "_meta": {
+    "tenant": "00000000-0000-0000-0000-000000000003",
+    "tela": "Dashboard Home — sem filtro de período",
+    "data_referencia": "2026-08-05",
+    "nota": "Valores colados da UI após correção interest_amount parcela 2031eb6e"
+  }
+}
