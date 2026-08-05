@@ -1387,7 +1387,7 @@ import { InstallmentsView } from '@/components/dashboard/Installments';
 import { UsersView } from '@/components/dashboard/Users';
 import { LoanHistoryView } from '@/components/dashboard/LoanHistory';
 import { User, UserRole, Client, Loan, Installment, LoanStatus, InstallmentStatus, LoanModel } from '@/types';
-import { getTodayDateString, isLate, normalizeUserRole } from '@/utils';
+import { getTodayDateString, isLate, normalizeUserRole, calculateLoanDisplayStatus } from '@/utils';
 import {
   ACTIVITY_SAVE_INTERVAL_MS,
   INACTIVITY_CHECK_INTERVAL_MS,
@@ -2636,7 +2636,10 @@ const App: React.FC = () => {
     const loan = loans.find(l => l.id === loanId);
     if (!loan) return;
 
-    if (loan.status !== LoanStatus.PAID) {
+    // Aceita quitação real (capital pago + sem saldo), mesmo se loan.status no banco
+    // ainda estiver ACTIVE (inconsistência tipo E — ex.: Somente Juros com R$ 0 em aberto).
+    const displayStatus = calculateLoanDisplayStatus(loan, installments);
+    if (loan.status !== LoanStatus.PAID && displayStatus !== LoanStatus.PAID) {
       alert("Apenas empréstimos finalizados podem ser reabertos.");
       return;
     }
@@ -2672,7 +2675,7 @@ const App: React.FC = () => {
     setLoans(prev => prev.map(l => l.id === loanId ? updatedLoan : l));
     
     alert('Empréstimo reaberto com sucesso!');
-  }, [loans, user?.role, isBackendConfiguredValue, session]);
+  }, [loans, installments, user?.role, isBackendConfiguredValue, session, requireTenantId]);
 
   // Função auxiliar para obter o UUID correto da parcela no backend
   const getInstallmentBackendId = useCallback(async (
