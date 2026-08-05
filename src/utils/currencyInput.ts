@@ -82,24 +82,3 @@ export const parseCurrencyInput = (raw: string): number | null => {
 
   return Math.round(value * 100) / 100;
 };
-
-/** Builds a clear alert when a payment/receive amount is wrong. */
-export const buildInvalidReceiveAmountAlert = (params: {
-  informedAmount: number;
-  expectedAmount?: number;
-  reason: string;
-}): string => {
-  const informed = formatCurrencyInput(params.informedAmount);
-  const lines = [
-    'Valor inserido incorretamente.',
-    '',
-    `Valor informado: R$ ${informed || '—'}`,
-  ];
-
-  if (params.expectedAmount !== undefined && Number.isFinite(params.expectedAmount)) {
-    lines.push(`Valor esperado: R$ ${formatCurrencyInput(params.expectedAmount)}`);
-  }
-
-  lines.push('', `Erro: ${params.reason}`);
-  return lines.join('\n');
-};

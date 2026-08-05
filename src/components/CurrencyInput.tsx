@@ -15,6 +15,7 @@ type CurrencyInputProps = {
   id?: string;
   name?: string;
   'aria-label'?: string;
+  'aria-invalid'?: boolean;
 };
 
 /**
@@ -31,6 +32,7 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
   id,
   name,
   'aria-label': ariaLabel,
+  'aria-invalid': ariaInvalid,
 }) => {
   const [focused, setFocused] = useState(false);
   const [text, setText] = useState(() => (value > 0 ? formatCurrencyInput(value) : ''));
@@ -78,6 +80,7 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
       id={id}
       name={name}
       aria-label={ariaLabel}
+      aria-invalid={ariaInvalid}
       value={text}
       onChange={e => handleChange(e.target.value)}
       onFocus={() => setFocused(true)}

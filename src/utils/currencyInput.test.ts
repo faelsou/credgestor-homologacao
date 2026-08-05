@@ -4,7 +4,6 @@ import {
   formatCurrencyInput,
   sanitizeCurrencyInput,
   parseCurrencyInput,
-  buildInvalidReceiveAmountAlert,
 } from './currencyInput';
 
 describe('currencyInput', () => {
@@ -54,18 +53,4 @@ describe('currencyInput', () => {
     });
   });
 
-  describe('buildInvalidReceiveAmountAlert', () => {
-    it('points out informed value, expected value and error reason', () => {
-      const message = buildInvalidReceiveAmountAlert({
-        informedAmount: 150,
-        expectedAmount: 200,
-        reason: 'Para empréstimos PRICE, o valor a receber deve ser igual ao valor da parcela.',
-      });
-
-      expect(message).toContain('Valor inserido incorretamente.');
-      expect(message).toContain('Valor informado: R$ 150,00');
-      expect(message).toContain('Valor esperado: R$ 200,00');
-      expect(message).toContain('Erro: Para empréstimos PRICE');
-    });
-  });
 });
