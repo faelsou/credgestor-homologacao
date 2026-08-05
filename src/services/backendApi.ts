@@ -39,6 +39,34 @@ const buildUrl = (path: string) => {
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value: string) => UUID_REGEX.test(value);
 
+/** Primeiro valor presente (null/undefined/'' = ausente). Zero é valor válido. */
+const firstPresent = (...values: unknown[]): unknown => {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== '') {
+      return value;
+    }
+  }
+  return undefined;
+};
+
+/**
+ * Converte campo opcional da API em number | undefined.
+ * Preserva 0 — não usar `||` (trataria zero como vazio).
+ */
+export const parseOptionalNumber = (...values: unknown[]): number | undefined => {
+  const raw = firstPresent(...values);
+  if (raw === undefined) return undefined;
+  const parsed = typeof raw === 'number' ? raw : parseFloat(String(raw));
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+/** Para payload de escrita: undefined/null → null; preserva 0. */
+export const toNullableNumber = (value: unknown): number | null => {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = typeof value === 'number' ? value : parseFloat(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 const toJson = async (response: Response) => {
   const text = await response.text();
   try {
@@ -410,9 +438,10 @@ export async function deleteBackendLoan(
 }
 
 /**
- * Normaliza uma parcela da API para o formato do frontend
+ * Normaliza uma parcela da API para o formato do frontend.
+ * Juros/principal iguais a 0 são preservados (não viram undefined).
  */
-const normalizeApiInstallment = (apiInst: any): any => {
+export const normalizeApiInstallment = (apiInst: any): any => {
   const promisedPaymentHistory = apiInst.promised_payment_history || apiInst.promisedPaymentHistory || [];
   const originalDueDate = apiInst.due_date || apiInst.dueDate || '';
   
@@ -428,11 +457,14 @@ const normalizeApiInstallment = (apiInst: any): any => {
     number: parseInt(apiInst.number || 0, 10),
     dueDate: dueDate,
     amount: parseFloat(apiInst.amount || 0),
-    amountPaid: parseFloat(apiInst.amount_paid || apiInst.amountPaid || 0),
-    interestAmount: apiInst.interest_amount || apiInst.interestAmount ? parseFloat(apiInst.interest_amount || apiInst.interestAmount) : undefined,
-    principalAmount: apiInst.principal_amount || apiInst.principalAmount ? parseFloat(apiInst.principal_amount || apiInst.principalAmount) : undefined,
+    amountPaid: parseFloat(String(firstPresent(apiInst.amount_paid, apiInst.amountPaid, 0))),
+    interestAmount: parseOptionalNumber(apiInst.interest_amount, apiInst.interestAmount),
+    principalAmount: parseOptionalNumber(apiInst.principal_amount, apiInst.principalAmount),
     promisedPaymentReason: apiInst.promised_payment_reason || apiInst.promisedPaymentReason || undefined,
-    promisedPaymentAmount: apiInst.promised_payment_amount || apiInst.promisedPaymentAmount ? parseFloat(apiInst.promised_payment_amount || apiInst.promisedPaymentAmount) : undefined,
+    promisedPaymentAmount: parseOptionalNumber(
+      apiInst.promised_payment_amount,
+      apiInst.promisedPaymentAmount,
+    ),
     promisedPaymentDate: apiInst.promised_payment_date || apiInst.promisedPaymentDate || undefined,
     promisedPaymentHistory: promisedPaymentHistory,
     paymentHistory: apiInst.payment_history || apiInst.paymentHistory || [],
@@ -497,11 +529,11 @@ export async function createBackendInstallmentsBatch(
       due_date: inst.dueDate,
       amount: inst.amount,
       amount_paid: inst.amountPaid || 0,
-      interest_amount: inst.interestAmount || null,
-      principal_amount: inst.principalAmount || null,
+      interest_amount: toNullableNumber(inst.interestAmount),
+      principal_amount: toNullableNumber(inst.principalAmount),
       status: status,
       promised_payment_reason: inst.promisedPaymentReason || null,
-      promised_payment_amount: inst.promisedPaymentAmount || null,
+      promised_payment_amount: toNullableNumber(inst.promisedPaymentAmount),
       promised_payment_date: inst.promisedPaymentDate || null,
       promised_payment_history: inst.promisedPaymentHistory || [],
       payment_history: inst.paymentHistory || [],
@@ -550,11 +582,11 @@ export async function createBackendInstallment(
     due_date: installment.dueDate,
     amount: installment.amount,
     amount_paid: installment.amountPaid || 0,
-    interest_amount: installment.interestAmount || null,
-    principal_amount: installment.principalAmount || null,
+    interest_amount: toNullableNumber(installment.interestAmount),
+    principal_amount: toNullableNumber(installment.principalAmount),
     status: installment.status || 'PENDING',
     promised_payment_reason: installment.promisedPaymentReason || null,
-    promised_payment_amount: installment.promisedPaymentAmount || null,
+    promised_payment_amount: toNullableNumber(installment.promisedPaymentAmount),
     promised_payment_date: installment.promisedPaymentDate || null,
     promised_payment_history: installment.promisedPaymentHistory || [],
     payment_history: installment.paymentHistory || [],
