@@ -455,3 +455,10 @@ export {
   readHiddenPaymentIds,
   writeHiddenPaymentIds,
 } from './hiddenPaymentHistory';
+
+export {
+  sumPrincipalPaid,
+  hasPendingInstallmentBalance,
+  calculateLoanOutstandingAmount,
+  calculateLoanDisplayStatus,
+} from './loanBalances';

@@ -1,7 +1,13 @@
 import React, { useContext, useMemo, useState } from 'react';
 import { Search, CalendarRange, Pencil, Clock8, RotateCcw } from 'lucide-react';
 import { AppContext } from '@/pages/App';
-import { formatCurrency, formatDate, getTodayDateString } from '@/utils';
+import {
+  formatCurrency,
+  formatDate,
+  getTodayDateString,
+  calculateLoanDisplayStatus,
+  calculateLoanOutstandingAmount,
+} from '@/utils';
 import { CurrencyInput } from '@/components/CurrencyInput';
 import { Installment, InstallmentStatus, LoanStatus, LoanModel } from '@/types';
 
@@ -17,85 +23,11 @@ export const LoanHistoryView: React.FC = () => {
   const [promiseDate, setPromiseDate] = useState(getTodayDateString());
   const [promiseLateFee, setPromiseLateFee] = useState(0);
 
-  // Função para calcular o status correto do empréstimo baseado nas parcelas
-  const calculateLoanStatus = (loan: typeof loans[0]): LoanStatus => {
-    const related = installments.filter(inst => inst.loanId === loan.id);
-    
-    if (related.length === 0) {
-      return LoanStatus.ACTIVE;
-    }
-    
-    // Para empréstimos "somente juros", verificar se não há mais capital nem juros pendentes
-    if (loan.model === LoanModel.INTEREST_ONLY) {
-      const hasPendingCapital = related.some(inst => {
-        const principal = inst.principalAmount ?? 0;
-        return principal > 0;
-      });
-      
-      const hasPendingInterest = related.some(inst => {
-        const interest = inst.interestAmount ?? 0;
-        return interest > 0;
-      });
-      
-      // Empréstimo só está finalizado se não há capital nem juros pendentes
-      return (!hasPendingCapital && !hasPendingInterest) ? LoanStatus.PAID : LoanStatus.ACTIVE;
-    }
-    
-    // Para outros modelos, verificar se todas as parcelas estão pagas
-    const isLoanPaid = related.every(inst => inst.status === InstallmentStatus.PAID || inst.amount <= 0);
-    return isLoanPaid ? LoanStatus.PAID : LoanStatus.ACTIVE;
-  };
+  const calculateLoanStatus = (loan: typeof loans[0]): LoanStatus =>
+    calculateLoanDisplayStatus(loan, installments);
 
-  // Função para calcular o valor em aberto do empréstimo
-  const calculateOutstandingAmount = (loan: typeof loans[0]): number => {
-    // Se o empréstimo foi finalizado, valor em aberto deve ser sempre 0
-    if (loan.status === LoanStatus.PAID) {
-      return 0;
-    }
-    
-    const related = installments.filter(inst => inst.loanId === loan.id);
-    
-    if (related.length === 0) {
-      return loan.totalAmount;
-    }
-    
-    // Para empréstimos "somente juros", calcular capital + juros totais
-    if (loan.model === LoanModel.INTEREST_ONLY) {
-      // Calcular capital total pago através do histórico de pagamentos
-      const totalCapitalPaid = related.reduce((sum, inst) => {
-        if (inst.paymentHistory && inst.paymentHistory.length > 0) {
-          return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
-        }
-        return sum;
-      }, 0);
-      
-      // Capital pendente = Capital original - Capital pago
-      const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
-      
-      // IMPORTANTE: VALOR EM ABERTO = Capital pendente + Juros sobre capital pendente
-      // Juros são calculados sobre o capital pendente (não sobre o capital original)
-      // Quando cliente paga apenas juros, o capital não muda, então VALOR EM ABERTO permanece igual
-      // Quando cliente paga juros + capital, o capital diminui e os juros são recalculados sobre o novo capital
-      // Exemplo: R$ 1.000 com 10% = R$ 1.100 inicial
-      //          Cliente paga R$ 200 (R$ 100 juros + R$ 100 capital)
-      //          Capital restante: R$ 900, Juros: 10% de R$ 900 = R$ 90
-      //          VALOR EM ABERTO = R$ 900 + R$ 90 = R$ 990
-      // Arredondar juros para cima para garantir que os centavos sejam sempre arredondados para cima
-      const monthlyInterest = Math.ceil(pendingCapital * (loan.interestRate / 100));
-      
-      // Usar o número de parcelas do empréstimo ou o número de parcelas existentes
-      const totalInstallments = loan.installmentsCount || related.length || 1;
-      const totalInterest = monthlyInterest * totalInstallments;
-      
-      const totalOutstanding = pendingCapital + totalInterest;
-      return Number(totalOutstanding.toFixed(2));
-    }
-    
-    // Para outros modelos, calcular valor total menos o que já foi pago
-    const totalPaid = related.reduce((sum, inst) => sum + (inst.amountPaid || 0), 0);
-    const outstanding = Math.max(0, loan.totalAmount - totalPaid);
-    return Number(outstanding.toFixed(2));
-  };
+  const calculateOutstandingAmount = (loan: typeof loans[0]): number =>
+    calculateLoanOutstandingAmount(loan, installments);
 
   const filteredLoans = useMemo(() => {
     return loans
@@ -123,7 +55,7 @@ export const LoanHistoryView: React.FC = () => {
         const [yb, mb, db] = String(b.startDate).split('T')[0].split('-').map(Number);
         return new Date(yb, mb - 1, db).getTime() - new Date(ya, ma - 1, da).getTime();
       });
-  }, [clients, endDate, loans, nameFilter, startDate, statusFilter]);
+  }, [clients, endDate, installments, loans, nameFilter, startDate, statusFilter]);
 
   const statusBadge = (status: LoanStatus) => {
     switch (status) {
