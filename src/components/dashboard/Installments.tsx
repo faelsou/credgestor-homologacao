@@ -1,7 +1,8 @@
 import React, { useContext, useState, useMemo, useCallback } from 'react';
 import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Pencil, FileSpreadsheet } from 'lucide-react';
 import { AppContext } from '@/pages/App';
-import { formatCurrency, formatDate, getTodayDateString, isLate, formatInterestRate } from '@/utils';
+import { formatCurrency, formatDate, getTodayDateString, isLate, formatInterestRate, buildInvalidReceiveAmountAlert } from '@/utils';
+import { CurrencyInput } from '@/components/CurrencyInput';
 import { InstallmentStatus, Installment, UserRole, LoanModel, LoanStatus } from '@/types';
 
 export const InstallmentsView: React.FC = () => {
@@ -24,27 +25,6 @@ export const InstallmentsView: React.FC = () => {
   }, [installmentsInitialFilter, setInstallmentsInitialFilter, installmentsDateRange, setInstallmentsDateRange]);
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
   const [paymentAmount, setPaymentAmount] = useState(0);
-  
-  // Para empréstimos PRICE, garantir que o valor a receber seja sempre igual ao valor da parcela
-  React.useEffect(() => {
-    if (selectedInstallment) {
-      const loan = loans.find(l => l.id === selectedInstallment.loanId);
-      if (loan && loan.model === LoanModel.PRICE) {
-        const pendingAmount = selectedInstallment.amount - (selectedInstallment.amountPaid || 0);
-        const latestPromiseAmount =
-          selectedInstallment.promisedPaymentHistory?.[selectedInstallment.promisedPaymentHistory.length - 1]?.amount ??
-          selectedInstallment.promisedPaymentAmount ??
-          0;
-
-        // Para PRICE: quando existir promessa (inclui multa), usar o valor total prometido.
-        const baseAmount = pendingAmount > 0 ? pendingAmount : selectedInstallment.amount;
-        const finalAmount = latestPromiseAmount > 0 ? latestPromiseAmount : baseAmount;
-        if (paymentAmount !== finalAmount) {
-          setPaymentAmount(finalAmount);
-        }
-      }
-    }
-  }, [selectedInstallment, loans, paymentAmount]);
   const [paymentDate, setPaymentDate] = useState(getTodayDateString());
   const [promiseModal, setPromiseModal] = useState<Installment | null>(null);
   const [promiseReason, setPromiseReason] = useState('');
@@ -370,7 +350,12 @@ export const InstallmentsView: React.FC = () => {
     if (!selectedInstallment) return;
 
     if (!paymentAmount || paymentAmount <= 0) {
-      alert('Informe um valor válido para receber.');
+      alert(
+        buildInvalidReceiveAmountAlert({
+          informedAmount: paymentAmount,
+          reason: 'Informe um valor válido maior que zero no campo "Valor a receber".',
+        })
+      );
       return;
     }
 
@@ -402,26 +387,28 @@ export const InstallmentsView: React.FC = () => {
         return loan.totalAmount;
       }
       
-      // Para empréstimos "somente juros", calcular capital pendente + juros da parcela atual
+      // Para empréstimos "somente juros", calcular capital pendente + cobranças em aberto
+      // (juros do mês + multa/atraso já embutidos no amount das parcelas não pagas)
       if (loan.model === LoanModel.INTEREST_ONLY) {
-        // Calcular capital total pago através do histórico de pagamentos
         const totalCapitalPaid = allLoanInstallments.reduce((sum, inst) => {
           if (inst.paymentHistory && inst.paymentHistory.length > 0) {
             return sum + inst.paymentHistory.reduce((pSum, p) => pSum + (p.principalPaid || 0), 0);
           }
           return sum;
         }, 0);
-        
-        // Capital pendente = Capital original - Capital pago
+
         const pendingCapital = Math.max(0, loan.amount - totalCapitalPaid);
-        
-        // Juros da parcela atual calculados sobre o capital pendente
-        const currentInterest = Number((pendingCapital * (loan.interestRate / 100)).toFixed(2));
-        
-        // VALOR MÁXIMO PARA QUITAR = Capital pendente + Juros da parcela atual
-        // Exemplo: Capital R$ 1.000,00 + Juros R$ 100,00 = R$ 1.100,00
-        // Isso permite ao cliente quitar o empréstimo pagando capital + juros da parcela atual
-        const totalOutstanding = pendingCapital + currentInterest;
+        const calculatedInterest = Number((pendingCapital * (loan.interestRate / 100)).toFixed(2));
+
+        // Somas dos valores pendentes das parcelas abertas (já incluem multa do mês, se houver)
+        const openCharges = allLoanInstallments
+          .filter(inst => inst.status !== InstallmentStatus.PAID && (inst.amountPaid || 0) < (inst.amount || 0))
+          .reduce((sum, inst) => sum + Math.max(0, (inst.amount || 0) - (inst.amountPaid || 0)), 0);
+
+        // Para quitar: capital + o maior entre juros calculados e cobranças em aberto
+        // (cobranças em aberto capturam multa do mês do atraso)
+        const monthlyCharges = Math.max(calculatedInterest, openCharges);
+        const totalOutstanding = pendingCapital + monthlyCharges;
         return Number(totalOutstanding.toFixed(2));
       }
       
@@ -443,21 +430,55 @@ export const InstallmentsView: React.FC = () => {
       0;
     const roundedLatestPromiseAmount = Math.round(latestPromiseAmount * 100) / 100;
 
+    // PRICE: valor a receber deve ser igual à parcela (ou ao valor prometido, se houver)
+    if (loan.model === LoanModel.PRICE) {
+      const expectedPriceAmount =
+        roundedLatestPromiseAmount > 0
+          ? roundedLatestPromiseAmount
+          : roundedPendingAmount > 0
+            ? roundedPendingAmount
+            : Math.round((selectedInstallment.amount || 0) * 100) / 100;
+
+      if (roundedPaymentAmount !== expectedPriceAmount) {
+        alert(
+          buildInvalidReceiveAmountAlert({
+            informedAmount: roundedPaymentAmount,
+            expectedAmount: expectedPriceAmount,
+            reason:
+              roundedLatestPromiseAmount > 0
+                ? 'Para empréstimos PRICE com agendamento, o valor a receber deve ser igual ao valor prometido (parcela + multa/atraso).'
+                : 'Para empréstimos PRICE, o valor a receber deve ser igual ao valor da parcela.',
+          })
+        );
+        return;
+      }
+    }
+
     // Para empréstimos "somente juros", permitir pagamento até o valor total em aberto (capital + juros)
     // Para outros modelos, validar que não exceda o valor pendente da parcela
     if (loan.model === LoanModel.INTEREST_ONLY) {
       // Permitir pagamento até o valor total em aberto do empréstimo
       const maxAllowed = roundedLatestPromiseAmount > roundedOutstandingAmount ? roundedLatestPromiseAmount : roundedOutstandingAmount;
       if (roundedPaymentAmount > maxAllowed) {
-        alert(`O valor a receber não pode ser maior que o valor total em aberto do empréstimo (${formatCurrency(outstandingAmount)}).`);
+        alert(
+          buildInvalidReceiveAmountAlert({
+            informedAmount: roundedPaymentAmount,
+            expectedAmount: maxAllowed,
+            reason: `O valor a receber não pode ser maior que o valor total em aberto do empréstimo (${formatCurrency(maxAllowed)}).`,
+          })
+        );
         return;
       }
-    } else {
+    } else if (loan.model !== LoanModel.PRICE) {
       // Para outros modelos, validar que não exceda o valor pendente da parcela
       const maxAllowed = roundedLatestPromiseAmount > roundedPendingAmount ? roundedLatestPromiseAmount : roundedPendingAmount;
       if (roundedPaymentAmount > maxAllowed) {
         alert(
-          `O valor a receber não pode ser maior que o valor pendente da parcela (${formatCurrency(pendingAmount)}).`
+          buildInvalidReceiveAmountAlert({
+            informedAmount: roundedPaymentAmount,
+            expectedAmount: maxAllowed,
+            reason: `O valor a receber não pode ser maior que o valor pendente da parcela (${formatCurrency(maxAllowed)}).`,
+          })
         );
         return;
       }
@@ -508,10 +529,16 @@ export const InstallmentsView: React.FC = () => {
       
       // Validar que o pagamento seja pelo menos o valor dos juros (apenas para primeira parcela parcial)
       if (interestAmount > 0 && paymentAmount < interestAmount) {
-        const message = loan?.model === LoanModel.INTEREST_ONLY
+        const reason = loan?.model === LoanModel.INTEREST_ONLY
           ? `O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${formatInterestRate(loan?.interestRate ?? 0)} do empréstimo original).`
           : `O valor mínimo a receber é ${formatCurrency(interestAmount)} (valor dos juros baseado na taxa de ${formatInterestRate(loan?.interestRate ?? 0)} do empréstimo).`;
-        alert(message);
+        alert(
+          buildInvalidReceiveAmountAlert({
+            informedAmount: paymentAmount,
+            expectedAmount: interestAmount,
+            reason,
+          })
+        );
         return;
       }
     }
@@ -526,11 +553,15 @@ export const InstallmentsView: React.FC = () => {
   const openPromiseModal = (inst: Installment) => {
     setPromiseModal(inst);
     const defaults = getPromiseDefaults(inst);
+    const baseAmount = getPromiseBaseAmount(inst);
+    const latestAmount = defaults.amount || 0;
+    // Valor a cobrar = base do mês; multa = diferença já prometida (se houver),
+    // para não somar multa em cima de multa ao reabrir o agendamento.
+    const existingFee = Math.max(0, Number((latestAmount - baseAmount).toFixed(2)));
     setPromiseReason(defaults.reason);
-    setPromiseAmount(defaults.amount);
-    // Usar a data de vencimento como padrão
+    setPromiseAmount(baseAmount);
     setPromiseDate(inst.dueDate);
-    setPromiseLateFee(0);
+    setPromiseLateFee(existingFee);
   };
 
   const handleSavePromise = async () => {
@@ -1179,98 +1210,34 @@ export const InstallmentsView: React.FC = () => {
                 {(() => {
                   const loan = loans.find(l => l.id === selectedInstallment.loanId);
                   const pendingAmount = selectedInstallment.amount - (selectedInstallment.amountPaid || 0);
-                  
-                  // Para empréstimos PRICE, o valor a receber deve sempre ser igual ao valor da parcela
-                  if (loan && loan.model === LoanModel.PRICE) {
-                    const latestPromiseAmount =
-                      selectedInstallment.promisedPaymentHistory?.[selectedInstallment.promisedPaymentHistory.length - 1]?.amount ??
-                      selectedInstallment.promisedPaymentAmount ??
-                      0;
-                    const baseAmount = pendingAmount > 0 ? pendingAmount : selectedInstallment.amount;
-                    const finalPendingAmount = latestPromiseAmount > 0 ? latestPromiseAmount : baseAmount;
-                    
-                    return (
-                      <>
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          value={finalPendingAmount}
-                          className="w-full border border-slate-300 rounded-lg p-3 bg-slate-100 cursor-not-allowed"
-                          placeholder="0,00"
-                          disabled
-                        />
-                        <p className="mt-1 text-xs text-slate-600">
-                          <span className="font-semibold">Para empréstimos PRICE, o valor a receber deve ser sempre igual ao valor da parcela.</span>
-                        </p>
-                      </>
-                    );
-                  }
-                  
-                  // Para outros modelos, permitir edição
+                  const latestPromiseAmount =
+                    selectedInstallment.promisedPaymentHistory?.[selectedInstallment.promisedPaymentHistory.length - 1]?.amount ??
+                    selectedInstallment.promisedPaymentAmount ??
+                    0;
+                  const baseAmount = pendingAmount > 0 ? pendingAmount : selectedInstallment.amount;
+                  const expectedAmount = latestPromiseAmount > 0 ? latestPromiseAmount : baseAmount;
+                  const isPrice = loan?.model === LoanModel.PRICE;
+
                   return (
                     <>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={paymentAmount > 0 ? paymentAmount.toFixed(2).replace('.', ',') : ''}
-                        onChange={e => {
-                          const value = e.target.value;
-                          if (value === '') {
-                            setPaymentAmount(0);
-                            return;
-                          }
-                          
-                          // Remover caracteres inválidos, mantendo apenas números, vírgula e ponto
-                          let cleaned = value.replace(/[^\d,.]/g, '');
-                          
-                          // Normalizar: aceitar vírgula ou ponto como separador decimal
-                          // Se houver múltiplos separadores, manter apenas o primeiro
-                          let hasDecimal = false;
-                          let normalized = '';
-                          for (let i = 0; i < cleaned.length; i++) {
-                            const char = cleaned[i];
-                            if (char === ',' || char === '.') {
-                              if (!hasDecimal) {
-                                normalized += ',';
-                                hasDecimal = true;
-                              }
-                            } else {
-                              normalized += char;
-                            }
-                          }
-                          
-                          // Converter para número (substituir vírgula por ponto para parseFloat)
-                          const numValue = parseFloat(normalized.replace(',', '.'));
-                          if (!isNaN(numValue) && numValue >= 0 && isFinite(numValue)) {
-                            // Limitar a 2 casas decimais
-                            const roundedValue = Math.round(numValue * 100) / 100;
-                            setPaymentAmount(roundedValue);
-                          }
-                        }}
-                        onBlur={e => {
-                          const value = e.target.value.trim();
-                          if (value === '' || value === ',' || value === '.') {
-                            setPaymentAmount(0);
-                          } else {
-                            // Normalizar e formatar corretamente
-                            const normalizedValue = value.replace(',', '.');
-                            const numValue = parseFloat(normalizedValue);
-                            
-                            if (!isNaN(numValue) && numValue >= 0) {
-                              const roundedValue = Math.round(numValue * 100) / 100;
-                              setPaymentAmount(roundedValue);
-                            } else {
-                              // Se inválido, resetar para 0
-                              setPaymentAmount(0);
-                            }
-                          }
-                        }}
+                      <CurrencyInput
+                        value={paymentAmount}
+                        onChange={setPaymentAmount}
                         className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                         placeholder="0,00"
                         autoFocus
+                        aria-label="Valor a receber"
                       />
-                      {(() => {
+                      {isPrice && (
+                        <p className="mt-1 text-xs text-slate-600">
+                          <span className="font-semibold">
+                            Para empréstimos PRICE, o valor a receber deve ser sempre igual ao valor da parcela
+                            {latestPromiseAmount > 0 ? ' (incluindo multa/atraso do agendamento)' : ''}.
+                          </span>{' '}
+                          Valor esperado: {formatCurrency(expectedAmount)}.
+                        </p>
+                      )}
+                      {!isPrice && (() => {
                         // IMPORTANTE: Para empréstimos "somente juros", o valor mínimo dos juros
                         // deve ser SEMPRE calculado baseado no valor ORIGINAL do empréstimo (loan.totalAmount),
                         // não no capital restante ou no interestAmount da parcela.
@@ -1311,7 +1278,6 @@ export const InstallmentsView: React.FC = () => {
                             // Valor máximo = Capital pendente + Juros da parcela atual
                             maxAmount = pendingCapital + currentInterest;
                           } else {
-                            const pendingAmount = selectedInstallment.amount - (selectedInstallment.amountPaid || 0);
                             maxAmount = pendingAmount;
                           }
                           
@@ -1401,29 +1367,26 @@ export const InstallmentsView: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Valor a cobrar</label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
+                <CurrencyInput
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                   value={promiseAmount}
-                  onChange={e => setPromiseAmount(parseFloat(e.target.value))}
-                  placeholder="Informe o valor combinado"
+                  onChange={setPromiseAmount}
+                  placeholder="0,00"
+                  aria-label="Valor a cobrar"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Multa/Atraso</label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
-                  value={promiseLateFee || ''}
-                  onChange={e => setPromiseLateFee(parseFloat(e.target.value) || 0)}
-                  placeholder="Informe o valor da multa/atraso"
+                <CurrencyInput
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  value={promiseLateFee}
+                  onChange={setPromiseLateFee}
+                  placeholder="0,00"
+                  aria-label="Multa/Atraso"
                 />
                 <p className="text-xs text-slate-500 mt-1">
-                  Valor adicional por atraso no pagamento
+                  Entra somente nesta parcela (mês do atraso). Na baixa, o valor da parcela
+                  passa a ser juros + multa para a conta fechar.
                 </p>
               </div>
               <div>

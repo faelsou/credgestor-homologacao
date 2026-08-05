@@ -8,6 +8,8 @@ services:
       - .env
     environment:
       - PYTHONPATH=/app
+      # Garante timestamps e logs no fuso de São Paulo (UTC-3)
+      - TZ=America/Sao_Paulo
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
       - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET:-}
       - SLACK_CHANNEL=${SLACK_CHANNEL:-#credgestor-agent}
@@ -45,12 +47,15 @@ services:
       - AGENT_HTTP_PORT=8085
     # Executar como root para evitar problemas de permissão ao instalar pacotes
     user: root
+    # A imagem do backend traz healthcheck em :8000; o agente escuta em :8085
+    healthcheck:
+      disable: true
     volumes:
       - ./agent:/app/agent:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./docs/troubleshooting:/app/docs/troubleshooting
     # Instalar dependências do agente antes de executar
-    command: sh -c "pip install --no-cache-dir -q pydantic-settings>=2.0.0 anthropic>=0.18.0 openai>=1.0.0 requests>=2.31.0 docker>=6.1.0 psycopg2-binary>=2.9.0 && python3 -m agent.main"
+    command: sh -c "pip install --no-cache-dir -q pydantic-settings>=2.0.0 anthropic>=0.18.0 openai>=1.0.0 requests>=2.31.0 docker>=6.1.0 psycopg2-binary>=2.9.0 tzdata && python3 -m agent.main"
     # Conectar à rede do Swarm para acessar outros serviços
     networks:
       - network_public
