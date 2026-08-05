@@ -240,12 +240,18 @@ def _format_error(error: Any) -> str:
 
 
 def _apply_filters(table: str, filters: List[Tuple[str, Any]] | None = None):
+    """Lista registros com paginação.
+
+    O PostgREST/Supabase limita ~1000 linhas por request. Sem paginação, tenants
+    com mais de 1000 parcelas (ex.: Cleiton Max Car = 1330) perdem registros no
+    front — o export "Em Atraso" ficava com ~77 LATE em vez de 129.
+    """
+    page_size = 1000
     try:
         from .supabase_helpers import db_operation_metrics
         
         with db_operation_metrics(table=table, operation="select"):
             supabase = get_supabase_admin_client()
-            query = supabase.table(table).select("*")
             # Aplicar todos os filtros (AND)
             applied_filters = []
             filters = filters or []
@@ -259,7 +265,6 @@ def _apply_filters(table: str, filters: List[Tuple[str, Any]] | None = None):
                         detail=f"Filtro obrigatório ausente: {tenant_column}"
                     )
             for column, value in filters:
-                query = query.eq(column, value)
                 # Máscara de valores para logs (evitar dados sensíveis)
                 masked = "***" if column.lower() in {"email", "senha", "password", "token", "authorization"} else value
                 applied_filters.append({column: masked})
@@ -267,13 +272,31 @@ def _apply_filters(table: str, filters: List[Tuple[str, Any]] | None = None):
                 logger.debug("Aplicando filtros na tabela %s: %s", table, applied_filters)
             else:
                 logger.warning("Nenhum filtro aplicado na tabela %s", table)
-            response = query.execute()
-            error = getattr(response, "error", None)
-            if error:
-                raise HTTPException(status_code=500, detail=_format_error(error))
-            result_count = len(response.data or [])
-            logger.debug("Retornando %d registros da tabela %s", result_count, table)
-            return response.data or []
+
+            all_rows: List[Dict[str, Any]] = []
+            offset = 0
+            while True:
+                query = supabase.table(table).select("*")
+                for column, value in filters:
+                    query = query.eq(column, value)
+                # range é inclusivo: 0..999 = 1000 linhas
+                response = query.range(offset, offset + page_size - 1).execute()
+                error = getattr(response, "error", None)
+                if error:
+                    raise HTTPException(status_code=500, detail=_format_error(error))
+                chunk = response.data or []
+                all_rows.extend(chunk)
+                if len(chunk) < page_size:
+                    break
+                offset += page_size
+
+            logger.debug(
+                "Retornando %d registros da tabela %s (paginado, page_size=%d)",
+                len(all_rows),
+                table,
+                page_size,
+            )
+            return all_rows
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {str(e)}")
     except HTTPException:
