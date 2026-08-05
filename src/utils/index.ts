@@ -438,3 +438,9 @@ export const numberToWords = (value: number): string => {
 };
 
 export { generateSequentialHashes, promissoryIdentifyingTotal } from './promissoryHashes';
+export {
+  formatCurrencyInput,
+  sanitizeCurrencyInput,
+  parseCurrencyInput,
+  buildInvalidReceiveAmountAlert,
+} from './currencyInput';

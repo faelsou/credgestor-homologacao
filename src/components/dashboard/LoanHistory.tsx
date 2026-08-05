@@ -2,6 +2,7 @@ import React, { useContext, useMemo, useState } from 'react';
 import { Search, CalendarRange, Pencil, Clock8, RotateCcw } from 'lucide-react';
 import { AppContext } from '@/pages/App';
 import { formatCurrency, formatDate, getTodayDateString } from '@/utils';
+import { CurrencyInput } from '@/components/CurrencyInput';
 import { Installment, InstallmentStatus, LoanStatus, LoanModel } from '@/types';
 
 export const LoanHistoryView: React.FC = () => {
@@ -436,14 +437,12 @@ export const LoanHistoryView: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Valor combinado</label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
+                <CurrencyInput
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                   value={promiseAmount}
-                  onChange={e => setPromiseAmount(parseFloat(e.target.value))}
-                  placeholder="Informe o valor"
+                  onChange={setPromiseAmount}
+                  placeholder="0,00"
+                  aria-label="Valor combinado"
                 />
                 <p className="text-xs text-slate-500 mt-1">
                   Capital: {formatCurrency(getPrincipalAmount(promiseModal.installment))} • Juros: {formatCurrency(getInterestAmount(promiseModal.installment))}
@@ -451,14 +450,12 @@ export const LoanHistoryView: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Multa/Atraso</label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50 focus:bg-white"
-                  value={promiseLateFee || ''}
-                  onChange={e => setPromiseLateFee(parseFloat(e.target.value) || 0)}
-                  placeholder="Informe o valor da multa/atraso"
+                <CurrencyInput
+                  className="w-full border border-slate-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  value={promiseLateFee}
+                  onChange={setPromiseLateFee}
+                  placeholder="0,00"
+                  aria-label="Multa/Atraso"
                 />
                 <p className="text-xs text-slate-500 mt-1">
                   Valor adicional por atraso no pagamento
