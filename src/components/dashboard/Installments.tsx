@@ -1,7 +1,21 @@
-import React, { useContext, useState, useMemo, useCallback } from 'react';
-import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Pencil, FileSpreadsheet } from 'lucide-react';
+import React, { useContext, useState, useMemo, useCallback, useEffect } from 'react';
+import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Pencil, FileSpreadsheet, X } from 'lucide-react';
 import { AppContext } from '@/pages/App';
-import { formatCurrency, formatDate, getTodayDateString, isLate, formatInterestRate, buildInvalidReceiveAmountAlert } from '@/utils';
+import {
+  formatCurrency,
+  formatDate,
+  getTodayDateString,
+  isLate,
+  formatInterestRate,
+  buildInvalidReceiveAmountAlert,
+  buildPaymentHistoryEntryId,
+  hidePaymentEntry,
+  hidePaymentEntries,
+  clearHiddenPaymentIds,
+  isPaymentHidden,
+  readHiddenPaymentIds,
+  writeHiddenPaymentIds,
+} from '@/utils';
 import { CurrencyInput } from '@/components/CurrencyInput';
 import { InstallmentStatus, Installment, UserRole, LoanModel, LoanStatus } from '@/types';
 
@@ -37,6 +51,40 @@ export const InstallmentsView: React.FC = () => {
   const [editAmount, setEditAmount] = useState(0);
   const [editInterestAmount, setEditInterestAmount] = useState(0);
   const [editPrincipalAmount, setEditPrincipalAmount] = useState(0);
+  const hiddenPaymentsScope = user?.tenantId || user?.id || null;
+  const [hiddenPaymentIds, setHiddenPaymentIds] = useState<Set<string>>(() =>
+    readHiddenPaymentIds(localStorage, hiddenPaymentsScope),
+  );
+
+  useEffect(() => {
+    setHiddenPaymentIds(readHiddenPaymentIds(localStorage, hiddenPaymentsScope));
+  }, [hiddenPaymentsScope]);
+
+  const persistHiddenPaymentIds = useCallback(
+    (next: Set<string>) => {
+      setHiddenPaymentIds(next);
+      writeHiddenPaymentIds(localStorage, next, hiddenPaymentsScope);
+    },
+    [hiddenPaymentsScope],
+  );
+
+  const hidePaymentFromView = useCallback(
+    (entryId: string) => {
+      persistHiddenPaymentIds(hidePaymentEntry(hiddenPaymentIds, entryId));
+    },
+    [hiddenPaymentIds, persistHiddenPaymentIds],
+  );
+
+  const hideAllClientPaymentsFromView = useCallback(
+    (entryIds: string[]) => {
+      persistHiddenPaymentIds(hidePaymentEntries(hiddenPaymentIds, entryIds));
+    },
+    [hiddenPaymentIds, persistHiddenPaymentIds],
+  );
+
+  const showAllHiddenPayments = useCallback(() => {
+    persistHiddenPaymentIds(clearHiddenPaymentIds());
+  }, [persistHiddenPaymentIds]);
 
   const getClient = (id: string) => clients.find(c => c.id === id);
 
@@ -723,6 +771,31 @@ export const InstallmentsView: React.FC = () => {
 
   const paymentHistoryByClient = getPaymentHistoryByClient();
 
+  const visiblePaymentHistoryByClient = (() => {
+    const visible: Record<string, Array<{ installment: Installment; entry: any; entryId: string }>> = {};
+    let hiddenCount = 0;
+
+    Object.entries(paymentHistoryByClient).forEach(([clientId, entries]) => {
+      const visibleEntries = entries
+        .map(({ installment, entry }) => ({
+          installment,
+          entry,
+          entryId: buildPaymentHistoryEntryId(installment.id, entry.createdAt),
+        }))
+        .filter(({ entryId }) => {
+          const hidden = isPaymentHidden(hiddenPaymentIds, entryId);
+          if (hidden) hiddenCount += 1;
+          return !hidden;
+        });
+
+      if (visibleEntries.length > 0) {
+        visible[clientId] = visibleEntries;
+      }
+    });
+
+    return { visible, hiddenCount };
+  })();
+
   // Função de exportação para Excel
   const exportToExcel = () => {
     const data = filtered.map(inst => {
@@ -850,43 +923,83 @@ export const InstallmentsView: React.FC = () => {
       </div>
 
       {/* Histórico por Cliente */}
-      {Object.keys(paymentHistoryByClient).length > 0 && (
+      {(Object.keys(paymentHistoryByClient).length > 0) && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-          <h3 className="text-lg font-bold text-slate-800 mb-4">Histórico de Pagamentos por Cliente</h3>
-          <div className="space-y-4">
-            {Object.entries(paymentHistoryByClient).map(([clientId, entries]) => {
-              const client = getClient(clientId);
-              if (!client) return null;
-              
-              return (
-                <div key={clientId} className="border border-slate-200 rounded-lg p-4">
-                  <h4 className="font-bold text-slate-800 mb-3">{client.name}</h4>
-                  <div className="space-y-2">
-                    {entries.map(({ installment, entry }, idx) => (
-                      <div key={`${entry.createdAt}-${idx}`} className="flex flex-col rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <span className="text-sm text-emerald-700 font-semibold">
-                              Parcela {installment.number} • {formatDate(entry.paymentDate)}
-                            </span>
-                            <span className="block text-sm text-emerald-600 font-bold">
-                              {formatCurrency(entry.amount)}
-                            </span>
-                            <span className="text-xs text-emerald-600">
-                              Juros: {formatCurrency(entry.interestPaid)} • Capital: {formatCurrency(entry.principalPaid)}
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h3 className="text-lg font-bold text-slate-800">Histórico de Pagamentos por Cliente</h3>
+            {visiblePaymentHistoryByClient.hiddenCount > 0 && (
+              <button
+                type="button"
+                onClick={showAllHiddenPayments}
+                className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+              >
+                Mostrar ocultos ({visiblePaymentHistoryByClient.hiddenCount})
+              </button>
+            )}
+          </div>
+          {Object.keys(visiblePaymentHistoryByClient.visible).length === 0 ? (
+            <p className="text-sm text-slate-500">
+              Todos os pagamentos recentes estão ocultos. Use &quot;Mostrar ocultos&quot; para reexibi-los.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {Object.entries(visiblePaymentHistoryByClient.visible).map(([clientId, entries]) => {
+                const client = getClient(clientId);
+                if (!client) return null;
+                const allEntryIds = entries.map(e => e.entryId);
+
+                return (
+                  <div key={clientId} className="border border-slate-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <h4 className="font-bold text-slate-800">{client.name}</h4>
+                      <button
+                        type="button"
+                        onClick={() => hideAllClientPaymentsFromView(allEntryIds)}
+                        className="text-xs font-semibold text-slate-500 hover:text-slate-700 hover:underline whitespace-nowrap"
+                        title="Ocultar todos os pagamentos deste cliente na view"
+                      >
+                        Ocultar todas
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {entries.map(({ installment, entry, entryId }, idx) => (
+                        <div
+                          key={`${entryId}-${idx}`}
+                          className="relative flex flex-col rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 pr-9"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => hidePaymentFromView(entryId)}
+                            className="absolute top-2 right-2 p-0.5 rounded text-emerald-400 hover:text-emerald-700 hover:bg-emerald-100 transition"
+                            title="Ocultar este pagamento da view"
+                            aria-label="Ocultar este pagamento da view"
+                          >
+                            <X size={14} />
+                          </button>
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <span className="text-sm text-emerald-700 font-semibold">
+                                Parcela {installment.number} • {formatDate(entry.paymentDate)}
+                              </span>
+                              <span className="block text-sm text-emerald-600 font-bold">
+                                {formatCurrency(entry.amount)}
+                              </span>
+                              <span className="text-xs text-emerald-600">
+                                Juros: {formatCurrency(entry.interestPaid)} • Capital: {formatCurrency(entry.principalPaid)}
+                              </span>
+                            </div>
+                            <span className="text-xs text-emerald-400">
+                              {formatDate(entry.createdAt)}
                             </span>
                           </div>
-                          <span className="text-xs text-emerald-400">
-                            {formatDate(entry.createdAt)}
-                          </span>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
