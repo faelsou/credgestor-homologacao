@@ -1388,6 +1388,17 @@ import { UsersView } from '@/components/dashboard/Users';
 import { LoanHistoryView } from '@/components/dashboard/LoanHistory';
 import { User, UserRole, Client, Loan, Installment, LoanStatus, InstallmentStatus, LoanModel } from '@/types';
 import { getTodayDateString, isLate, normalizeUserRole } from '@/utils';
+import {
+  ACTIVITY_SAVE_INTERVAL_MS,
+  INACTIVITY_CHECK_INTERVAL_MS,
+  LAST_ACTIVITY_KEY,
+  clearLastActivityAt,
+  isSessionExpiredByInactivity,
+  readLastActivityAt,
+  remainingInactivityMs,
+  shouldBlockSessionRestore,
+  writeLastActivityAt,
+} from '@/utils/sessionInactivity';
 import { isSupabaseConfigured, supabase } from '@/services/supabaseClient';
 import { createClient, deleteClient as deleteClientApi, fetchClients, isBackendConfigured, loginWithBackend, LoginResult } from '@/services/api';
 
@@ -1406,9 +1417,9 @@ type LocalAppState = {
 };
 
 // --- LOGOUT POR INATIVIDADE ---
+// lastActivityAt fica em chave separada (credgestor:last-activity) para não ser
+// apagada ao restaurar a UI após o login.
 const LAST_STATE_KEY = 'credgestor:last-state';
-const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutos sem interação
-const ACTIVITY_SAVE_INTERVAL_MS = 10 * 1000; // intervalo mínimo entre gravações do estado
 const KNOWN_VIEWS = ['home', 'clients', 'loans', 'installments', 'users', 'loanHistory'];
 
 type InstallmentsFilter = 'ALL' | 'PENDING' | 'LATE' | 'PAID' | 'PARTIAL';
@@ -1418,7 +1429,6 @@ type PersistedLastState = {
   theme?: ThemeOption;
   installmentsInitialFilter?: InstallmentsFilter | null;
   installmentsDateRange?: { start: string; end: string } | null;
-  lastActivityAt?: number;
 };
 
 const MOCK_CLIENTS: Client[] = [
@@ -1678,20 +1688,13 @@ const App: React.FC = () => {
     const stored = localStorage.getItem(BACKEND_SESSION_STORAGE_KEY);
     if (!stored) return;
 
-    // Se a última atividade registrada passou de 15 minutos, não restaurar a sessão:
-    // força novo login, mas mantém LAST_STATE_KEY para restaurar o último estado depois
-    try {
-      const lastStateRaw = localStorage.getItem(LAST_STATE_KEY);
-      if (lastStateRaw) {
-        const lastState = JSON.parse(lastStateRaw) as PersistedLastState;
-        if (lastState.lastActivityAt && Date.now() - lastState.lastActivityAt > INACTIVITY_TIMEOUT_MS) {
-          console.warn('⏱️ Sessão expirada por inatividade (15 min). Novo login necessário.');
-          localStorage.removeItem(BACKEND_SESSION_STORAGE_KEY);
-          return;
-        }
-      }
-    } catch {
-      localStorage.removeItem(LAST_STATE_KEY);
+    // Sem atividade recente (ou sem registro), não restaurar a sessão.
+    // LAST_STATE_KEY é mantido para restaurar a UI após o próximo login.
+    if (shouldBlockSessionRestore()) {
+      console.warn('⏱️ Sessão expirada por inatividade (15 min). Novo login necessário.');
+      localStorage.removeItem(BACKEND_SESSION_STORAGE_KEY);
+      clearLastActivityAt();
+      return;
     }
 
     try {
@@ -2071,6 +2074,7 @@ const App: React.FC = () => {
         setUsersList([normalizedUser]);
         setSession(sessionInfo);
         setView('home');
+        writeLastActivityAt();
         return true;
       } catch (error) {
         console.error('❌ Falha ao autenticar via backend:', error);
@@ -2091,6 +2095,7 @@ const App: React.FC = () => {
       if (fallbackUser) {
         setUser(fallbackUser);
         setView('home');
+        writeLastActivityAt();
         return true;
       }
 
@@ -2133,6 +2138,7 @@ const App: React.FC = () => {
         if (profile) {
           setUser(profile);
           setView('home');
+          writeLastActivityAt();
           return true;
         }
 
@@ -2140,6 +2146,7 @@ const App: React.FC = () => {
         setUser(fallbackUser);
         setUsersList(prev => prev.some(u => u.id === fallbackUser.id) ? prev : [...prev, fallbackUser]);
         setView('home');
+        writeLastActivityAt();
         return true;
       }
 
@@ -2148,6 +2155,7 @@ const App: React.FC = () => {
         setUser(fallbackUser);
         setUsersList(prev => prev.some(u => u.id === fallbackUser.id) ? prev : [...prev, fallbackUser]);
         setView('home');
+        writeLastActivityAt();
         return true;
       }
 
@@ -2157,6 +2165,7 @@ const App: React.FC = () => {
       setUser(fallbackUser);
       setUsersList(prev => prev.some(u => u.id === fallbackUser.id) ? prev : [...prev, fallbackUser]);
       setView('home');
+      writeLastActivityAt();
       return true;
     }
 
@@ -2164,6 +2173,7 @@ const App: React.FC = () => {
     if (fallbackUser) {
       setUser(fallbackUser);
       setView('home');
+      writeLastActivityAt();
       return true;
     }
 
@@ -2174,6 +2184,7 @@ const App: React.FC = () => {
     // Logout manual limpa o último estado salvo; o logout por inatividade
     // regrava o estado logo após esta função terminar
     localStorage.removeItem(LAST_STATE_KEY);
+    clearLastActivityAt();
 
     // REGRA IMPORTANTE: Limpar TODOS os dados ao fazer logout para evitar compartilhamento
     if (isBackendConfiguredValue) {
@@ -2214,13 +2225,14 @@ const App: React.FC = () => {
 
   // --- LOGOUT AUTOMÁTICO APÓS 15 MINUTOS DE INATIVIDADE (persistindo o último estado) ---
   const lastStateRef = useRef<PersistedLastState>({});
+  const inactivityLogoutInProgressRef = useRef(false);
 
   useEffect(() => {
     lastStateRef.current = { view, theme, installmentsInitialFilter, installmentsDateRange };
   }, [view, theme, installmentsInitialFilter, installmentsDateRange]);
 
   const saveLastState = useCallback(() => {
-    const payload: PersistedLastState = { ...lastStateRef.current, lastActivityAt: Date.now() };
+    const payload: PersistedLastState = { ...lastStateRef.current };
     localStorage.setItem(LAST_STATE_KEY, JSON.stringify(payload));
   }, []);
 
@@ -2228,37 +2240,107 @@ const App: React.FC = () => {
     if (!user) return;
 
     let logoutTimer: ReturnType<typeof setTimeout> | undefined;
+    let checkInterval: ReturnType<typeof setInterval> | undefined;
     let lastSaveAt = 0;
+    let lastActivityAt = readLastActivityAt() ?? Date.now();
+    writeLastActivityAt(localStorage, lastActivityAt);
+    inactivityLogoutInProgressRef.current = false;
 
     const handleInactivityLogout = async () => {
+      if (inactivityLogoutInProgressRef.current) return;
+      inactivityLogoutInProgressRef.current = true;
       console.warn('⏱️ 15 minutos sem atividade. Deslogando e salvando o último estado...');
-      await logout();
-      // Grava depois do logout para sobreviver à limpeza do localStorage
-      saveLastState();
+      try {
+        await logout();
+        // Grava depois do logout para sobreviver à limpeza do localStorage
+        saveLastState();
+      } catch (error) {
+        console.error('Falha ao encerrar sessão por inatividade', error);
+        inactivityLogoutInProgressRef.current = false;
+      }
+    };
+
+    const syncActivityFromStorage = () => {
+      const persisted = readLastActivityAt();
+      if (persisted != null && persisted > lastActivityAt) {
+        lastActivityAt = persisted;
+      }
+    };
+
+    const expireIfNeeded = () => {
+      syncActivityFromStorage();
+      if (isSessionExpiredByInactivity(lastActivityAt)) {
+        void handleInactivityLogout();
+        return true;
+      }
+      return false;
+    };
+
+    const scheduleLogout = () => {
+      if (logoutTimer) clearTimeout(logoutTimer);
+      logoutTimer = setTimeout(() => {
+        if (!expireIfNeeded()) {
+          scheduleLogout();
+        }
+      }, remainingInactivityMs(lastActivityAt));
     };
 
     const registerActivity = () => {
-      if (logoutTimer) clearTimeout(logoutTimer);
-      logoutTimer = setTimeout(handleInactivityLogout, INACTIVITY_TIMEOUT_MS);
+      lastActivityAt = Date.now();
+      scheduleLogout();
 
-      // Persiste o estado + timestamp de atividade de forma espaçada,
-      // para detectar inatividade mesmo se a aba for fechada
       const now = Date.now();
       if (now - lastSaveAt >= ACTIVITY_SAVE_INTERVAL_MS) {
         lastSaveAt = now;
+        writeLastActivityAt(localStorage, lastActivityAt);
         saveLastState();
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !expireIfNeeded()) {
+        scheduleLogout();
+      }
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === LAST_ACTIVITY_KEY) {
+        syncActivityFromStorage();
+        if (!expireIfNeeded()) {
+          scheduleLogout();
+        }
+        return;
+      }
+
+      // Sessão encerrada em outra aba → só sincroniza o estado local (sem regravar UI)
+      if (event.key === BACKEND_SESSION_STORAGE_KEY && event.newValue == null) {
+        setSession(null);
+        setUser(null);
+        clearLastActivityAt();
       }
     };
 
     const events: (keyof WindowEventMap)[] = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
     events.forEach(eventName => window.addEventListener(eventName, registerActivity, { passive: true }));
-    registerActivity();
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('storage', onStorage);
+    checkInterval = setInterval(() => {
+      expireIfNeeded();
+    }, INACTIVITY_CHECK_INTERVAL_MS);
+
+    // Não reinicia o relógio no mount — agenda a partir da última atividade persistida.
+    if (!expireIfNeeded()) {
+      scheduleLogout();
+    }
 
     return () => {
       if (logoutTimer) clearTimeout(logoutTimer);
+      if (checkInterval) clearInterval(checkInterval);
       events.forEach(eventName => window.removeEventListener(eventName, registerActivity));
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('storage', onStorage);
     };
-  }, [user, logout, saveLastState]);
+  }, [user?.id, logout, saveLastState]);
 
   // Restaura o último estado salvo assim que o usuário loga novamente
   useEffect(() => {
@@ -2278,8 +2360,9 @@ const App: React.FC = () => {
       console.error('Não foi possível restaurar o último estado salvo', error);
     }
 
+    // Remove só o estado de UI — a atividade fica em credgestor:last-activity
     localStorage.removeItem(LAST_STATE_KEY);
-  }, [user]);
+  }, [user?.id]);
 
   // ⭐ FUNÇÃO CORRIGIDA - Salva no backend FastAPI quando autenticado
   const addClient = useCallback(async (client: Client): Promise<Client | null> => {
@@ -2458,29 +2541,37 @@ const App: React.FC = () => {
     if (!installment) return;
 
     const scheduledDate = date || getTodayDateString();
+    const chargeAmount = Number((amount || 0).toFixed(2));
     const entry = {
       reason,
-      amount,
+      amount: chargeAmount,
       date: scheduledDate,
       createdAt
     };
 
     const promisedPaymentHistory = [...(installment.promisedPaymentHistory ?? []), entry];
 
-    // Atualizar somente a parcela selecionada com a data informada no agendamento atual.
-    // Nao recalcular com base na data mais recente do historico para nao deslocar o emprestimo.
-    // IMPORTANTE: Os juros (interestAmount) e capital (principalAmount) NÃO devem ser alterados
-    // a menos que haja multa diária configurada. Preservar os valores originais.
+    // Multa/atraso entra SOMENTE nesta parcela (mês do atraso):
+    // atualiza amount/interestAmount para o valor combinado (juros + multa),
+    // assim na baixa valor_pago = valor da parcela e a conta fecha sem sobra.
+    // Capital (principalAmount) e demais parcelas NÃO são alterados.
+    const previousAmount = installment.amount || 0;
+    const feePortion = Math.max(0, chargeAmount - previousAmount);
+    const currentInterest = installment.interestAmount ?? 0;
+    const updatedInterestAmount =
+      feePortion > 0
+        ? Number((currentInterest + feePortion).toFixed(2))
+        : (chargeAmount > 0 && currentInterest === 0 ? chargeAmount : installment.interestAmount);
+
     const updatedInstallment = {
       ...installment,
       promisedPaymentReason: entry.reason,
       promisedPaymentAmount: entry.amount,
       promisedPaymentDate: entry.date,
       promisedPaymentHistory,
-      // Preservar juros e capital originais - não alterar
-      interestAmount: installment.interestAmount,
       principalAmount: installment.principalAmount,
-      amount: installment.amount // Preservar também o valor total da parcela
+      amount: chargeAmount > 0 ? Math.max(previousAmount, chargeAmount) : installment.amount,
+      interestAmount: updatedInterestAmount
     };
 
     // Salvar no backend se estiver configurado

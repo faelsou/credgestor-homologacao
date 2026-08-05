@@ -4,7 +4,9 @@ declare module 'vitest' {
   export const expect: any;
   export const vi: any;
   export const beforeAll: (...args: any[]) => any;
+  export const beforeEach: (...args: any[]) => any;
   export const afterAll: (...args: any[]) => any;
+  export const afterEach: (...args: any[]) => any;
 }
 
 declare module 'vitest/config' {

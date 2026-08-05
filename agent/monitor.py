@@ -11,8 +11,11 @@ Produz duas saídas a cada ciclo:
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import docker
+
+TZ_SP = ZoneInfo("America/Sao_Paulo")
 
 # Falhas mais antigas que isso no momento do startup não geram alerta
 # (evita re-alertar eventos antigos a cada restart do agente)
@@ -110,7 +113,7 @@ class DockerMonitor:
                 status = task.get("Status", {})
                 error = status.get("Err") or "erro não informado"
                 ts = _parse_docker_ts(status.get("Timestamp", ""))
-                ts_str = ts.astimezone().strftime("%Y-%m-%d %H:%M:%S") if ts else "N/A"
+                ts_str = ts.astimezone(TZ_SP).strftime("%Y-%m-%d %H:%M:%S") if ts else "N/A"
                 # Exit 137 / unhealthy: há ação segura (restart) → pedir aprovação
                 restartable = (
                     "137" in error
