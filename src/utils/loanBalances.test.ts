@@ -5,6 +5,10 @@ import {
   calculateLoanDisplayStatus,
   sumPrincipalPaid,
   hasPendingInstallmentBalance,
+  getInstallmentPendingAmount,
+  getPendingCapital,
+  calculateInterestOnlyMonthlyInterest,
+  getInterestOnlyReceiveSummary,
 } from './loanBalances';
 import {
   Installment,
@@ -101,6 +105,78 @@ describe('hasPendingInstallmentBalance', () => {
         }),
       ]),
     ).toBe(true);
+  });
+});
+
+describe('getInstallmentPendingAmount', () => {
+  it('retorna amount − amountPaid', () => {
+    expect(
+      getInstallmentPendingAmount(
+        makeInstallment({ amount: 351, amountPaid: 350.16 }),
+      ),
+    ).toBe(0.84);
+  });
+
+  it('não fica negativo quando pago ≥ amount', () => {
+    expect(
+      getInstallmentPendingAmount(
+        makeInstallment({ amount: 100, amountPaid: 120 }),
+      ),
+    ).toBe(0);
+  });
+});
+
+describe('getInterestOnlyReceiveSummary — modal Receber', () => {
+  it('caso Cristina: parcial não reincha pendente com juros cheios', () => {
+    const loan = makeLoan({
+      amount: 2920,
+      interestRate: 12,
+      // juros sobre capital ≈ 350.4; parcela no banco pode ser 351 (ceil na criação)
+    });
+    const installment = makeInstallment({
+      amount: 351,
+      amountPaid: 350.16,
+      interestAmount: 351,
+      status: InstallmentStatus.PARTIAL,
+    });
+
+    const summary = getInterestOnlyReceiveSummary(loan, installment, [installment]);
+
+    expect(summary.displayAmount).toBe(351);
+    expect(summary.pendingAmount).toBe(0.84);
+    // Não pode ser Math.max(351 - 350.16, jurosCheios) ≈ 350+
+    expect(summary.pendingAmount).toBeLessThan(1);
+  });
+
+  it('sem pagamento: pendente = amount da parcela', () => {
+    const loan = makeLoan({ amount: 1000, interestRate: 10 });
+    const installment = makeInstallment({ amount: 100, amountPaid: 0, interestAmount: 100 });
+
+    const summary = getInterestOnlyReceiveSummary(loan, installment, [installment]);
+
+    expect(summary.pendingAmount).toBe(100);
+    expect(summary.monthlyInterest).toBe(100);
+    expect(summary.pendingCapital).toBe(1000);
+  });
+
+  it('juros do mês usam capital pendente (não capital original após amortização)', () => {
+    const loan = makeLoan({ amount: 1000, interestRate: 10 });
+    const installment = makeInstallment({
+      amount: 90,
+      amountPaid: 0,
+      paymentHistory: [
+        {
+          amount: 200,
+          interestPaid: 100,
+          principalPaid: 100,
+          paymentDate: '2026-01-01',
+          createdAt: '2026-01-01T10:00:00.000Z',
+        },
+      ],
+    });
+
+    expect(getPendingCapital(loan, [installment])).toBe(900);
+    expect(calculateInterestOnlyMonthlyInterest(loan, [installment])).toBe(90);
   });
 });
 
