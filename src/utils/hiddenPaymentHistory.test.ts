@@ -10,6 +10,8 @@ import {
   hidePaymentEntries,
   clearHiddenPaymentIds,
   isPaymentHidden,
+  summarizePaymentHistoryGroups,
+  buildClientPaymentHistoryToggleLabel,
 } from './hiddenPaymentHistory';
 
 function createMemoryStorage(initial: Record<string, string> = {}): Storage {
@@ -126,6 +128,53 @@ describe('hiddenPaymentHistory', () => {
       writeHiddenPaymentIds(storage, new Set(['x']), 't');
       writeHiddenPaymentIds(storage, clearHiddenPaymentIds(), 't');
       expect(JSON.parse(storage.getItem(storageKeyForHiddenPayments('t'))!)).toEqual([]);
+    });
+  });
+
+  describe('painel por cliente (oculto por padrão)', () => {
+    it('resume quantidade de clientes e pagamentos', () => {
+      const summary = summarizePaymentHistoryGroups({
+        ester: [{}, {}],
+        joao: [{}],
+      });
+      expect(summary).toEqual({ clientCount: 2, paymentCount: 3 });
+    });
+
+    it('resume vazio sem clientes', () => {
+      expect(summarizePaymentHistoryGroups({})).toEqual({
+        clientCount: 0,
+        paymentCount: 0,
+      });
+    });
+
+    it('rótulo fechado deixa o atalho visível com totais', () => {
+      expect(
+        buildClientPaymentHistoryToggleLabel({
+          expanded: false,
+          clientCount: 2,
+          paymentCount: 3,
+        }),
+      ).toBe('Ver histórico de pagamentos por cliente (2 clientes · 3 pagamentos)');
+    });
+
+    it('rótulo fechado usa singular', () => {
+      expect(
+        buildClientPaymentHistoryToggleLabel({
+          expanded: false,
+          clientCount: 1,
+          paymentCount: 1,
+        }),
+      ).toBe('Ver histórico de pagamentos por cliente (1 cliente · 1 pagamento)');
+    });
+
+    it('rótulo aberto oferece ocultar o painel', () => {
+      expect(
+        buildClientPaymentHistoryToggleLabel({
+          expanded: true,
+          clientCount: 4,
+          paymentCount: 10,
+        }),
+      ).toBe('Ocultar histórico de pagamentos por cliente');
     });
   });
 

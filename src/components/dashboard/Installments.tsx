@@ -1,5 +1,5 @@
 import React, { useContext, useState, useMemo, useCallback, useEffect } from 'react';
-import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Pencil, FileSpreadsheet, X } from 'lucide-react';
+import { Search, MessageCircle, CheckCircle, Clock, AlertCircle, Pencil, FileSpreadsheet, X, Trash2, History, ChevronDown, ChevronUp } from 'lucide-react';
 import { AppContext } from '@/pages/App';
 import {
   formatCurrency,
@@ -16,6 +16,8 @@ import {
   isPaymentHidden,
   readHiddenPaymentIds,
   writeHiddenPaymentIds,
+  summarizePaymentHistoryGroups,
+  buildClientPaymentHistoryToggleLabel,
 } from '@/utils';
 import {
   calculateInterestOnlyMonthlyInterest,
@@ -24,12 +26,14 @@ import {
   getInterestOnlyReceiveSummary,
   getPendingCapital,
 } from '@/utils/loanBalances';
+import { shouldCloseReceiveModal } from '@/utils/persistenceGuards';
+import { canDeleteInstallment, buildDeletionConfirmation } from '@/utils/installmentDeletion';
 import { CurrencyInput } from '@/components/CurrencyInput';
 import { FormAlertBanner } from '@/components/FormAlertBanner';
 import { InstallmentStatus, Installment, UserRole, LoanModel } from '@/types';
 
 export const InstallmentsView: React.FC = () => {
-  const { installments, clients, loans, payInstallment, updateInstallment, scheduleFuturePayment, user, installmentsInitialFilter, setInstallmentsInitialFilter, installmentsDateRange, setInstallmentsDateRange } = useContext(AppContext);
+  const { installments, clients, loans, payInstallment, updateInstallment, deleteInstallment, scheduleFuturePayment, user, installmentsInitialFilter, setInstallmentsInitialFilter, installmentsDateRange, setInstallmentsDateRange } = useContext(AppContext);
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'LATE' | 'PAID' | 'PARTIAL'>(installmentsInitialFilter || 'ALL');
   const [dateFilterStart, setDateFilterStart] = useState<string | null>(installmentsDateRange?.start || null);
   const [dateFilterEnd, setDateFilterEnd] = useState<string | null>(installmentsDateRange?.end || null);
@@ -50,11 +54,14 @@ export const InstallmentsView: React.FC = () => {
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [paymentDate, setPaymentDate] = useState(getTodayDateString());
   const [paymentError, setPaymentError] = useState('');
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   const [promiseModal, setPromiseModal] = useState<Installment | null>(null);
   const [promiseReason, setPromiseReason] = useState('');
   const [promiseAmount, setPromiseAmount] = useState(0);
   const [promiseDate, setPromiseDate] = useState(getTodayDateString());
   const [promiseLateFee, setPromiseLateFee] = useState(0);
+  const [deletingInstallmentId, setDeletingInstallmentId] = useState<string | null>(null);
+  const [showClientPaymentHistory, setShowClientPaymentHistory] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingInstallment, setEditingInstallment] = useState<Installment | null>(null);
   const [editDueDate, setEditDueDate] = useState('');
@@ -97,6 +104,21 @@ export const InstallmentsView: React.FC = () => {
   }, [persistHiddenPaymentIds]);
 
   const getClient = (id: string) => clients.find(c => c.id === id);
+
+  // Índice por empréstimo: as regras de exclusão precisam das parcelas do mesmo
+  // contrato e são avaliadas em cada linha da listagem.
+  const installmentsByLoan = useMemo(() => {
+    const index = new Map<string, Installment[]>();
+    installments.forEach(inst => {
+      const current = index.get(inst.loanId);
+      if (current) {
+        current.push(inst);
+        return;
+      }
+      index.set(inst.loanId, [inst]);
+    });
+    return index;
+  }, [installments]);
 
   // A data exibida/considerada em telas e filtros deve refletir o agendamento de recebimento,
   // quando existir. O `dueDate` original do contrato permanece para cálculo/encadeamento.
@@ -367,8 +389,9 @@ export const InstallmentsView: React.FC = () => {
     return inst.principalAmount ?? Math.max(0, inst.amount - interest);
   };
 
-  const handleConfirmPayment = () => {
+  const handleConfirmPayment = async () => {
     if (!selectedInstallment) return;
+    if (isConfirmingPayment) return;
 
     if (!paymentAmount || paymentAmount <= 0) {
       setPaymentError(
@@ -460,15 +483,42 @@ export const InstallmentsView: React.FC = () => {
       }
     }
 
-    // Se o pagamento for igual ou maior que o valor total em aberto, é um pagamento total
-    // Nesse caso, não validar valor mínimo de juros
-    if (roundedPaymentAmount >= roundedOutstandingAmount && roundedOutstandingAmount > 0) {
-      // Pagamento total - permitir sem validação de mínimo
-      payInstallment(selectedInstallment.id, roundedPaymentAmount, paymentDate);
+    const closeReceiveModal = () => {
       setSelectedInstallment(null);
       setPaymentAmount(0);
       setPaymentDate(getTodayDateString());
       setPaymentError('');
+    };
+
+    const applyPaymentResult = async (amountToPay: number) => {
+      setIsConfirmingPayment(true);
+      setPaymentError('');
+      try {
+        const result = await payInstallment(selectedInstallment.id, amountToPay, paymentDate);
+        if (shouldCloseReceiveModal(result)) {
+          if (result.ok && result.warning) {
+            alert(result.warning);
+          }
+          closeReceiveModal();
+          return;
+        }
+        setPaymentError(result.error);
+      } catch (error) {
+        console.error('Erro ao confirmar recebimento', error);
+        setPaymentError(
+          error instanceof Error
+            ? error.message
+            : 'Não foi possível salvar o recebimento. Tente novamente.'
+        );
+      } finally {
+        setIsConfirmingPayment(false);
+      }
+    };
+
+    // Se o pagamento for igual ou maior que o valor total em aberto, é um pagamento total
+    // Nesse caso, não validar valor mínimo de juros
+    if (roundedPaymentAmount >= roundedOutstandingAmount && roundedOutstandingAmount > 0) {
+      await applyPaymentResult(roundedPaymentAmount);
       return;
     }
 
@@ -506,12 +556,7 @@ export const InstallmentsView: React.FC = () => {
       }
     }
 
-    // Processar pagamento parcial - o valor será aplicado proporcionalmente entre juros e capital
-    payInstallment(selectedInstallment.id, paymentAmount, paymentDate);
-    setSelectedInstallment(null);
-    setPaymentAmount(0);
-    setPaymentDate(getTodayDateString());
-    setPaymentError('');
+    await applyPaymentResult(paymentAmount);
   };
 
   const openPromiseModal = (inst: Installment) => {
@@ -579,6 +624,49 @@ export const InstallmentsView: React.FC = () => {
     }
   };
 
+  const handleDeleteInstallment = async (inst: Installment) => {
+    const check = canDeleteInstallment({
+      installment: inst,
+      loanInstallments: installmentsByLoan.get(inst.loanId) ?? [inst],
+      userRole: user?.role,
+    });
+
+    if (!check.allowed) {
+      alert(check.reason ?? 'Esta parcela não pode ser excluída.');
+      return;
+    }
+
+    const confirmed = confirm(
+      buildDeletionConfirmation({
+        installment: inst,
+        clientName: getClient(inst.clientId)?.name,
+        warning: check.warning,
+      })
+    );
+    if (!confirmed) return;
+
+    setDeletingInstallmentId(inst.id);
+    try {
+      const result = await deleteInstallment(inst.id);
+      if (!result.ok) {
+        alert(result.error);
+        return;
+      }
+      if (result.warning) {
+        alert(result.warning);
+      }
+    } finally {
+      setDeletingInstallmentId(null);
+    }
+  };
+
+  const isDeletable = (inst: Installment): boolean =>
+    canDeleteInstallment({
+      installment: inst,
+      loanInstallments: installmentsByLoan.get(inst.loanId) ?? [inst],
+      userRole: user?.role,
+    }).allowed;
+
   const handleSaveEdit = async () => {
     if (!editingInstallment) return;
 
@@ -609,7 +697,11 @@ export const InstallmentsView: React.FC = () => {
       setEditPrincipalAmount(0);
     } catch (error) {
       console.error('Erro ao atualizar parcela', error);
-      alert('Erro ao salvar alterações. Tente novamente.');
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Erro ao salvar alterações. Tente novamente.'
+      );
     }
   };
 
@@ -673,6 +765,12 @@ export const InstallmentsView: React.FC = () => {
   };
 
   const paymentHistoryByClient = getPaymentHistoryByClient();
+  const paymentHistorySummary = summarizePaymentHistoryGroups(paymentHistoryByClient);
+  const clientHistoryToggleLabel = buildClientPaymentHistoryToggleLabel({
+    expanded: showClientPaymentHistory,
+    clientCount: paymentHistorySummary.clientCount,
+    paymentCount: paymentHistorySummary.paymentCount,
+  });
 
   const visiblePaymentHistoryByClient = (() => {
     const visible: Record<string, Array<{ installment: Installment; entry: any; entryId: string }>> = {};
@@ -825,82 +923,132 @@ export const InstallmentsView: React.FC = () => {
         </button>
       </div>
 
-      {/* Histórico por Cliente */}
-      {(Object.keys(paymentHistoryByClient).length > 0) && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <h3 className="text-lg font-bold text-slate-800">Histórico de Pagamentos por Cliente</h3>
-            {visiblePaymentHistoryByClient.hiddenCount > 0 && (
-              <button
-                type="button"
-                onClick={showAllHiddenPayments}
-                className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
-              >
-                Mostrar ocultos ({visiblePaymentHistoryByClient.hiddenCount})
-              </button>
-            )}
-          </div>
-          {Object.keys(visiblePaymentHistoryByClient.visible).length === 0 ? (
-            <p className="text-sm text-slate-500">
-              Todos os pagamentos recentes estão ocultos. Use &quot;Mostrar ocultos&quot; para reexibi-los.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {Object.entries(visiblePaymentHistoryByClient.visible).map(([clientId, entries]) => {
-                const client = getClient(clientId);
-                if (!client) return null;
-                const allEntryIds = entries.map(e => e.entryId);
+      {/* Histórico por Cliente — fechado por padrão; o botão permanece visível */}
+      {paymentHistorySummary.clientCount > 0 && (
+        <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 shadow-sm overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowClientPaymentHistory(open => !open)}
+            className="w-full flex items-center justify-between gap-3 px-4 py-3.5 text-left hover:bg-emerald-100 transition"
+            aria-expanded={showClientPaymentHistory}
+            aria-controls={showClientPaymentHistory ? 'historico-pagamentos-por-cliente' : undefined}
+            aria-label={clientHistoryToggleLabel}
+          >
+            <span className="flex items-center gap-3 min-w-0">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
+                <History size={20} aria-hidden="true" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-base font-bold text-emerald-950">
+                  Histórico de pagamentos por cliente
+                </span>
+                <span className="block text-sm font-semibold text-emerald-800">
+                  {showClientPaymentHistory
+                    ? 'Clique para ocultar'
+                    : `${paymentHistorySummary.clientCount} ${paymentHistorySummary.clientCount === 1 ? 'cliente' : 'clientes'} · ${paymentHistorySummary.paymentCount} ${paymentHistorySummary.paymentCount === 1 ? 'pagamento' : 'pagamentos'}`}
+                </span>
+              </span>
+            </span>
+            <span className="flex items-center gap-2 shrink-0 text-emerald-800">
+              <span className="hidden sm:inline text-sm font-bold">
+                {showClientPaymentHistory ? 'Ocultar' : 'Ver'}
+              </span>
+              {showClientPaymentHistory ? (
+                <ChevronUp size={22} aria-hidden="true" />
+              ) : (
+                <ChevronDown size={22} aria-hidden="true" />
+              )}
+            </span>
+          </button>
 
-                return (
-                  <div key={clientId} className="border border-slate-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                      <h4 className="font-bold text-slate-800">{client.name}</h4>
-                      <button
-                        type="button"
-                        onClick={() => hideAllClientPaymentsFromView(allEntryIds)}
-                        className="text-xs font-semibold text-slate-500 hover:text-slate-700 hover:underline whitespace-nowrap"
-                        title="Ocultar todos os pagamentos deste cliente na view"
-                      >
-                        Ocultar todas
-                      </button>
-                    </div>
-                    <div className="space-y-2">
-                      {entries.map(({ installment, entry, entryId }, idx) => (
-                        <div
-                          key={`${entryId}-${idx}`}
-                          className="relative flex flex-col rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 pr-9"
-                        >
+          {showClientPaymentHistory && (
+            <div
+              id="historico-pagamentos-por-cliente"
+              className="border-t-2 border-emerald-200 bg-white p-5"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <p className="text-sm font-semibold text-slate-600">
+                  {paymentHistorySummary.paymentCount} {paymentHistorySummary.paymentCount === 1 ? 'lançamento' : 'lançamentos'} registrados
+                </p>
+                {visiblePaymentHistoryByClient.hiddenCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={showAllHiddenPayments}
+                    className="text-sm font-bold text-emerald-700 hover:text-emerald-900 hover:underline"
+                  >
+                    Mostrar ocultos ({visiblePaymentHistoryByClient.hiddenCount})
+                  </button>
+                )}
+              </div>
+              {Object.keys(visiblePaymentHistoryByClient.visible).length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  Todos os pagamentos recentes estão ocultos. Use &quot;Mostrar ocultos&quot; para reexibi-los.
+                </p>
+              ) : (
+                <div className="space-y-5">
+                  {Object.entries(visiblePaymentHistoryByClient.visible).map(([clientId, entries]) => {
+                    const client = getClient(clientId);
+                    if (!client) return null;
+                    const allEntryIds = entries.map(e => e.entryId);
+                    const clientTotal = entries.reduce((sum, item) => sum + (item.entry.amount || 0), 0);
+
+                    return (
+                      <div key={clientId} className="border-2 border-slate-200 rounded-xl p-4 bg-slate-50">
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <div>
+                            <h4 className="text-lg font-bold text-slate-900">{client.name}</h4>
+                            <p className="text-sm font-semibold text-emerald-700">
+                              {entries.length} {entries.length === 1 ? 'pagamento' : 'pagamentos'} · {formatCurrency(clientTotal)}
+                            </p>
+                          </div>
                           <button
                             type="button"
-                            onClick={() => hidePaymentFromView(entryId)}
-                            className="absolute top-2 right-2 p-0.5 rounded text-emerald-400 hover:text-emerald-700 hover:bg-emerald-100 transition"
-                            title="Ocultar este pagamento da view"
-                            aria-label="Ocultar este pagamento da view"
+                            onClick={() => hideAllClientPaymentsFromView(allEntryIds)}
+                            className="text-xs font-semibold text-slate-500 hover:text-slate-700 hover:underline whitespace-nowrap"
+                            title="Ocultar todos os pagamentos deste cliente na view"
                           >
-                            <X size={14} />
+                            Ocultar todas
                           </button>
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <span className="text-sm text-emerald-700 font-semibold">
-                                Parcela {installment.number} • {formatDate(entry.paymentDate)}
-                              </span>
-                              <span className="block text-sm text-emerald-600 font-bold">
-                                {formatCurrency(entry.amount)}
-                              </span>
-                              <span className="text-xs text-emerald-600">
-                                Juros: {formatCurrency(entry.interestPaid)} • Capital: {formatCurrency(entry.principalPaid)}
-                              </span>
-                            </div>
-                            <span className="text-xs text-emerald-400">
-                              {formatDate(entry.createdAt)}
-                            </span>
-                          </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
+                        <div className="space-y-2">
+                          {entries.map(({ installment, entry, entryId }, idx) => (
+                            <div
+                              key={`${entryId}-${idx}`}
+                              className="relative flex flex-col rounded-lg border border-emerald-200 bg-white px-4 py-3 pr-10 shadow-sm"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => hidePaymentFromView(entryId)}
+                                className="absolute top-2 right-2 p-1 rounded text-slate-400 hover:text-emerald-800 hover:bg-emerald-50 transition"
+                                title="Ocultar este pagamento da view"
+                                aria-label="Ocultar este pagamento da view"
+                              >
+                                <X size={16} />
+                              </button>
+                              <div className="flex justify-between items-start gap-3">
+                                <div>
+                                  <span className="text-sm text-slate-700 font-semibold">
+                                    Parcela {installment.number} • {formatDate(entry.paymentDate)}
+                                  </span>
+                                  <span className="block text-xl font-bold text-emerald-700">
+                                    {formatCurrency(entry.amount)}
+                                  </span>
+                                  <span className="text-sm text-slate-600">
+                                    Juros: {formatCurrency(entry.interestPaid)} • Capital: {formatCurrency(entry.principalPaid)}
+                                  </span>
+                                </div>
+                                <span className="text-xs text-slate-500 whitespace-nowrap">
+                                  {formatDate(entry.createdAt)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1049,6 +1197,17 @@ export const InstallmentsView: React.FC = () => {
                             Agendar recebimento
                           </button>
                         )}
+                        {isDeletable(inst) && (
+                          <button
+                            onClick={() => handleDeleteInstallment(inst)}
+                            disabled={deletingInstallmentId === inst.id}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Excluir parcela"
+                            aria-label={`Excluir parcela ${inst.number}`}
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        )}
                     </td>
                 </tr>
                );
@@ -1115,6 +1274,17 @@ export const InstallmentsView: React.FC = () => {
                         <button onClick={() => openPromiseModal(inst)} className="w-full mt-2 py-2 bg-purple-100 text-purple-700 font-semibold rounded-lg text-sm flex items-center justify-center gap-2">
                           <Clock size={16} />
                           Agendar recebimento
+                        </button>
+                     )}
+                     {isDeletable(inst) && (
+                        <button
+                          onClick={() => handleDeleteInstallment(inst)}
+                          disabled={deletingInstallmentId === inst.id}
+                          className="w-full mt-2 py-2 bg-red-50 text-red-700 font-semibold rounded-lg text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                          aria-label={`Excluir parcela ${inst.number}`}
+                        >
+                          <Trash2 size={16} />
+                          Excluir parcela
                         </button>
                      )}
                 </div>
@@ -1309,20 +1479,23 @@ export const InstallmentsView: React.FC = () => {
             <div className="flex gap-3 mt-6">
               <button 
                 onClick={() => {
+                  if (isConfirmingPayment) return;
                   setSelectedInstallment(null);
                   setPaymentAmount(0);
                   setPaymentDate(getTodayDateString());
                   setPaymentError('');
                 }} 
-                className="flex-1 py-2 rounded-lg border hover:bg-slate-50"
+                disabled={isConfirmingPayment}
+                className="flex-1 py-2 rounded-lg border hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 Cancelar
               </button>
               <button 
-                onClick={handleConfirmPayment} 
-                className="flex-1 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700"
+                onClick={handleConfirmPayment}
+                disabled={isConfirmingPayment}
+                className="flex-1 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Confirmar Recebimento
+                {isConfirmingPayment ? 'Salvando...' : 'Confirmar Recebimento'}
               </button>
             </div>
           </div>

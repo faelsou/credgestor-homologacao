@@ -35,6 +35,32 @@ export function isPaymentHidden(hiddenIds: ReadonlySet<string>, entryId: string)
   return hiddenIds.has(entryId);
 }
 
+export function summarizePaymentHistoryGroups(
+  groups: Record<string, readonly unknown[]>,
+): { clientCount: number; paymentCount: number } {
+  const clientCount = Object.keys(groups).length;
+  const paymentCount = Object.values(groups).reduce(
+    (sum, entries) => sum + entries.length,
+    0,
+  );
+  return { clientCount, paymentCount };
+}
+
+export function buildClientPaymentHistoryToggleLabel(params: {
+  expanded: boolean;
+  clientCount: number;
+  paymentCount: number;
+}): string {
+  const { expanded, clientCount, paymentCount } = params;
+  if (expanded) {
+    return 'Ocultar histórico de pagamentos por cliente';
+  }
+
+  const clientLabel = clientCount === 1 ? 'cliente' : 'clientes';
+  const paymentLabel = paymentCount === 1 ? 'pagamento' : 'pagamentos';
+  return `Ver histórico de pagamentos por cliente (${clientCount} ${clientLabel} · ${paymentCount} ${paymentLabel})`;
+}
+
 export function readHiddenPaymentIds(
   storage: Storage = localStorage,
   scopeId?: string | null,

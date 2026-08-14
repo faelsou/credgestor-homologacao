@@ -1,0 +1,122 @@
+{
+  "tenant_id": "00000000-0000-0000-0000-000000000003",
+  "as_of": "2026-08-12",
+  "start": null,
+  "end": null,
+  "counts": {
+    "loans": 203,
+    "installments": 1295,
+    "price_loans": 106,
+    "juros_loans": 97,
+    "price_installments": 906,
+    "juros_installments": 389
+  },
+  "price": {
+    "capital_emprestado": 639235.0,
+    "valor_das_parcelas": 863610.0,
+    "lucro": 202641.11,
+    "total_periodo": 863610.0,
+    "recebido": 177058.0,
+    "a_receber": 686552.0,
+    "em_atraso": 7961.0,
+    "em_atraso_qtd": 10,
+    "ativos": 95,
+    "qtd_parcelas": 906,
+    "qtd_loans": 106
+  },
+  "juros": {
+    "capital_emprestado": 311231.82,
+    "valor_do_juros": 120987.18,
+    "juros_mais_capital": 432219.0,
+    "recebido": 105818.68,
+    "a_receber": 31045.18,
+    "em_atraso": 5388.0,
+    "em_atraso_qtd": 13,
+    "ativos": 96,
+    "qtd_parcelas": 389,
+    "qtd_loans": 97
+  },
+  "identities": {
+    "price_recebido_mais_a_receber": 863610.0,
+    "price_total": 863610.0,
+    "price_identity_ok": true,
+    "juros_recebido_mais_a_receber": 136863.86,
+    "juros_mais_capital": 432219.0,
+    "juros_gap_esperado": 295355.14,
+    "juros_capital_mais_juros_ok": true
+  },
+  "expect_compare": [],
+  "data_quality": [
+    {
+      "tipo": "IA_PA_NE_AMOUNT",
+      "installment_id": "56f136ae-ee8c-4b30-bfb0-9183089925f8",
+      "loan_id": "5294a9c9-6c07-40ea-b028-a80f2501e6a5",
+      "detalhe": "interest+principal−amount = -120.00 (model=PRICE)",
+      "amount": 1120.0,
+      "interest": 0.0,
+      "principal": 1000.0
+    },
+    {
+      "tipo": "INTEREST_ZERO_COM_RESIDUAL",
+      "installment_id": "56f136ae-ee8c-4b30-bfb0-9183089925f8",
+      "loan_id": "5294a9c9-6c07-40ea-b028-a80f2501e6a5",
+      "detalhe": "interest=0 mas amount−principal=120.00 (model=PRICE)",
+      "amount": 1120.0,
+      "interest": 0.0,
+      "principal": 1000.0
+    },
+    {
+      "tipo": "IA_PA_NE_AMOUNT",
+      "installment_id": "b0e7304d-95d0-4849-9204-62edb04697e1",
+      "loan_id": "d120fd9b-e75e-43f3-90ef-0279dad6d09d",
+      "detalhe": "interest+principal−amount = 730.00 (model=PRICE)",
+      "amount": 365.0,
+      "interest": 0.0,
+      "principal": 1095.0
+    },
+    {
+      "tipo": "IA_PA_NE_AMOUNT",
+      "installment_id": "867dbeb4-a046-4e59-bcfc-d8e59b5e5f43",
+      "loan_id": "d5c1a9db-b52e-4166-b253-9574864049aa",
+      "detalhe": "interest+principal−amount = 2000.00 (model=PRICE)",
+      "amount": 200.0,
+      "interest": 200.0,
+      "principal": 2000.0
+    },
+    {
+      "tipo": "IA_PA_NE_AMOUNT",
+      "installment_id": "ce00102f-5f9f-47f3-85e0-61ec3c35c33e",
+      "loan_id": "b5263566-176c-45ec-8952-437d16c67883",
+      "detalhe": "interest+principal−amount = -201.00 (model=PRICE)",
+      "amount": 1201.0,
+      "interest": 0.0,
+      "principal": 1000.0
+    },
+    {
+      "tipo": "INTEREST_ZERO_COM_RESIDUAL",
+      "installment_id": "ce00102f-5f9f-47f3-85e0-61ec3c35c33e",
+      "loan_id": "b5263566-176c-45ec-8952-437d16c67883",
+      "detalhe": "interest=0 mas amount−principal=201.00 (model=PRICE)",
+      "amount": 1201.0,
+      "interest": 0.0,
+      "principal": 1000.0
+    },
+    {
+      "tipo": "IA_PA_NE_AMOUNT",
+      "installment_id": "0bbbc56f-b306-480b-b6ee-4a9e6cba3a14",
+      "loan_id": "e33e56fe-509c-4c34-9534-618ccb6aaa40",
+      "detalhe": "interest+principal−amount = 2202.00 (model=PRICE)",
+      "amount": 734.0,
+      "interest": 0.0,
+      "principal": 2936.0
+    }
+  ],
+  "pagination_warning": {
+    "total_installments": 1295,
+    "exceeds_1000": true,
+    "price_total_if_truncated": 771703.0,
+    "juros_total_if_truncated": 368329.84
+  },
+  "ok": true,
+  "summary": "OK — Dashboard × Banco alinhados"
+}

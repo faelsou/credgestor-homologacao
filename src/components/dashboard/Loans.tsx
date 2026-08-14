@@ -319,9 +319,29 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     };
 
     if (editingLoan) {
-      updateLoan(loanToPersist, generatedInstallments);
+      try {
+        await updateLoan(loanToPersist, generatedInstallments);
+      } catch (error) {
+        console.error('Erro ao atualizar empréstimo', error);
+        setFormError(
+          error instanceof Error
+            ? error.message
+            : 'Não foi possível salvar a edição do empréstimo no servidor. Tente novamente.'
+        );
+        return;
+      }
     } else {
-      addLoan(loanToPersist, generatedInstallments);
+      try {
+        await addLoan(loanToPersist, generatedInstallments);
+      } catch (error) {
+        console.error('Erro ao criar empréstimo', error);
+        setFormError(
+          error instanceof Error
+            ? error.message
+            : 'Não foi possível salvar o empréstimo no servidor. Tente novamente.'
+        );
+        return;
+      }
     }
 
     const client = clients.find(c => c.id === selectedClientId);
@@ -502,7 +522,7 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
     setPromiseLateFee(0);
   };
 
-  const handleSavePromise = () => {
+  const handleSavePromise = async () => {
     if (!promiseModal) return;
     if (!promiseReason.trim()) {
       alert('Informe o motivo do agendamento.');
@@ -524,9 +544,18 @@ export const LoansView: React.FC<LoansViewProps> = ({ editingLoanId, onCloseEdit
       : promiseReason.trim();
     // Multa entra no valor da parcela daquele mês para a baixa fechar a conta
     const amountToCharge = Number((promiseAmount + (promiseLateFee || 0)).toFixed(2));
-    scheduleFuturePayment(promiseModal.installment.id, reasonWithLateFee, amountToCharge, promiseDate);
-    setPromiseModal(null);
-    setPromiseLateFee(0);
+    try {
+      await scheduleFuturePayment(promiseModal.installment.id, reasonWithLateFee, amountToCharge, promiseDate);
+      setPromiseModal(null);
+      setPromiseLateFee(0);
+    } catch (error) {
+      console.error('Erro ao agendar recebimento', error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Erro ao salvar agendamento. Tente novamente.'
+      );
+    }
   };
 
   const generatePromissoryNotePDF = (
