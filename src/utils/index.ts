@@ -464,6 +464,8 @@ export {
   isPaymentHidden,
   readHiddenPaymentIds,
   writeHiddenPaymentIds,
+  summarizePaymentHistoryGroups,
+  buildClientPaymentHistoryToggleLabel,
 } from './hiddenPaymentHistory';
 
 export {
