@@ -18,7 +18,10 @@
 --   3) Veja as seções RESULTADO_*
 --
 -- Equivalente Python:
---   python3 scripts/batimento_dashboard_fe_db.py --as-of 2026-08-05 --expect-screen
+--   python3 scripts/batimento_dashboard_fe_db.py --as-of 2026-08-12
+--
+-- Para bater com a TELA: preencha expect_* em params com os valores dos cards
+-- (ou use --expect-json no Python). Com expect_* = NULL o script só lista totais DB.
 --
 -- SOMENTE LEITURA — não altera dados.
 -- ============================================================================
@@ -34,29 +37,31 @@
 WITH params AS (
     SELECT
         '00000000-0000-0000-0000-000000000003'::uuid AS tenant_id,
-        DATE '2026-08-05' AS as_of,
+        CURRENT_DATE AS as_of,      -- isLate = due < as_of (igual "hoje" do FE)
         NULL::date AS start_date,   -- ex.: DATE '2026-01-01'
-        NULL::date AS end_date,     -- ex.: DATE '2026-08-05'
+        NULL::date AS end_date,     -- ex.: DATE '2026-08-12'
 
-        -- ---- Expectativa da tela (Dashboard sem filtro, 05/08/2026) ----
-        663043.00::numeric   AS expect_p_capital,
-        848899.00::numeric   AS expect_p_parcelas,
-        163143.20::numeric   AS expect_p_lucro,
-        848899.00::numeric   AS expect_p_total,
-        140955.00::numeric   AS expect_p_recebido,
-        707944.00::numeric   AS expect_p_a_receber,
-        37975.00::numeric    AS expect_p_atraso,
-        51::int              AS expect_p_atraso_qtd,
-        104::int             AS expect_p_ativos,
+        -- ---- Expectativa da tela (cole valores do Dashboard; NULL = só mostra DB) ----
+        -- Snapshot antigo 05/08/2026 (descomente e ajuste se for bater com a tela):
+        -- 663043.00 / 848899.00 / ...
+        NULL::numeric AS expect_p_capital,
+        NULL::numeric AS expect_p_parcelas,
+        NULL::numeric AS expect_p_lucro,
+        NULL::numeric AS expect_p_total,
+        NULL::numeric AS expect_p_recebido,
+        NULL::numeric AS expect_p_a_receber,
+        NULL::numeric AS expect_p_atraso,
+        NULL::int     AS expect_p_atraso_qtd,
+        NULL::int     AS expect_p_ativos,
 
-        381580.00::numeric   AS expect_j_capital,
-        116561.64::numeric   AS expect_j_juros,
-        498141.64::numeric   AS expect_j_total,
-        82210.00::numeric    AS expect_j_recebido,
-        47955.48::numeric    AS expect_j_a_receber,
-        23908.20::numeric    AS expect_j_atraso,
-        79::int              AS expect_j_atraso_qtd,
-        101::int             AS expect_j_ativos
+        NULL::numeric AS expect_j_capital,
+        NULL::numeric AS expect_j_juros,
+        NULL::numeric AS expect_j_total,
+        NULL::numeric AS expect_j_recebido,
+        NULL::numeric AS expect_j_a_receber,
+        NULL::numeric AS expect_j_atraso,
+        NULL::int     AS expect_j_atraso_qtd,
+        NULL::int     AS expect_j_ativos
 ),
 
 -- ============================================================================
@@ -225,8 +230,12 @@ batimento_fe_db AS (
         x.metrica,
         x.expect_fe,
         x.valor_db,
-        ROUND(x.valor_db - x.expect_fe, 2) AS delta,
         CASE
+            WHEN x.expect_fe IS NULL THEN NULL
+            ELSE ROUND(x.valor_db - x.expect_fe, 2)
+        END AS delta,
+        CASE
+            WHEN x.expect_fe IS NULL THEN 'DB_ONLY'
             WHEN ABS(x.valor_db - x.expect_fe) <= 0.02 THEN 'OK'
             ELSE 'DIVERGE'
         END AS status
@@ -290,11 +299,14 @@ resumo_batimento AS (
     SELECT
         COUNT(*) FILTER (WHERE status = 'OK') AS ok,
         COUNT(*) FILTER (WHERE status = 'DIVERGE') AS diverge,
+        COUNT(*) FILTER (WHERE status = 'DB_ONLY') AS db_only,
         COUNT(*) AS total,
         CASE
-            WHEN COUNT(*) FILTER (WHERE status = 'DIVERGE') = 0
-                THEN 'OK — Dashboard × Banco alinhados'
-            ELSE 'DIVERGE — conferir batimento_fe_db'
+            WHEN COUNT(*) FILTER (WHERE status = 'DIVERGE') > 0
+                THEN 'DIVERGE — conferir batimento_fe_db'
+            WHEN COUNT(*) FILTER (WHERE status = 'DB_ONLY') = COUNT(*)
+                THEN 'DB_ONLY — totais do banco (cole expect_* para bater com a tela)'
+            ELSE 'OK — Dashboard × Banco alinhados'
         END AS veredito
     FROM batimento_fe_db
 ),
@@ -391,10 +403,10 @@ SELECT
     1 AS ordem,
     'RESUMO' AS secao,
     r.veredito AS info,
-    r.ok::text AS col_a,
-    r.diverge::text AS col_b,
-    r.total::text AS col_c,
-    NULL::text AS col_d,
+    'ok=' || r.ok::text AS col_a,
+    'diverge=' || r.diverge::text AS col_b,
+    'db_only=' || r.db_only::text AS col_c,
+    'total=' || r.total::text AS col_d,
     NULL::text AS col_e
 FROM resumo_batimento r
 
@@ -405,9 +417,9 @@ SELECT
     2,
     'BATIMENTO',
     b.card || ' · ' || b.metrica,
-    ROUND(b.expect_fe, 2)::text,
+    CASE WHEN b.expect_fe IS NULL THEN '(sem expect)' ELSE ROUND(b.expect_fe, 2)::text END,
     ROUND(b.valor_db, 2)::text,
-    ROUND(b.delta, 2)::text,
+    CASE WHEN b.delta IS NULL THEN '-' ELSE ROUND(b.delta, 2)::text END,
     b.status,
     NULL
 FROM batimento_fe_db b

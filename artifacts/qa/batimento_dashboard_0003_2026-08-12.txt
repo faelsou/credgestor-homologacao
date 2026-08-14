@@ -1,0 +1,62 @@
+Tenant : 00000000-0000-0000-0000-000000000003
+As-of  : 2026-08-12  (isLate = due < as-of)
+Período: TODOS (sem filtro — igual Limpar filtro no Dashboard)
+
+Loans: 203  (PRICE=106  INTEREST_ONLY=97)
+Parcelas: 1295  (PRICE=906  JUROS=389)
+
+────────────────────────────────────────────────────────────────
+  EMPRÉSTIMOS PARCELADOS (PRICE)
+────────────────────────────────────────────────────────────────
+  Valor dinheiro emprestado                     R$ 639.235,00
+  Valor das parcelas                            R$ 863.610,00
+  Lucro (juros das parcelas)                    R$ 202.641,11
+  Total do período                              R$ 863.610,00
+  Recebido                                      R$ 177.058,00
+  A Receber                                     R$ 686.552,00
+  Em Atraso (R$)                                  R$ 7.961,00
+  Em Atraso (qtd)                                          10
+  Ativos                                                   95
+
+────────────────────────────────────────────────────────────────
+  EMPRÉSTIMOS SOMENTE JUROS
+────────────────────────────────────────────────────────────────
+  Capital (ACTIVE)                              R$ 311.231,82
+  Valor do Juros                                R$ 120.987,18
+  Juros + Capital                               R$ 432.219,00
+  Recebido                                      R$ 105.818,68
+  A Receber                                      R$ 31.045,18
+  Em Atraso (R$)                                  R$ 5.388,00
+  Em Atraso (qtd)                                          13
+  Ativos                                                   96
+
+────────────────────────────────────────────────────────────────
+  IDENTIDADES
+────────────────────────────────────────────────────────────────
+  PRICE  recebido+a_receber = R$ 863.610,00  vs total R$ 863.610,00  → OK
+  JUROS  capital+juros = R$ 432.219,00  vs j+c R$ 432.219,00  → OK
+  JUROS  recebido+a_receber = R$ 136.863,86  (gap vs j+c = R$ 295.355,14 — esperado; capital ACTIVE não entra em A Receber)
+
+────────────────────────────────────────────────────────────────
+  AVISO PAGINAÇÃO (>1000 parcelas)
+────────────────────────────────────────────────────────────────
+  Total parcelas: 1295
+  Se API cortar em 1000 → PRICE total R$ 771.703,00 (real R$ 863.610,00)
+  Se API cortar em 1000 → JUROS j+c  R$ 368.329,84 (real R$ 432.219,00)
+
+────────────────────────────────────────────────────────────────
+  QUALIDADE DE DADOS (7 achados)
+────────────────────────────────────────────────────────────────
+  [IA_PA_NE_AMOUNT] 56f136ae…  interest+principal−amount = -120.00 (model=PRICE)
+  [INTEREST_ZERO_COM_RESIDUAL] 56f136ae…  interest=0 mas amount−principal=120.00 (model=PRICE)
+  [IA_PA_NE_AMOUNT] b0e7304d…  interest+principal−amount = 730.00 (model=PRICE)
+  [IA_PA_NE_AMOUNT] 867dbeb4…  interest+principal−amount = 2000.00 (model=PRICE)
+  [IA_PA_NE_AMOUNT] ce00102f…  interest+principal−amount = -201.00 (model=PRICE)
+  [INTEREST_ZERO_COM_RESIDUAL] ce00102f…  interest=0 mas amount−principal=201.00 (model=PRICE)
+  [IA_PA_NE_AMOUNT] 0bbbc56f…  interest+principal−amount = 2202.00 (model=PRICE)
+
+════════════════════════════════════════════════════════════════
+  OK — Dashboard × Banco alinhados
+════════════════════════════════════════════════════════════════
+
+JSON salvo em artifacts/qa/batimento_dashboard_0003_2026-08-12.json

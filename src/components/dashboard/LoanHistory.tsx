@@ -168,7 +168,7 @@ export const LoanHistoryView: React.FC = () => {
     setPromiseLateFee(0);
   };
 
-  const handleSavePromise = () => {
+  const handleSavePromise = async () => {
     if (!promiseModal) return;
     if (!promiseReason.trim()) {
       alert('Informe o motivo do agendamento.');
@@ -191,9 +191,18 @@ export const LoanHistoryView: React.FC = () => {
 
     // A multa deve ser somada ao valor agendado (valor a receber)
     const amountToCharge = Number((promiseAmount + (promiseLateFee || 0)).toFixed(2));
-    scheduleFuturePayment(promiseModal.installment.id, reasonWithLateFee, amountToCharge, promiseDate);
-    setPromiseModal(null);
-    setPromiseLateFee(0);
+    try {
+      await scheduleFuturePayment(promiseModal.installment.id, reasonWithLateFee, amountToCharge, promiseDate);
+      setPromiseModal(null);
+      setPromiseLateFee(0);
+    } catch (error) {
+      console.error('Erro ao agendar recebimento', error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Erro ao salvar agendamento. Tente novamente.'
+      );
+    }
   };
 
   return (

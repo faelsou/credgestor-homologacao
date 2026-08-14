@@ -1,0 +1,406 @@
+Carregando dados do Supabase…
+OK: 4 tenants, 242 clients, 227 loans, 1570 installments
+========================================================================
+BATIMENTO EMPRÉSTIMOS / PARCELAS — FE ↔ DB
+Gerado em: 2026-08-13T00:44:25
+Escopo: 1 tenant(s), 203 empréstimos, 1295 parcelas | hoje=2026-08-13
+========================================================================
+
+## RESUMO POR TIPO
+
+    40  K_pago_maior_que_parcela
+    26  D_vencida_ainda_pending
+    14  G_outstanding_db_vs_fe_canonico
+    11  H_divergencia_formulas_fe
+    11  J_total_amount_vs_soma_parcelas
+     8  B_valor_quitado_status_nao_paid
+     2  E_emprestimo_active_sem_parcela_pendente
+     2  L_historico_vs_amount_paid
+     1  F_emprestimo_paid_com_valor_aberto
+
+## POR SEVERIDADE
+
+     8  CRITICAL
+    28  HIGH
+    79  MEDIUM
+
+## DETALHES (até 80 por tipo)
+
+
+### B_valor_quitado_status_nao_paid (8)
+
+  • ILIDIO FRANCISCO ANACLETO [Aplicação - Cleiton Max Car]
+    loan=cb684cad-96cf-422a-99a9-db7e12de6ad2 inst=973cbe95-da14-4a61-9a74-0d46652890c5
+    [CRITICAL] parcela #3 pago=215.28 valor=215.28 status=PARTIAL
+  • THAMIRES MACHADO FARAGO [Aplicação - Cleiton Max Car]
+    loan=d120fd9b-e75e-43f3-90ef-0279dad6d09d inst=b0e7304d-95d0-4849-9204-62edb04697e1
+    [CRITICAL] parcela #3 pago=365.00 valor=365.00 status=PARTIAL
+  • CINTIA/REGINA - CINTIA FERREIRA LOUREIRO [Aplicação - Cleiton Max Car]
+    loan=4a97c919-9607-45bf-ba74-94749eab64a5 inst=1bf2fef3-a1f4-4993-a9da-1d8adf1b469f
+    [CRITICAL] parcela #4 pago=181.20 valor=181.20 status=PARTIAL
+  • CRISTINA - ANA CRISTINA CRUZ LIMA [Aplicação - Cleiton Max Car]
+    loan=674b199e-7237-45af-acf8-e5d6baa7adad inst=91c3e699-9c62-4ce7-8b53-6c216d285e35
+    [CRITICAL] parcela #2 pago=350.16 valor=350.16 status=PARTIAL
+  • MARINEIDE CARDOSO OLIVEIRA [Aplicação - Cleiton Max Car]
+    loan=e33e56fe-509c-4c34-9534-618ccb6aaa40 inst=0bbbc56f-b306-480b-b6ee-4a9e6cba3a14
+    [CRITICAL] parcela #4 pago=734.00 valor=734.00 status=PARTIAL
+  • CLAYTON RICARD BARBOSA [Aplicação - Cleiton Max Car]
+    loan=7ab2cf50-c38e-4610-9ef1-af2f0728c893 inst=97c1ddab-0ddf-4690-acb5-f7149fdf9362
+    [CRITICAL] parcela #3 pago=690.80 valor=690.80 status=PARTIAL
+  • ARTUR ARAUJO [Aplicação - Cleiton Max Car]
+    loan=ef84cb94-b695-4c2a-9b76-3f4396f31be4 inst=eaf9d76a-c27e-4aa5-85e0-7db9bf5558d4
+    [CRITICAL] parcela #4 pago=999.00 valor=999.00 status=PARTIAL
+  • ARTUR ARAUJO [Aplicação - Cleiton Max Car]
+    loan=ef84cb94-b695-4c2a-9b76-3f4396f31be4 inst=198a0ec4-9823-4f70-8a17-ca5dea273371
+    [CRITICAL] parcela #4 pago=999.00 valor=999.00 status=PARTIAL
+
+### D_vencida_ainda_pending (26)
+
+  • PATRICIA ALVES CORREIA [Aplicação - Cleiton Max Car]
+    loan=179dd831-16ea-48cd-992f-075623d86185 inst=ea71fc89-51ac-4595-a8e6-9dcba6194174
+    [MEDIUM] parcela #1 vencimento=2026-08-10 dias_atraso=3 status=PENDING
+  • CINTIA SANTOS DE LUNA [Aplicação - Cleiton Max Car]
+    loan=7fd8de4d-2bcb-4005-8661-acce39e9bbd0 inst=13f07064-0594-478e-b661-119290b5259e
+    [MEDIUM] parcela #4 vencimento=2026-08-08 dias_atraso=5 status=PENDING
+  • PEDRO/BARUERI - PEDRO ROGERIO DE JESUS MENDES [Aplicação - Cleiton Max Car]
+    loan=ab2620f2-9255-44ad-9725-db5c5fa0e827 inst=aae2987f-a2fe-435a-b2ab-bda9aa823da6
+    [MEDIUM] parcela #4 vencimento=2026-08-12 dias_atraso=1 status=PENDING
+  • WILLIANS SILVA SANTOS  [Aplicação - Cleiton Max Car]
+    loan=5d3f1471-efbe-47b8-97e0-44ec6fa35582 inst=13ff764a-65bd-45b4-b595-b21bbb951a94
+    [MEDIUM] parcela #2 vencimento=2026-08-12 dias_atraso=1 status=PENDING
+  • ROSE - ESPOSA DO PAULO DE BARUERI [Aplicação - Cleiton Max Car]
+    loan=3be7a595-8c7e-461c-8f6c-49314994a580 inst=f864257f-1fa0-4d2e-bb7a-3e5998e3645b
+    [MEDIUM] parcela #4 vencimento=2026-08-01 dias_atraso=12 status=PENDING
+  • MARIA DE LOURDES MOREIRA [Aplicação - Cleiton Max Car]
+    loan=97f30d17-819a-4309-b171-4ff9ec1722b5 inst=23dba7a0-eb50-4794-971c-0c4760338000
+    [MEDIUM] parcela #4 vencimento=2026-08-10 dias_atraso=3 status=PENDING
+  • PELÉ - JOSELITO SANTOS DE JESUS [Aplicação - Cleiton Max Car]
+    loan=67e6834f-15df-4b38-941a-f4162ec976f2 inst=69bc9b8e-17c5-4523-bf83-49be58b61d96
+    [MEDIUM] parcela #2 vencimento=2026-08-10 dias_atraso=3 status=PENDING
+  • MARIANA/CRISTINA - MARIANA CRISTINA SOUSA MARQUES [Aplicação - Cleiton Max Car]
+    loan=5177a950-eee8-4565-b948-c87507131425 inst=d3b60c80-a7d4-4380-b2c5-4078fd9e9ded
+    [MEDIUM] parcela #4 vencimento=2026-08-08 dias_atraso=5 status=PENDING
+  • ANDRÉ AÇOUGUEIRO - ANDRE RICARDO SILVA [Aplicação - Cleiton Max Car]
+    loan=5d0e6b88-faba-48a8-afad-b9ad8204b82b inst=81138d81-38e7-47df-a6d3-dcd62e8bdf3d
+    [MEDIUM] parcela #4 vencimento=2026-08-10 dias_atraso=3 status=PENDING
+  • CAROLINA  - MARIA CAROLINA SAMPAIO CURCIO [Aplicação - Cleiton Max Car]
+    loan=52cc7ae4-cc15-47cf-af03-2f71321f2cdb inst=d37cc2ef-f9a7-43d7-bdf6-7aca08974f80
+    [MEDIUM] parcela #3 vencimento=2026-08-08 dias_atraso=5 status=PENDING
+  • MARIANA/VANDERLINA - MARIANA TEODORO DOS SANTOS [Aplicação - Cleiton Max Car]
+    loan=4b3f7afa-a6be-4e9f-8b73-67275a1bd55b inst=b8be0418-cdd4-4cc6-8356-2a7af1b69b44
+    [MEDIUM] parcela #2 vencimento=2026-08-10 dias_atraso=3 status=PENDING
+  • FABIO BARBOSA SILVA [Aplicação - Cleiton Max Car]
+    loan=5a775ba2-81bb-4a04-9eaa-67a69f987352 inst=e0d800de-9153-49c8-a40c-22e4bf8ca0d2
+    [MEDIUM] parcela #4 vencimento=2026-08-09 dias_atraso=4 status=PENDING
+  • ROBSON ALBERTO SILVA [Aplicação - Cleiton Max Car]
+    loan=91388422-c7f8-44d6-bde5-7a4e2342151b inst=c1db3e5b-9631-48f6-b56a-9012bca16902
+    [MEDIUM] parcela #4 vencimento=2026-08-10 dias_atraso=3 status=PENDING
+  • KATIA ALVES MACHADO BAREICHA [Aplicação - Cleiton Max Car]
+    loan=1f52a5bb-e1e1-4ce5-a758-bb310c32182e inst=528e7710-1558-437e-b501-dd24549add1f
+    [MEDIUM] parcela #4 vencimento=2026-08-11 dias_atraso=2 status=PENDING
+  • RAFAEL DE OLIVEIRA SILVA [Aplicação - Cleiton Max Car]
+    loan=387ac251-7dd2-4671-9828-c31f291e684a inst=ea0a0bf5-b113-4b14-9604-c5f8dce8d7c2
+    [MEDIUM] parcela #3 vencimento=2026-08-08 dias_atraso=5 status=PENDING
+  • PAULO/CRISTINA - PAULO MARQUES LIMA [Aplicação - Cleiton Max Car]
+    loan=c4100f68-cd83-481d-a58d-8b3730c9e892 inst=7221e5f7-af4d-4755-b121-fe3610d74dca
+    [MEDIUM] parcela #4 vencimento=2026-08-08 dias_atraso=5 status=PENDING
+  • HANANI GONÇALVES VERDADEIRO [Aplicação - Cleiton Max Car]
+    loan=8afeb9f0-ac82-487e-a948-a14bd50969c5 inst=4ce06915-4d6b-43ba-824c-bcf46e62e080
+    [MEDIUM] parcela #4 vencimento=2026-08-11 dias_atraso=2 status=PENDING
+  • JOSE ROBERTO SALES DA SILVA [Aplicação - Cleiton Max Car]
+    loan=08962cb5-f44d-43ad-a9bd-48c36ee65b76 inst=40947a62-93fc-4808-84a2-d67e0813b640
+    [MEDIUM] parcela #4 vencimento=2026-08-10 dias_atraso=3 status=PENDING
+  • ROBSON ALBERTO SILVA [Aplicação - Cleiton Max Car]
+    loan=676c0337-539b-4ceb-b9b8-96078acc46ef inst=8310f412-9e23-44dc-9585-d4af32f3ca00
+    [MEDIUM] parcela #3 vencimento=2026-08-10 dias_atraso=3 status=PENDING
+  • ANDRÉ AÇOUGUEIRO - ANDRE RICARDO SILVA [Aplicação - Cleiton Max Car]
+    loan=956e00e5-24ae-4933-be9c-cdcd16fab50e inst=c6431b66-39e0-4921-bfe1-008edc013033
+    [MEDIUM] parcela #4 vencimento=2026-08-11 dias_atraso=2 status=PENDING
+  • CLAUDINEI EVANGELISTA [Aplicação - Cleiton Max Car]
+    loan=ce37264b-9f92-438d-b864-5868d9c85c78 inst=5d9c7bac-9d79-4660-8016-1ead1b892ecb
+    [MEDIUM] parcela #4 vencimento=2026-08-12 dias_atraso=1 status=PENDING
+  • LEANDRO MECANICO [Aplicação - Cleiton Max Car]
+    loan=1e80b7af-3f74-4f8f-8619-83c1726d0619 inst=dfc033b7-7c40-46f0-990f-94e04fd0aa37
+    [MEDIUM] parcela #4 vencimento=2026-08-12 dias_atraso=1 status=PENDING
+  • ERON ALQUIMAR DOS SANTOS [Aplicação - Cleiton Max Car]
+    loan=e670c50f-c9f3-4f01-8596-7ff8420bb818 inst=1024f1d8-2b5b-40a8-85a9-ba09704343d2
+    [MEDIUM] parcela #4 vencimento=2026-08-12 dias_atraso=1 status=PENDING
+  • CRISTINA - ANA CRISTINA CRUZ LIMA [Aplicação - Cleiton Max Car]
+    loan=ae12b4bb-f24c-4a77-8764-634b1ed5cd0b inst=f3b3c43e-1430-479c-8927-5bb1b3a4f04d
+    [MEDIUM] parcela #3 vencimento=2026-08-08 dias_atraso=5 status=PENDING
+  • MARIANA/JANETE - MARIANA RAMOS DA SILVA [Aplicação - Cleiton Max Car]
+    loan=f17291e3-cc5c-45f5-b10f-e5a2c587237d inst=50b2fb48-b41a-41b9-aa04-caef8d8a6a15
+    [MEDIUM] parcela #3 vencimento=2026-08-08 dias_atraso=5 status=PENDING
+  • NEIDE OLIVEIRA BRAGA [Aplicação - Cleiton Max Car]
+    loan=a52f237e-5e5a-45f5-8b5f-c811bf91a0ed inst=764e2618-25fb-4343-a759-01083a79934d
+    [MEDIUM] parcela #3 vencimento=2026-08-12 dias_atraso=1 status=PENDING
+
+### E_emprestimo_active_sem_parcela_pendente (2)
+
+  • THAMIRES MACHADO FARAGO [Aplicação - Cleiton Max Car]
+    loan=d120fd9b-e75e-43f3-90ef-0279dad6d09d
+    [HIGH] ACTIVE/OPEN sem parcela pendente → deveria PAID
+  • MARINEIDE CARDOSO OLIVEIRA [Aplicação - Cleiton Max Car]
+    loan=e33e56fe-509c-4c34-9534-618ccb6aaa40
+    [HIGH] ACTIVE/OPEN sem parcela pendente → deveria PAID
+
+### F_emprestimo_paid_com_valor_aberto (1)
+
+  • GUSTAVO PEREIRA DA SILVA [Aplicação - Cleiton Max Car]
+    loan=5be030a4-e4cf-4b47-86aa-781b10397dbb
+    [HIGH] PAID com outstanding_amount=814.00
+
+### G_outstanding_db_vs_fe_canonico (14)
+
+  • FELIPE/TUFÃO - FELIPE DOS SANTOS LOPES [Aplicação - Cleiton Max Car]
+    loan=4f3a25c9-56a1-4399-9997-bcc30f88f923
+    [HIGH] modelo=INTEREST_ONLY status_db=ACTIVE | DB outstanding=1197.00 ≠ FE canônico=1324.32 (Δ=-127.32) | FE Loans.tsx=1197.00
+  • VIVIAN ACHSENHOFER DE MAGALHÃES [Aplicação - Cleiton Max Car]
+    loan=1dc96546-c4b9-4553-8d6e-6b097714f8d6
+    [HIGH] modelo=INTEREST_ONLY status_db=ACTIVE | DB outstanding=37.77 ≠ FE canônico=37.15 (Δ=0.62) | FE Loans.tsx=37.77
+  • CINTIA/REGINA - CINTIA FERREIRA LOUREIRO [Aplicação - Cleiton Max Car]
+    loan=4a97c919-9607-45bf-ba74-94749eab64a5
+    [HIGH] modelo=INTEREST_ONLY status_db=ACTIVE | DB outstanding=1994.00 ≠ FE canônico=1993.20 (Δ=0.80) | FE Loans.tsx=1994.00
+  • LEANDRO MECANICO [Aplicação - Cleiton Max Car]
+    loan=4dcccc2d-cbaa-4aaa-8ccc-c8a1a852a602
+    [HIGH] modelo=INTEREST_ONLY status_db=ACTIVE | DB outstanding=11000.00 ≠ FE canônico=13000.00 (Δ=-2000.00) | FE Loans.tsx=11000.00
+  • CLAYTON RICARD BARBOSA [Aplicação - Cleiton Max Car]
+    loan=0f1b40ec-604b-4a35-9969-987c30f69455
+    [HIGH] modelo=INTEREST_ONLY status_db=ACTIVE | DB outstanding=2460.00 ≠ FE canônico=2459.60 (Δ=0.40) | FE Loans.tsx=2460.00
+  • INGRID DAIANE TEODORA [Aplicação - Cleiton Max Car]
+    loan=f5c6778e-77e2-4a2e-ba9e-bbdf3c50399c
+    [HIGH] modelo=PRICE status_db=ACTIVE | DB outstanding=0.00 ≠ FE canônico=174.00 (Δ=-174.00) | FE Loans.tsx=174.00
+  • SOLANGE VAZ DE CAMARGO [Aplicação - Cleiton Max Car]
+    loan=2d8738c8-1cf8-4411-a2ca-7744f6c1f209
+    [HIGH] modelo=INTEREST_ONLY status_db=ACTIVE | DB outstanding=1100.00 ≠ FE canônico=1200.00 (Δ=-100.00) | FE Loans.tsx=1100.00
+  • GUSTAVO PEREIRA DA SILVA [Aplicação - Cleiton Max Car]
+    loan=5be030a4-e4cf-4b47-86aa-781b10397dbb
+    [HIGH] modelo=PRICE status_db=PAID | DB outstanding=814.00 ≠ FE canônico=0.00 (Δ=814.00) | FE Loans.tsx=0.00
+  • ESTELLA MARIS DE OLIVA GUIMARÃES [Aplicação - Cleiton Max Car]
+    loan=789ee5c2-6d6a-41bf-b7e3-e03fdb842c6f
+    [HIGH] modelo=PRICE status_db=ACTIVE | DB outstanding=2202.00 ≠ FE canônico=1468.00 (Δ=734.00) | FE Loans.tsx=1468.00
+  • CRISTINA - ANA CRISTINA CRUZ LIMA [Aplicação - Cleiton Max Car]
+    loan=674b199e-7237-45af-acf8-e5d6baa7adad
+    [HIGH] modelo=INTEREST_ONLY status_db=ACTIVE | DB outstanding=3269.00 ≠ FE canônico=3268.16 (Δ=0.84) | FE Loans.tsx=3269.00
+  • RONALDO GESSEIRO [Aplicação - Cleiton Max Car]
+    loan=99ea60a2-db73-4e1f-a796-a56a519eb2aa
+    [HIGH] modelo=PRICE status_db=ACTIVE | DB outstanding=1869.00 ≠ FE canônico=1602.00 (Δ=267.00) | FE Loans.tsx=1602.00
+  • INGRID DAIANE TEODORA [Aplicação - Cleiton Max Car]
+    loan=c7ad92ef-6661-47db-a024-3d32967ccc4a
+    [HIGH] modelo=PRICE status_db=ACTIVE | DB outstanding=0.00 ≠ FE canônico=174.00 (Δ=-174.00) | FE Loans.tsx=174.00
+  • CLAYTON RICARD BARBOSA [Aplicação - Cleiton Max Car]
+    loan=7ab2cf50-c38e-4610-9ef1-af2f0728c893
+    [HIGH] modelo=INTEREST_ONLY status_db=ACTIVE | DB outstanding=7599.00 ≠ FE canônico=7598.80 (Δ=0.20) | FE Loans.tsx=7599.00
+  • ARTUR ARAUJO [Aplicação - Cleiton Max Car]
+    loan=ef84cb94-b695-4c2a-9b76-3f4396f31be4
+    [HIGH] modelo=INTEREST_ONLY status_db=ACTIVE | DB outstanding=31000.00 ≠ FE canônico=30999.00 (Δ=1.00) | FE Loans.tsx=30999.00
+
+### H_divergencia_formulas_fe (11)
+
+  • ILIDIO FRANCISCO ANACLETO [Aplicação - Cleiton Max Car]
+    loan=cb684cad-96cf-422a-99a9-db7e12de6ad2
+    [MEDIUM] modelo=INTEREST_ONLY | Histórico/loanBalances=2009.28 ≠ Listagem Empréstimos=2010.00 (Δ=-0.72)
+  • FELIPE/TUFÃO - FELIPE DOS SANTOS LOPES [Aplicação - Cleiton Max Car]
+    loan=4f3a25c9-56a1-4399-9997-bcc30f88f923
+    [MEDIUM] modelo=INTEREST_ONLY | Histórico/loanBalances=1324.32 ≠ Listagem Empréstimos=1197.00 (Δ=127.32)
+  • VIVIAN ACHSENHOFER DE MAGALHÃES [Aplicação - Cleiton Max Car]
+    loan=1dc96546-c4b9-4553-8d6e-6b097714f8d6
+    [MEDIUM] modelo=INTEREST_ONLY | Histórico/loanBalances=37.15 ≠ Listagem Empréstimos=37.77 (Δ=-0.62)
+  • CINTIA/REGINA - CINTIA FERREIRA LOUREIRO [Aplicação - Cleiton Max Car]
+    loan=4a97c919-9607-45bf-ba74-94749eab64a5
+    [MEDIUM] modelo=INTEREST_ONLY | Histórico/loanBalances=1993.20 ≠ Listagem Empréstimos=1994.00 (Δ=-0.80)
+  • LEANDRO MECANICO [Aplicação - Cleiton Max Car]
+    loan=4dcccc2d-cbaa-4aaa-8ccc-c8a1a852a602
+    [MEDIUM] modelo=INTEREST_ONLY | Histórico/loanBalances=13000.00 ≠ Listagem Empréstimos=11000.00 (Δ=2000.00)
+  • CLAYTON RICARD BARBOSA [Aplicação - Cleiton Max Car]
+    loan=0f1b40ec-604b-4a35-9969-987c30f69455
+    [MEDIUM] modelo=INTEREST_ONLY | Histórico/loanBalances=2459.60 ≠ Listagem Empréstimos=2460.00 (Δ=-0.40)
+  • SOLANGE VAZ DE CAMARGO [Aplicação - Cleiton Max Car]
+    loan=2d8738c8-1cf8-4411-a2ca-7744f6c1f209
+    [MEDIUM] modelo=INTEREST_ONLY | Histórico/loanBalances=1200.00 ≠ Listagem Empréstimos=1100.00 (Δ=100.00)
+  • CRISTINA - ANA CRISTINA CRUZ LIMA [Aplicação - Cleiton Max Car]
+    loan=674b199e-7237-45af-acf8-e5d6baa7adad
+    [MEDIUM] modelo=INTEREST_ONLY | Histórico/loanBalances=3268.16 ≠ Listagem Empréstimos=3269.00 (Δ=-0.84)
+  • LEANDRO MECANICO [Aplicação - Cleiton Max Car]
+    loan=1e80b7af-3f74-4f8f-8619-83c1726d0619
+    [MEDIUM] modelo=INTEREST_ONLY | Histórico/loanBalances=2250.00 ≠ Listagem Empréstimos=1650.00 (Δ=600.00)
+  • CLAYTON RICARD BARBOSA [Aplicação - Cleiton Max Car]
+    loan=7ab2cf50-c38e-4610-9ef1-af2f0728c893
+    [MEDIUM] modelo=INTEREST_ONLY | Histórico/loanBalances=7598.80 ≠ Listagem Empréstimos=7599.00 (Δ=-0.20)
+  • NEIDE OLIVEIRA BRAGA [Aplicação - Cleiton Max Car]
+    loan=a52f237e-5e5a-45f5-8b5f-c811bf91a0ed
+    [MEDIUM] modelo=INTEREST_ONLY | Histórico/loanBalances=3944.60 ≠ Listagem Empréstimos=3945.00 (Δ=-0.40)
+
+### J_total_amount_vs_soma_parcelas (11)
+
+  • MARIANA/TAMIRIS - MARIANA LEDRES CARDOSO VIEIRA [Aplicação - Cleiton Max Car]
+    loan=bf22cdc3-8b69-45f0-9a57-c034b4f6e248
+    [HIGH] total_amount=2660.00 ≠ Σ parcelas.amount=2926.00 (Δ=-266.00) qtd=11
+  • ANDRESSA LUIZ [Aplicação - Cleiton Max Car]
+    loan=79271393-7adf-40bb-84a2-c6c7b26ef743
+    [HIGH] total_amount=2220.00 ≠ Σ parcelas.amount=3700.00 (Δ=-1480.00) qtd=10
+  • CLAYTON RICARD BARBOSA [Aplicação - Cleiton Max Car]
+    loan=63785248-f6af-4e6b-ad38-e1dd1839cf2b
+    [HIGH] total_amount=10276.00 ≠ Σ parcelas.amount=13212.00 (Δ=-2936.00) qtd=9
+  • ELAINE DOS SANTOS SILVA [Aplicação - Cleiton Max Car]
+    loan=a691de6a-166b-4b4d-9220-07a6f9675a45
+    [HIGH] total_amount=7302.00 ≠ Σ parcelas.amount=7342.00 (Δ=-40.00) qtd=6
+  • ISRAEL ALVES DOS SANTOS [Aplicação - Cleiton Max Car]
+    loan=d5c1a9db-b52e-4166-b253-9574864049aa
+    [HIGH] total_amount=23670.00 ≠ Σ parcelas.amount=23870.00 (Δ=-200.00) qtd=16
+  • RONALDO GESSEIRO [Aplicação - Cleiton Max Car]
+    loan=99ea60a2-db73-4e1f-a796-a56a519eb2aa
+    [HIGH] total_amount=1869.00 ≠ Σ parcelas.amount=2136.00 (Δ=-267.00) qtd=8
+  • JOSE ROBERTO SALES DA SILVA [Aplicação - Cleiton Max Car]
+    loan=08962cb5-f44d-43ad-a9bd-48c36ee65b76
+    [HIGH] total_amount=2608.00 ≠ Σ parcelas.amount=2628.00 (Δ=-20.00) qtd=8
+  • JOELMA TAVARES DA SILVA [Aplicação - Cleiton Max Car]
+    loan=f20883fe-e42a-4051-b20e-7626681362f6
+    [HIGH] total_amount=120.00 ≠ Σ parcelas.amount=680.00 (Δ=-560.00) qtd=4
+  • JOELMA TAVARES DA SILVA [Aplicação - Cleiton Max Car]
+    loan=8257041b-c6a4-4acb-8552-c71f0ca3755e
+    [HIGH] total_amount=4848.00 ≠ Σ parcelas.amount=5656.00 (Δ=-808.00) qtd=14
+  • JOELMA TAVARES DA SILVA [Aplicação - Cleiton Max Car]
+    loan=e4a2a7c7-c103-4955-87cc-ae1188686a6a
+    [HIGH] total_amount=760.00 ≠ Σ parcelas.amount=1520.00 (Δ=-760.00) qtd=4
+  • PAULO DA ROSE [Aplicação - Cleiton Max Car]
+    loan=c5f18dd3-4749-4c8b-98c0-ed7276982a28
+    [HIGH] total_amount=20250.00 ≠ Σ parcelas.amount=22950.00 (Δ=-2700.00) qtd=17
+
+### K_pago_maior_que_parcela (40)
+
+  • HANANI GONÇALVES VERDADEIRO [Aplicação - Cleiton Max Car]
+    loan=e9d99391-3684-419f-bee9-58c8c0d46e9a inst=1d641946-bd7f-4310-ad60-2196ff26c8cc
+    [MEDIUM] parcela #1 amount=200.00 amount_paid=260.00 excesso=60.00
+  • RAQUEL ELAINE SILVA RIBEIRO [Aplicação - Cleiton Max Car]
+    loan=96035f20-c768-40ff-9348-f653c14a1ebe inst=974b06d8-b0f6-4ba4-b97b-d724c0505bdd
+    [MEDIUM] parcela #1 amount=143.00 amount_paid=193.00 excesso=50.00
+  • FELIPE/TUFÃO - FELIPE DOS SANTOS LOPES [Aplicação - Cleiton Max Car]
+    loan=dcbeb748-7db0-4222-b439-ee98e57cd507 inst=3fecd98d-c646-40b9-a6de-5d94226a91ef
+    [MEDIUM] parcela #1 amount=551.00 amount_paid=1102.00 excesso=551.00
+  • ILIDIO FRANCISCO ANACLETO [Aplicação - Cleiton Max Car]
+    loan=cb684cad-96cf-422a-99a9-db7e12de6ad2 inst=45c60eaa-c1cd-4714-a675-ce049bf8a32c
+    [MEDIUM] parcela #1 amount=216.00 amount_paid=430.56 excesso=214.56
+  • LUIZ FERNANDO PEREIRA DE SOUZA [Aplicação - Cleiton Max Car]
+    loan=d7cc23da-9be4-4fc3-8659-fc52e67a729c inst=497579d1-ad05-4ab9-9ebc-db3adbd95ca2
+    [MEDIUM] parcela #4 amount=405.00 amount_paid=4455.00 excesso=4050.00
+  • ROSE - ESPOSA DO PAULO DE BARUERI [Aplicação - Cleiton Max Car]
+    loan=3be7a595-8c7e-461c-8f6c-49314994a580 inst=fccb9fda-a23f-4337-9672-c214ed03b1a1
+    [MEDIUM] parcela #1 amount=200.00 amount_paid=400.00 excesso=200.00
+  • MARIA DE LOURDES MOREIRA [Aplicação - Cleiton Max Car]
+    loan=97f30d17-819a-4309-b171-4ff9ec1722b5 inst=fad76819-10a3-4edf-8407-d4f27065450f
+    [MEDIUM] parcela #2 amount=550.00 amount_paid=590.00 excesso=40.00
+  • CAROLINA SAMPAIO CURSIO [Aplicação - Cleiton Max Car]
+    loan=5e461698-6c1b-4fe2-8d5e-d8279ad63866 inst=0e633dae-9997-4e95-9454-5a0ae483d8f8
+    [MEDIUM] parcela #1 amount=400.00 amount_paid=410.00 excesso=10.00
+  • KATIA ALVES MACHADO BAREICHA [Aplicação - Cleiton Max Car]
+    loan=3a4850a1-aa64-4b06-895c-596a289bad20 inst=e097b70b-63c7-4a1d-80ae-911d46dee8fc
+    [MEDIUM] parcela #2 amount=700.00 amount_paid=720.00 excesso=20.00
+  • KATIA ALVES MACHADO BAREICHA [Aplicação - Cleiton Max Car]
+    loan=3a4850a1-aa64-4b06-895c-596a289bad20 inst=e43a6cc5-e387-4638-a7e0-8a3e46c06aec
+    [MEDIUM] parcela #1 amount=700.00 amount_paid=750.00 excesso=50.00
+  • EULALIA - MARIA EULALIA [Aplicação - Cleiton Max Car]
+    loan=224d6347-fc20-477d-993f-a129d5a1703a inst=ef5501f4-4931-4362-a2a8-ae8e4c9b910b
+    [MEDIUM] parcela #1 amount=160.00 amount_paid=320.00 excesso=160.00
+  • CLAUDINEI EVANGELISTA [Aplicação - Cleiton Max Car]
+    loan=898906ce-f149-4d3c-80d4-cb0faeeb18c9 inst=4ffcc662-5160-40af-a69b-78669c3bee24
+    [MEDIUM] parcela #1 amount=100.00 amount_paid=200.00 excesso=100.00
+  • FELIPE/TUFÃO - FELIPE DOS SANTOS LOPES [Aplicação - Cleiton Max Car]
+    loan=4f3a25c9-56a1-4399-9997-bcc30f88f923 inst=374ef4f4-cc26-440c-91ed-219027792b8e
+    [MEDIUM] parcela #1 amount=129.00 amount_paid=256.32 excesso=127.32
+  • VIVIAN ACHSENHOFER DE MAGALHÃES [Aplicação - Cleiton Max Car]
+    loan=1dc96546-c4b9-4553-8d6e-6b097714f8d6 inst=aae65ea4-844e-4a9e-b65f-217cfa1bc3f0
+    [MEDIUM] parcela #1 amount=210.00 amount_paid=419.80 excesso=209.80
+  • VIVIAN ACHSENHOFER DE MAGALHÃES [Aplicação - Cleiton Max Car]
+    loan=1dc96546-c4b9-4553-8d6e-6b097714f8d6 inst=eb46b473-4788-4b88-8adc-1ee696726d39
+    [MEDIUM] parcela #1 amount=63.00 amount_paid=651.00 excesso=588.00
+  • MENINÃO - EDNILSON DOS SANTOS TAVARES [Aplicação - Cleiton Max Car]
+    loan=1bcd72dc-745f-47ec-8719-299333a9612b inst=380652ce-c1de-48fe-a49d-eee43a9ccf25
+    [MEDIUM] parcela #2 amount=300.00 amount_paid=390.00 excesso=90.00
+  • CINTIA/REGINA - CINTIA FERREIRA LOUREIRO [Aplicação - Cleiton Max Car]
+    loan=4a97c919-9607-45bf-ba74-94749eab64a5 inst=d310bca8-09e7-43d0-8d7d-5a2f5b6bef38
+    [MEDIUM] parcela #1 amount=182.00 amount_paid=362.40 excesso=180.40
+  • CINTIA/REGINA - CINTIA FERREIRA LOUREIRO [Aplicação - Cleiton Max Car]
+    loan=4a97c919-9607-45bf-ba74-94749eab64a5 inst=c35ca477-6733-43b6-a76f-b39ee75cd62f
+    [MEDIUM] parcela #2 amount=181.20 amount_paid=241.20 excesso=60.00
+  • LEANDRO MECANICO [Aplicação - Cleiton Max Car]
+    loan=4dcccc2d-cbaa-4aaa-8ccc-c8a1a852a602 inst=8959faee-4df9-44d8-a751-070554c916b2
+    [MEDIUM] parcela #2 amount=1000.00 amount_paid=2000.00 excesso=1000.00
+  • LEANDRO MECANICO [Aplicação - Cleiton Max Car]
+    loan=4dcccc2d-cbaa-4aaa-8ccc-c8a1a852a602 inst=f3c96602-e065-4734-9a3e-f729361f7cbe
+    [MEDIUM] parcela #1 amount=1000.00 amount_paid=3000.00 excesso=2000.00
+  • SOLANGE VAZ DE CAMARGO [Aplicação - Cleiton Max Car]
+    loan=2d8738c8-1cf8-4411-a2ca-7744f6c1f209 inst=c657888b-a6ee-4724-be61-cd53802329d7
+    [MEDIUM] parcela #1 amount=100.00 amount_paid=200.00 excesso=100.00
+  •  AMADA MANICURE [Aplicação - Cleiton Max Car]
+    loan=db1499c5-7c88-4e1a-801a-9ac940c4aa7f inst=e548e885-8e84-4914-87bc-c692ee991fbe
+    [MEDIUM] parcela #1 amount=900.00 amount_paid=1000.00 excesso=100.00
+  • CRISTINA - ANA CRISTINA CRUZ LIMA [Aplicação - Cleiton Max Car]
+    loan=674b199e-7237-45af-acf8-e5d6baa7adad inst=e5b2d506-1671-4426-814c-15752cc01c64
+    [MEDIUM] parcela #1 amount=351.00 amount_paid=930.32 excesso=579.32
+  • KATIA ALVES MACHADO BAREICHA [Aplicação - Cleiton Max Car]
+    loan=1f52a5bb-e1e1-4ce5-a758-bb310c32182e inst=6a6e8f26-4569-4c68-b0ad-c4a3dc50680b
+    [MEDIUM] parcela #1 amount=1000.00 amount_paid=1010.00 excesso=10.00
+  • KATIA ALVES MACHADO BAREICHA [Aplicação - Cleiton Max Car]
+    loan=1f52a5bb-e1e1-4ce5-a758-bb310c32182e inst=3542baf8-5e5c-4112-9d7f-df74bc4199b4
+    [MEDIUM] parcela #2 amount=1000.00 amount_paid=1060.00 excesso=60.00
+  • GERALDO PEDRO DA SILVA [Aplicação - Cleiton Max Car]
+    loan=287712e1-78fc-40c6-bd2e-a3474a3096ab inst=bb106d71-336e-41da-bd49-544a601e3f62
+    [MEDIUM] parcela #2 amount=250.00 amount_paid=500.00 excesso=250.00
+  • PAULO/CRISTINA - PAULO MARQUES LIMA [Aplicação - Cleiton Max Car]
+    loan=c4100f68-cd83-481d-a58d-8b3730c9e892 inst=494ee21c-d483-4679-a3ec-ef4cb5dd5a5e
+    [MEDIUM] parcela #2 amount=500.00 amount_paid=520.00 excesso=20.00
+  • PAULO/CRISTINA - PAULO MARQUES LIMA [Aplicação - Cleiton Max Car]
+    loan=c4100f68-cd83-481d-a58d-8b3730c9e892 inst=8103bd29-d170-42f5-a8bb-93bdd25daf2a
+    [MEDIUM] parcela #1 amount=500.00 amount_paid=510.00 excesso=10.00
+  • HANANI GONÇALVES VERDADEIRO [Aplicação - Cleiton Max Car]
+    loan=8afeb9f0-ac82-487e-a948-a14bd50969c5 inst=5f97ee63-59d8-4099-a268-81462a97b108
+    [MEDIUM] parcela #1 amount=750.00 amount_paid=790.00 excesso=40.00
+  • HANANI GONÇALVES VERDADEIRO [Aplicação - Cleiton Max Car]
+    loan=8afeb9f0-ac82-487e-a948-a14bd50969c5 inst=0ff79390-8695-483b-a75e-70bd395f5b40
+    [MEDIUM] parcela #2 amount=750.00 amount_paid=790.00 excesso=40.00
+  • EDINILSON FERREIRA DE OLIVEIRA [Aplicação - Cleiton Max Car]
+    loan=da1a3a9b-b158-427d-b5da-1a00192b979c inst=9dd2be3a-6883-4540-b440-032152b8a551
+    [MEDIUM] parcela #1 amount=350.00 amount_paid=700.00 excesso=350.00
+  • ROBSON ALBERTO SILVA [Aplicação - Cleiton Max Car]
+    loan=676c0337-539b-4ceb-b9b8-96078acc46ef inst=8369bdfd-f218-4034-afba-28ecba96327a
+    [MEDIUM] parcela #1 amount=54.00 amount_paid=74.00 excesso=20.00
+  • LEANDRO MECANICO [Aplicação - Cleiton Max Car]
+    loan=1e80b7af-3f74-4f8f-8619-83c1726d0619 inst=15266275-a83d-45d2-aa43-3fcef4f32174
+    [MEDIUM] parcela #2 amount=150.00 amount_paid=300.00 excesso=150.00
+  • LEANDRO MECANICO [Aplicação - Cleiton Max Car]
+    loan=1e80b7af-3f74-4f8f-8619-83c1726d0619 inst=678ea21e-5f23-462c-8550-14595d4248fa
+    [MEDIUM] parcela #1 amount=150.00 amount_paid=600.00 excesso=450.00
+  • LEANDRO MECANICO [Aplicação - Cleiton Max Car]
+    loan=1e80b7af-3f74-4f8f-8619-83c1726d0619 inst=ce23ee08-0dc1-41c6-886c-5c6df7eeaafb
+    [MEDIUM] parcela #3 amount=150.00 amount_paid=300.00 excesso=150.00
+  • CRISTINA - ANA CRISTINA CRUZ LIMA [Aplicação - Cleiton Max Car]
+    loan=ae12b4bb-f24c-4a77-8764-634b1ed5cd0b inst=37247dce-3506-456a-a20c-dd7f953ce8f3
+    [MEDIUM] parcela #1 amount=500.00 amount_paid=520.00 excesso=20.00
+  • CLAYTON RICARD BARBOSA [Aplicação - Cleiton Max Car]
+    loan=7ab2cf50-c38e-4610-9ef1-af2f0728c893 inst=cb2c88f2-806c-45da-a1de-21aee4da3279
+    [MEDIUM] parcela #1 amount=691.00 amount_paid=1381.60 excesso=690.60
+  • ARTUR ARAUJO [Aplicação - Cleiton Max Car]
+    loan=ef84cb94-b695-4c2a-9b76-3f4396f31be4 inst=3b6f8606-5584-4697-9752-09f1218a4fd1
+    [MEDIUM] parcela #1 amount=1000.00 amount_paid=1998.00 excesso=998.00
+  • NEIDE OLIVEIRA BRAGA [Aplicação - Cleiton Max Car]
+    loan=a52f237e-5e5a-45f5-8b5f-c811bf91a0ed inst=7bc4cef8-000e-4b3c-a1a0-37471d15b20b
+    [MEDIUM] parcela #1 amount=359.00 amount_paid=717.20 excesso=358.20
+  • CINTIA SANTOS DE LUNA [Aplicação - Cleiton Max Car]
+    loan=1f7a2ca0-16bb-480f-959e-42007336b8a6 inst=a6a3a313-9c3b-489c-9887-dbcc2eb1ab31
+    [MEDIUM] parcela #1 amount=580.00 amount_paid=610.00 excesso=30.00
+
+### L_historico_vs_amount_paid (2)
+
+  • MARIANA/CRISTINA - MARIANA CRISTINA SOUSA MARQUES [Aplicação - Cleiton Max Car]
+    loan=5177a950-eee8-4565-b948-c87507131425 inst=6e1d7947-4825-49b7-a0d3-a583921f7136
+    [MEDIUM] parcela #2 Σ payment_history=828.00 ≠ amount_paid=808.00
+  • CRISTINA - ANA CRISTINA CRUZ LIMA [Aplicação - Cleiton Max Car]
+    loan=674b199e-7237-45af-acf8-e5d6baa7adad inst=e5b2d506-1671-4426-814c-15752cc01c64
+    [MEDIUM] parcela #1 Σ payment_history=580.16 ≠ amount_paid=930.32
+
+========================================================================
+TOTAL DE ACHADOS: 115
+========================================================================
+
+JSON salvo em: artifacts/qa/batimento_emprestimos_0003_2026-08-12.json
